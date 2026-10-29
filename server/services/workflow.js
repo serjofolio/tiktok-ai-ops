@@ -77,7 +77,7 @@ async function execute(runId) {
     }
     if (!p.analysis) p.analysis = await products.analyze(p.id);
     out({ productId: p.id, productName: p.nameCn });
-    return { ...p, summary: `${p.emoji} ${p.nameCn}（评分 ${p.score} · ${p.analysis.verdict}）` };
+    return { ...p, summary: `${p.nameCn}（评分 ${p.score} · ${p.analysis.verdict}）` };
   });
 
   // 2. 脚本
@@ -167,7 +167,7 @@ async function execute(runId) {
   });
 
   db.runs.update(runId, { status: 'done', finishedAt: db.now() });
-  db.activity.insert({ type: 'workflow', text: `工作流完成：${product.emoji} ${product.nameCn}` });
+  db.activity.insert({ type: 'workflow', text: `工作流完成：${product.nameCn}` });
 }
 
 function detail(runId) {

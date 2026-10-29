@@ -528,3 +528,6 @@ tbody tr:last-child td { border-bottom: 0; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   .ticker-track { animation: none; }
 }
+.card-head h3 { min-width: 0; }
+.card-head .btn, .card-head .icon-btn { flex-shrink: 0; }
+:root[data-theme="dark"] .brand-logo { background: var(--lime); color: var(--lime-ink); }
