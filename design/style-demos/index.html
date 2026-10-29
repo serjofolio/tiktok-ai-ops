@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运营台界面风格</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* 布局：顶部风格选择条 + 大幅预览（三张真实页面截图可切换）+ 底部五款总览缩略图 */
+  :root {
+    --bg: #eeefec;
+    --surface: #ffffff;
+    --line: #d9dbd5;
+    --fg: #17181a;
+    --muted: #63666b;
+    --accent: #17181a;
+    --on-accent: #ffffff;
+    --ring: #6b7a2a;
+    --sans: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #131416; --surface: #1c1d20; --line: #2f3135; --fg: #ecedee; --muted: #9a9da3; --accent: #ecedee; --on-accent: #131416; --ring: #c5d36b; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #131416; --surface: #1c1d20; --line: #2f3135; --fg: #ecedee; --muted: #9a9da3; --accent: #ecedee; --on-accent: #131416; --ring: #c5d36b; color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding-block: 36px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 28px; }
+  header { display: flex; flex-direction: column; gap: 6px; }
+  .kicker { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  h1 { margin: 0; font-size: clamp(26px, 3.6vw, 38px); line-height: 1.15; letter-spacing: -0.02em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 17px; }
+  p { margin: 0; max-width: 64ch; color: var(--muted); }
+
+  .picker { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .opt { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; transition: border-color .2s, transform .2s; min-width: 0; }
+  .opt:hover { border-color: var(--muted); transform: translateY(-2px); }
+  .opt:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .opt[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .opt .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .opt b { font-size: 16px; }
+  .opt small { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .sw { display: flex; }
+  .sw i { width: 16px; height: 16px; border-radius: 50%; margin-left: -5px; box-shadow: 0 0 0 2px var(--surface); }
+  .sw i:first-child { margin-left: 0; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
+  .viewer { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); align-self: flex-start; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 500; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
+  .tabs button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .shot { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); aspect-ratio: 16 / 10; max-width: 100%; }
+  .shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; transition: opacity .25s; }
+  .shot img.fade { opacity: 0.2; }
+
+  .notes { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+  .notes h2 { font-size: 22px; }
+  .notes dl { margin: 0; display: grid; grid-template-columns: 64px 1fr; gap: 8px 12px; font-size: 13.5px; }
+  .notes dt { color: var(--muted); }
+  .notes dd { margin: 0; }
+  .fit { font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .fit b { display: block; font-size: 12.5px; color: var(--muted); font-weight: 500; margin-bottom: 2px; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+  .overview { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  .thumb { display: flex; flex-direction: column; gap: 6px; border: 0; background: none; padding: 0; color: var(--fg); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+  .thumb span { font-size: 13px; font-weight: 600; }
+  .thumb img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; border-radius: 8px; border: 1px solid var(--line); transition: transform .25s; }
+  .thumb:hover img { transform: translateY(-3px); }
+  .thumb[aria-current="true"] img { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .thumb:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 8px; }
+
+  @media (max-width: 960px) {
+    .picker, .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stage { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .picker, .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="kicker">TikTok 运营台 · 界面风格提案 · 5 套</div>
+    <h1>挑一套你喜欢的界面风格</h1>
+    <p>下面都是平台真实页面在不同风格下的截图（演示数据），功能和布局完全一样，只换了配色、字体、描边和动效。选中后告诉我编号或名称，我会设为默认；也可以在应用右上角「风格」里随时切换。</p>
+  </header>
+
+  <div class="picker" id="picker" role="group" aria-label="选择风格"></div>
+
+  <section class="stage">
+    <div class="viewer">
+      <div class="tabs" role="tablist" aria-label="页面" id="tabs">
+        <button role="tab" id="tab-dashboard" data-page="dashboard" aria-selected="true">总览</button>
+        <button role="tab" id="tab-products" data-page="products" aria-selected="false">智能选品</button>
+        <button role="tab" id="tab-workflows" data-page="workflows" aria-selected="false">一键工作流</button>
+      </div>
+      <div class="shot"><img id="shot" alt="" src="shots/paper-dashboard.jpg"></div>
+    </div>
+    <aside class="notes" id="notes" aria-live="polite"></aside>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>五套总览页并排对比</h2>
+    <div class="overview" id="overview"></div>
+  </section>
+</div>
+
+<script>
+  const STYLES = [
+    { key: 'paper', name: '纸墨', desc: '纸白 + 墨黑 + 柠檬绿，克制专业', colors: ['#f3f2ee', '#111110', '#d2ff1f'],
+      type: '系统无衬线，紧凑字距', shape: '1px 细线，8px 圆角，无投影', motion: '荧光笔划线、柠檬绿按钮填充',
+      fit: '想要干净、专业、长时间盯着也不累的工具感。' },
+    { key: 'brutal', name: '波普', desc: '新粗野主义：粗描边、硬投影、撞色', colors: ['#fff4e0', '#111111', '#ff90e8', '#ffc900'],
+      type: '超粗标题', shape: '2px 黑描边 + 4px 硬投影', motion: '按钮按下"压平"、卡片悬停抬起',
+      fit: '面向年轻卖家和达人团队，想要有记忆点、带点潮牌感。' },
+    { key: 'editorial', name: '杂志', desc: '衬线标题、象牙底、墨绿与赤陶', colors: ['#f6f1e7', '#1f3b2d', '#c8553d'],
+      type: '宋体/衬线标题 + 无衬线正文', shape: '直角，双线分隔，报刊式栏目线', motion: '少量，偏安静',
+      fit: '做美妆、家居、生活方式类目，想要质感和品牌调性。' },
+    { key: 'terminal', name: '终端', desc: '等宽字体、琥珀色数据屏、扫描线', colors: ['#0a0a08', '#e9e6d6', '#ffb000'],
+      type: '全等宽字体', shape: '直角，信息密集', motion: '闪烁光标、CRT 扫描线',
+      fit: '偏数据驱动的运营和投手，喜欢交易终端那种看盘感。' },
+    { key: 'soft', name: '奶油', desc: '暖桃色、大圆角、柔和投影', colors: ['#fbf3ec', '#3a2a22', '#ff7a59', '#7dd3b0'],
+      type: '圆润粗标题', shape: '18px 大圆角、胶囊按钮、柔和阴影', motion: '卡片悬停轻微倾斜、按钮弹性放大',
+      fit: '想要亲和、轻松，团队里新手较多。' },
+  ];
+  const PAGES = { dashboard: '总览', products: '智能选品', workflows: '一键工作流' };
+  let state = { style: 'paper', page: 'dashboard' };
+  try { const saved = JSON.parse(localStorage.getItem('pick') || 'null'); if (saved && STYLES.some(s => s.key === saved.style)) state = { ...state, ...saved }; } catch (e) {}
+
+  const sw = (s) => `<span class="sw" aria-hidden="true">${s.colors.map(c => `<i style="background:${c}"></i>`).join('')}</span>`;
+  const picker = document.getElementById('picker');
+  picker.innerHTML = STYLES.map((s, i) => `<button class="opt" id="opt-${s.key}" data-k="${s.key}" aria-pressed="false"><span class="top"><b>${i + 1}. ${s.name}</b>${sw(s)}</span><small>${s.desc}</small></button>`).join('');
+  const overview = document.getElementById('overview');
+  overview.innerHTML = STYLES.map((s, i) => `<button class="thumb" id="thumb-${s.key}" data-k="${s.key}"><img src="shots/${s.key}-dashboard.jpg" alt="${s.name}风格的总览页" loading="lazy"><span>${i + 1}. ${s.name}</span></button>`).join('');
+
+  const img = document.getElementById('shot');
+  function render() {
+    const s = STYLES.find(x => x.key === state.style);
+    picker.querySelectorAll('.opt').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === s.key)));
+    overview.querySelectorAll('.thumb').forEach(b => b.setAttribute('aria-current', String(b.dataset.k === s.key)));
+    document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.page === state.page)));
+    const src = `shots/${s.key}-${state.page}.jpg`;
+    if (!img.src.endsWith(src)) {
+      img.classList.add('fade');
+      const next = new Image();
+      next.onload = () => { img.src = src; img.classList.remove('fade'); };
+      next.onerror = () => img.classList.remove('fade');
+      next.src = src;
+    }
+    img.alt = `${s.name}风格下的${PAGES[state.page]}页面截图`;
+    document.getElementById('notes').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2>${STYLES.indexOf(s) + 1}. ${s.name}</h2>${sw(s)}</div>
+      <dl><dt>字体</dt><dd>${s.type}</dd><dt>形状</dt><dd>${s.shape}</dd><dt>动效</dt><dd>${s.motion}</dd></dl>
+      <div class="fit"><b>适合</b>${s.fit}</div>
+      <div class="fit"><b>在应用中启用</b>右上角「风格」→ ${s.name}，或在「系统设置 → 界面风格」点选。代码值 <code>${s.key}</code></div>`;
+    try { localStorage.setItem('pick', JSON.stringify(state)); } catch (e) {}
+  }
+  const choose = (e) => { const b = e.target.closest('[data-k]'); if (b) { state.style = b.dataset.k; render(); } };
+  picker.addEventListener('click', choose);
+  overview.addEventListener('click', (e) => { choose(e); if (e.target.closest('[data-k]')) document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  document.getElementById('tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-page]'); if (b) { state.page = b.dataset.page; render(); } });
+  render();
+</script>
+</body>
+</html>

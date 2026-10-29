@@ -74,3 +74,24 @@ npm test            # Playwright 无头模式，使用独立的临时数据目�
 
 - 演示商品数据为模拟数据，可通过 CSV 导入 TikTok Shop 后台或第三方数据工具（FastMoss、Kalodata 等）导出的真实数据。
 - API Key 仅保存在本机 `data/settings.json`，前端只显示脱敏值。
+
+## ☁️ 服务器部署（Cloudflare 隧道）
+
+在你自己的电脑上执行一条命令即可完成：打包 → 上传 → 安装 Node.js 运行时与生产依赖 → systemd 服务 → Cloudflare 隧道。
+
+```powershell
+# Windows（项目根目录）
+powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1
+# macOS / Linux
+./deploy/deploy.sh root@你的服务器IP
+```
+
+- 服务以 `tkagent` 账户运行，**只监听 `127.0.0.1:5100`**，外网无法通过 IP+端口访问；防火墙再额外拦截 5100。
+- `ALLOWED_HOSTS` 只放行隧道域名，其它 Host 头一律 403。
+- 隧道 token 放在 `deploy/deploy.env`（`CF_TUNNEL_TOKEN=...`，已被 git 忽略），部署时上传并在服务器上读取后删除。
+- 在 Cloudflare Zero Trust → Tunnels → Public Hostname 中把域名指向 `http://127.0.0.1:5100`。
+- 数据目录 `/var/lib/tkagent`，日志 `journalctl -u tkagent -f`，重新部署直接再次运行脚本（数据保留）。
+
+## 🎨 界面风格
+
+应用内右上角「风格」可切换 5 套风格；离线对比页见 `design/style-demos/index.html`（双击用浏览器打开）。

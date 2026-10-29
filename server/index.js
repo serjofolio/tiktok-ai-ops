@@ -18,6 +18,17 @@ const seed = require('./seed');
 
 const app = express();
 const upload = multer({ dest: db.UPLOAD_DIR, limits: { fileSize: 30 * 1024 * 1024 } });
+// ALLOWED_HOSTS：只接受指定域名访问（如 Cloudflare 隧道域名），拒绝 IP+端口直连；本机地址始终放行用于健康检查
+const ALLOWED_HOSTS = (process.env.ALLOWED_HOSTS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+if (ALLOWED_HOSTS.length) {
+  const local = ['localhost', '127.0.0.1', '[::1]'];
+  app.use((req, res, next) => {
+    const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+    if (local.includes(host) || ALLOWED_HOSTS.includes(host)) return next();
+    res.status(403).type('text/plain').send('Forbidden');
+  });
+}
+app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
 // 异步路由统一错误处理
@@ -260,12 +271,14 @@ app.get(/^\/(?!api|media).*/, (req, res) => res.sendFile(path.join(__dirname, '.
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
 
 const PORT = Number(process.env.PORT) || 3800;
+// HOST=127.0.0.1 时只监听本机，外网无法通过 IP+端口访问（由反向代理/隧道转发）
+const HOST = process.env.HOST || undefined;
 
 async function main() {
   await seed.run();
   workflow.recover();
-  const server = app.listen(PORT, () => {
-    const url = `http://localhost:${PORT}`;
+  const server = app.listen(PORT, HOST, () => {
+    const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  ✨ TikTok AI 运营智能体平台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);
     if (process.argv.includes('--open')) {
       const { exec } = require('child_process');
