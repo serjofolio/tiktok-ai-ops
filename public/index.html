@@ -6,8 +6,9 @@
   <title>TikTok 运营台</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23111110'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='%23d2ff1f' font-family='Arial' font-weight='800'>T</text></svg>" />
   <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/styles.css" />
   <script>
-    try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; }
+    try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; document.documentElement.dataset.style = localStorage.getItem('style') || 'paper'; } catch (e) { document.documentElement.dataset.theme = 'light'; }
   </script>
 </head>
 <body>
@@ -26,6 +27,7 @@
         <div><h1 id="page-title">总览</h1></div>
         <span class="sub" id="page-sub"></span>
         <div class="spacer"></div>
+        <button class="btn sm ghost" id="style-btn" title="切换界面风格"></button>
         <button class="icon-btn" id="theme-btn" aria-label="切换主题" title="切换明暗主题"></button>
       </header>
       <section class="content" id="view"></section>

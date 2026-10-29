@@ -269,3 +269,33 @@ test('系统设置：从上游自动获取模型列表', async ({ page }) => {
     upstream.close();
   }
 });
+
+test('界面风格：顶栏切换、设置页预览与持久化', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-style', 'paper');
+  await page.click('#style-btn');
+  for (const key of ['brutal', 'editorial', 'terminal', 'soft', 'paper']) {
+    await page.click(`.style-pop [data-k=${key}]`);
+    await expect(page.locator('html')).toHaveAttribute('data-style', key);
+    await expect(page.locator('.style-pop .style-opt.on')).toHaveAttribute('data-k', key);
+  }
+  await page.mouse.click(700, 500);
+  await expect(page.locator('.style-pop')).toHaveCount(0);
+  await page.goto('/#/settings');
+  await expect(page.locator('#styles .style-card')).toHaveCount(5);
+  await page.click('#styles .style-card[data-k=editorial]');
+  await expect(page.locator('#styles .style-card.on')).toHaveAttribute('data-k', 'editorial');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-style', 'editorial');
+  // 每种风格下主要页面都能正常渲染
+  for (const key of ['brutal', 'terminal', 'soft']) {
+    await page.evaluate((k) => localStorage.setItem('style', k), key);
+    for (const p of ['dashboard', 'products', 'workflows']) {
+      await page.goto(`/#/${p}`);
+      await page.reload();
+      await expect(page.locator('#view .skeleton')).toHaveCount(0);
+      await expect(page.locator('#view')).not.toContainText('页面加载失败');
+    }
+  }
+  await page.evaluate(() => localStorage.setItem('style', 'paper'));
+});

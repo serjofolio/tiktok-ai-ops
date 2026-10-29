@@ -1,5 +1,6 @@
 // 应用外壳：导航、路由、主题
-import { icon, api, $, countUp } from './lib.js';
+import { icon, api, $, countUp, esc } from './lib.js';
+import { STYLES, currentStyle, applyStyle, swatch } from './styles.js';
 
 const ROUTES = [
   { group: '工作台' },
@@ -61,6 +62,32 @@ $('#theme-btn').onclick = (e) => {
   themeTransition.finished.catch(() => {}).finally(() => (themeTransition = null));
 };
 setThemeIcon();
+
+// ---------- 界面风格切换（顶栏弹出菜单） ----------
+const styleBtn = $("#style-btn");
+function setStyleBtn() {
+  const s = STYLES.find((x) => x.key === currentStyle()) || STYLES[0];
+  styleBtn.innerHTML = `${swatch(s)}<span>风格 · ${s.name}</span>`;
+}
+styleBtn.onclick = (e) => {
+  e.stopPropagation();
+  const old = document.querySelector(".style-pop");
+  if (old) return old.remove();
+  const pop = document.createElement("div");
+  pop.className = "style-pop";
+  const render = () => (pop.innerHTML = `<div class="hd">界面风格 · 点击即时预览</div>${STYLES.map((s) => `<button class="style-opt ${s.key === currentStyle() ? "on" : ""}" data-k="${s.key}">${swatch(s)}<span><b>${esc(s.name)}</b><small>${esc(s.desc)}</small></span></button>`).join("")}`);
+  render();
+  pop.onclick = (ev) => {
+    ev.stopPropagation();
+    const b = ev.target.closest("[data-k]");
+    if (b) applyStyle(b.dataset.k, ev);
+  };
+  window.addEventListener("stylechange", render);
+  $(".topbar").appendChild(pop);
+  setTimeout(() => document.addEventListener("click", () => { pop.remove(); window.removeEventListener("stylechange", render); }, { once: true }));
+};
+window.addEventListener("stylechange", () => { setStyleBtn(); requestAnimationFrame(moveIndicator); });
+setStyleBtn();
 
 export async function refreshMode() {
   try {

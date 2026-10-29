@@ -1,4 +1,5 @@
-import { api, icon, esc, toast, withLoading, $, $$ } from '../lib.js';
+import { api, icon, esc, toast, withLoading, $, $$, sparkline } from '../lib.js';
+import { STYLES, currentStyle, applyStyle, swatch } from '../styles.js';
 import { refreshMode } from '../app.js';
 
 const PRESETS = {
@@ -41,7 +42,14 @@ const SECTIONS = [
 
 export async function render(view) {
   const s = await api('/settings');
-  view.innerHTML = `<div class="hero mb"><h2 style="font-size:28px">模型与服务<span class="mark">接入</span></h2><p style="margin:6px 0 0">所有 Key 仅保存在本机 <code>data/settings.json</code>。未配置时平台以<b>离线演示模式</b>运行，全部流程均可体验。</p></div>
+  view.innerHTML = `<div class="hero mb"><h2 style="font-size:28px">界面风格与<span class="mark">模型接入</span></h2><p style="margin:6px 0 0">所有 Key 仅保存在本机 <code>data/settings.json</code>。未配置时平台以<b>离线演示模式</b>运行，全部流程均可体验。</p></div>
+  <div class="section-title" style="margin-top:0"><h3>界面风格</h3><span class="muted small">点击卡片即可切换，也可以在右上角「风格」里随时切换</span></div>
+  <div class="style-gallery mb" id="styles">${STYLES.map((st) => `<div class="style-card ${st.key === currentStyle() ? 'on' : ''}" data-style="${st.key}" data-k="${st.key}">
+    <div class="row" style="justify-content:space-between"><h4>${esc(st.name)}</h4>${swatch(st)}</div><div class="small text-2">${esc(st.desc)}</div>
+    <div class="demo"><div class="row" style="justify-content:space-between"><span class="small muted">7 日 GMV</span><span class="grade grade-S">S</span></div>
+      <div class="num">$2.1M</div>${sparkline([3, 4, 3.6, 5, 4.8, 6.2, 7, 6.6, 8.4], { w: 200, h: 34 })}
+      <div class="row"><span class="btn sm">启动工作流</span><span class="chip">美妆个护</span></div></div></div>`).join('')}</div>
+  <div class="section-title"><h3>模型与服务</h3></div>
   <div class="grid g2">${SECTIONS.map(([k, ic, title, desc, fields]) => `
     <div class="card provider-card" data-sec="${k}">
       <h3>${icon(ic)}${title}</h3><p class="muted small" style="margin:0 0 14px">${desc}</p>
@@ -59,6 +67,10 @@ export async function render(view) {
       <div class="code">GET  ${location.origin}/api/tools
 POST ${location.origin}/api/tools/{name}</div><a class="btn sm ghost mt" href="#/agents">${icon('bot', 14)}前往智能体页面查看文档</a></div>
   </div>`;
+
+  $$('#styles .style-card', view).forEach((c) => (c.onclick = (e) => applyStyle(c.dataset.k, e)));
+  const onStyle = () => $$('#styles .style-card', view).forEach((c) => c.classList.toggle('on', c.dataset.k === currentStyle()));
+  window.addEventListener('stylechange', onStyle);
 
   $$('[data-sec]', view).forEach((card) => {
     const k = card.dataset.sec;
@@ -158,4 +170,5 @@ POST ${location.origin}/api/tools/{name}</div><a class="btn sm ghost mt" href="#
       }
     });
   });
+  return () => window.removeEventListener('stylechange', onStyle);
 }
