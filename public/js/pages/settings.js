@@ -41,7 +41,7 @@ const SECTIONS = [
 
 export async function render(view) {
   const s = await api('/settings');
-  view.innerHTML = `<div class="hero mb" style="padding:22px"><h2 style="font-size:20px">${icon('settings', 20)} 模型与服务接入</h2><p style="margin:6px 0 0">所有 Key 仅保存在本机 <code>data/settings.json</code>。未配置时平台以<b>离线演示模式</b>运行，全部流程均可体验。</p></div>
+  view.innerHTML = `<div class="hero mb"><h2 style="font-size:28px">模型与服务<span class="mark">接入</span></h2><p style="margin:6px 0 0">所有 Key 仅保存在本机 <code>data/settings.json</code>。未配置时平台以<b>离线演示模式</b>运行，全部流程均可体验。</p></div>
   <div class="grid g2">${SECTIONS.map(([k, ic, title, desc, fields]) => `
     <div class="card provider-card" data-sec="${k}">
       <h3>${icon(ic)}${title}</h3><p class="muted small" style="margin:0 0 14px">${desc}</p>
@@ -49,6 +49,7 @@ export async function render(view) {
       <div class="grid g2">${fields.map(([f, label, type = 'text', extra]) => {
         const val = s[k][f] ?? '';
         const only = typeof extra === 'string' ? `data-only="${extra}"` : '';
+        if (f === 'model' && k !== 'store') return `<div class="field model-pick" style="grid-column:1/-1">${label}<div class="row"><input class="input" name="model" value="${esc(val)}" autocomplete="off" placeholder="输入或从上游获取"><button type="button" class="btn sm ghost" data-fetch data-loading="获取中…" style="height:38px">${icon('refresh', 14)}获取模型</button></div><span class="small muted" data-mcount></span></div>`;
         if (type === 'select') return `<label class="field" ${only}>${label}<select class="input" name="${f}">${extra.map((o) => { const [v, t] = o.split(':'); return `<option value="${v}" ${String(val) === v ? 'selected' : ''}>${t}</option>`; }).join('')}</select></label>`;
         return `<label class="field" ${only} ${f === 'baseUrl' ? 'style="grid-column:1/-1"' : ''}>${label}<input class="input" name="${f}" type="${type}" ${type === 'number' ? 'step="0.1" min="0" max="2"' : ''} value="${esc(val)}" autocomplete="off"></label>`;
       }).join('')}</div>
@@ -64,7 +65,7 @@ POST ${location.origin}/api/tools/{name}</div><a class="btn sm ghost mt" href="#
     const sync = () => {
       const p = card.querySelector('[name=provider]')?.value;
       $$('[data-only]', card).forEach((el) => (el.style.display = el.dataset.only === p ? '' : 'none'));
-      $$('label.field', card).forEach((el) => {
+      $$('.field', card).forEach((el) => {
         const n = el.querySelector('[name]')?.name;
         if (n && n !== 'provider' && ['mock', 'local'].includes(p) && k !== 'store') el.style.display = 'none';
         else if (!el.dataset.only) el.style.display = '';
@@ -77,7 +78,62 @@ POST ${location.origin}/api/tools/{name}</div><a class="btn sm ghost mt" href="#
       for (const [f, v] of Object.entries(preset)) { const el = card.querySelector(`[name=${f}]`); if (el) el.value = v; }
       $$('[data-preset]', card).forEach((c) => c.classList.toggle('on', c === chip));
       sync();
+      models = [];
+      if (hasKey()) fetchModels(true);
     }));
+    // ---------- 模型列表：从上游 /models 自动获取，输入即筛选 ----------
+    let models = [];
+    const pick = card.querySelector('.model-pick');
+    const hasKey = () => !!card.querySelector('[name=apiKey]')?.value.trim() && !['mock', 'local'].includes(card.querySelector('[name=provider]')?.value);
+    const closeMenu = () => pick?.querySelector('.model-menu')?.remove();
+    const openMenu = (filter = false) => {
+      if (!pick || !models.length) return;
+      closeMenu();
+      const input = pick.querySelector('[name=model]');
+      // 点击/聚焦时展示全部，输入时才按关键词筛选
+      const q = filter ? input.value.trim().toLowerCase() : '';
+      const shown = models.filter((m) => !q || m.id.toLowerCase().includes(q)).slice(0, 200);
+      const menu = document.createElement('div');
+      menu.className = 'model-menu';
+      menu.innerHTML = (shown.length ? shown.map((m) => `<button type="button" data-id="${esc(m.id)}" class="${m.id === input.value ? 'on' : ''}"><span>${esc(m.id)}</span>${m.match ? '' : '<span class="muted">其他用途</span>'}</button>`).join('') : '<div class="hint">没有匹配的模型，可直接输入模型名</div>');
+      menu.onmousedown = (e) => {
+        const b = e.target.closest('[data-id]');
+        if (!b) return;
+        e.preventDefault();
+        input.value = b.dataset.id;
+        closeMenu();
+      };
+      pick.appendChild(menu);
+      menu.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+    };
+    const fetchModels = async (auto) => {
+      if (!pick) return;
+      const tip = pick.querySelector('[data-mcount]');
+      const body = collect()[k];
+      tip.textContent = '正在从上游获取模型列表…';
+      try {
+        const r = await api(`/settings/models/${k}`, { method: 'POST', body });
+        models = r.models;
+        const matched = models.filter((m) => m.match).length;
+        tip.innerHTML = models.length ? `已从上游获取 <b>${models.length}</b> 个模型，其中 ${matched} 个适用于此用途` : '上游未返回模型';
+        if (!auto) openMenu();
+      } catch (err) {
+        models = [];
+        tip.innerHTML = `<span class="down">获取失败：${esc(err.message.slice(0, 80))}</span>，可直接手动输入模型名`;
+        if (!auto) throw err;
+      }
+    };
+    if (pick) {
+      const input = pick.querySelector('[name=model]');
+      input.addEventListener('focus', () => openMenu());
+      input.addEventListener('input', () => openMenu(true));
+      input.addEventListener('blur', () => setTimeout(closeMenu, 120));
+      input.addEventListener('keydown', (e) => e.key === 'Escape' && closeMenu());
+      pick.querySelector('[data-fetch]').onclick = (e) => withLoading(e.currentTarget, () => fetchModels(false));
+      card.querySelector('[name=apiKey]')?.addEventListener('change', () => hasKey() && fetchModels(true));
+      card.querySelector('[name=baseUrl]')?.addEventListener('change', () => hasKey() && fetchModels(true));
+      if (hasKey()) setTimeout(() => fetchModels(true));
+    }
     const collect = () => {
       const body = {};
       $$('[name]', card).forEach((el) => (body[el.name] = el.type === 'number' ? Number(el.value) : el.value.trim()));
@@ -96,9 +152,9 @@ POST ${location.origin}/api/tools/{name}</div><a class="btn sm ghost mt" href="#
       refreshMode();
       try {
         const r = await api(`/settings/test/${k}`, { method: 'POST' });
-        res.innerHTML = `<span class="up">✓ ${esc(String(r.message).slice(0, 60))}（${r.ms}ms）</span>`;
+        res.innerHTML = `<span class="up">${icon('check', 13)} ${esc(String(r.message).slice(0, 60))}（${r.ms}ms）</span>`;
       } catch (err) {
-        res.innerHTML = `<span class="down">✗ ${esc(err.message.slice(0, 80))}</span>`;
+        res.innerHTML = `<span class="down">${icon('x', 13)} ${esc(err.message.slice(0, 80))}</span>`;
       }
     });
   });

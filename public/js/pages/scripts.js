@@ -1,6 +1,6 @@
-import { api, icon, esc, toast, withLoading, $, $$, empty, copy, timeAgo, confirmBox } from '../lib.js';
+import { api, icon, esc, toast, withLoading, $, $$, empty, copy, timeAgo, confirmBox, monogram } from '../lib.js';
 
-const STYLE_META = { pain: '😩', unboxing: '📦', compare: '🔁', story: '🎭', tutorial: '🧑‍🏫', live: '🎙️' };
+const STYLE_META = { pain: '', unboxing: '', compare: '', story: '', tutorial: '', live: '' };
 
 export async function render(view, [first, second]) {
   const [{ items: products }, sd] = await Promise.all([api('/products'), api('/scripts')]);
@@ -12,8 +12,8 @@ export async function render(view, [first, second]) {
     <div class="col sticky">
       <div class="card card-pad col">
         <h3 style="font-size:15px">${icon('wand')} AI 写脚本</h3>
-        <label class="field">选择商品<select class="input" id="pid">${products.map((p) => `<option value="${p.id}" ${p.id === presetProduct ? 'selected' : ''}>${p.emoji} ${esc(p.nameCn)}（${p.score}分）</option>`).join('')}</select></label>
-        <div class="field">脚本风格<div class="preset-grid" id="styles">${Object.entries(sd.styles).map(([k, t]) => `<div class="preset ${k === style ? 'on' : ''}" data-k="${k}"><span class="e">${STYLE_META[k] || '🎬'}</span>${t.replace(/（.*）/, '')}</div>`).join('')}</div></div>
+        <label class="field">选择商品<select class="input" id="pid">${products.map((p) => `<option value="${p.id}" ${p.id === presetProduct ? 'selected' : ''}>${esc(p.nameCn)}（${p.score}分）</option>`).join('')}</select></label>
+        <div class="field">脚本风格<div class="preset-grid" id="styles">${Object.entries(sd.styles).map(([k, t]) => `<div class="preset ${k === style ? 'on' : ''}" data-k="${k}">${t.replace(/（.*）/, '')}</div>`).join('')}</div></div>
         <div class="grid g2">
           <label class="field">时长<select class="input" id="dur"><option value="15">15 秒</option><option value="20" selected>20 秒</option><option value="30">30 秒</option><option value="45">45 秒</option></select></label>
           <label class="field">口播语言<select class="input" id="lang"><option>English</option><option>中文</option><option>Español</option><option>Bahasa Indonesia</option><option>ภาษาไทย</option><option>Tiếng Việt</option></select></label>
@@ -31,7 +31,7 @@ export async function render(view, [first, second]) {
 
   function renderHist() {
     $('#hist', view).innerHTML = sd.items.length
-      ? sd.items.map((s) => `<div class="list-item ${s.id === current?.id ? 'on' : ''}" data-id="${s.id}"><span style="font-size:22px">${s.emoji || '🎬'}</span><div style="min-width:0;flex:1"><b class="small" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.title)}</b><span class="muted small">${esc(s.style || '')} · ${timeAgo(s.createdAt)}</span></div></div>`).join('')
+      ? sd.items.map((s) => `<div class="list-item ${s.id === current?.id ? 'on' : ''}" data-id="${s.id}">${monogram(s.productName, 'sm')}<div style="min-width:0;flex:1"><b class="small" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.title)}</b><span class="muted small">${esc(s.style || '')} · ${timeAgo(s.createdAt)}</span></div></div>`).join('')
       : '<p class="muted small" style="padding:10px">暂无</p>';
     $$('#hist .list-item', view).forEach((el) => (el.onclick = () => { current = sd.items.find((s) => s.id === el.dataset.id); renderHist(); renderViewer(); }));
   }
@@ -41,15 +41,15 @@ export async function render(view, [first, second]) {
     if (!current) return (box.innerHTML = `<div class="card">${empty('选择商品和风格，让 AI 为你创作第一条爆款脚本', 'script')}</div>`);
     const s = current;
     box.innerHTML = `<div class="card">
-      <div class="card-head"><h3>${s.emoji || '🎬'} ${esc(s.title)}</h3><div class="spacer"></div>
+      <div class="card-head"><h3>${esc(s.title)}</h3><div class="spacer"></div>
         <button class="icon-btn" id="cp" title="复制脚本">${icon('copy', 16)}</button>
         <button class="icon-btn" id="dl" title="导出 TXT">${icon('download', 16)}</button>
         <button class="icon-btn danger" id="rm" title="删除">${icon('trash', 16)}</button></div>
       <div class="card-pad col">
-        <div class="row"><span class="chip">${esc(s.style)}</span><span class="chip">${s.duration} 秒</span><span class="chip">${esc(s.language)}</span><span class="chip">${s.scenes.length} 个镜头</span>${s.bgm ? `<span class="chip">🎵 ${esc(s.bgm)}</span>` : ''}</div>
-        <div class="hit" style="background:var(--grad-soft)"><div class="muted small">⚡ 黄金 3 秒钩子</div><div style="font-size:18px;font-weight:700">${esc(s.hook)}</div></div>
-        ${s.scenes.map((sc) => `<div class="scene"><div class="scene-n">${sc.n}<small>${esc(sc.time || '')}</small></div><div><div class="row"><span class="chip">${esc(sc.shot || '')}</span><span class="chip">🎥 ${esc(sc.motion || '')}</span></div>
-          <div class="vo">🗣️ ${esc(sc.voiceover)}</div><div class="meta">📝 字幕：${esc(sc.caption)}</div><div class="meta">🎞️ 画面：${esc(sc.visual)}</div><div class="meta" style="font-family:Consolas,monospace;font-size:11.5px">🖼️ ${esc(sc.imagePrompt || '')}</div></div></div>`).join('')}
+        <div class="row"><span class="chip">${esc(s.style)}</span><span class="chip">${s.duration} 秒</span><span class="chip">${esc(s.language)}</span><span class="chip">${s.scenes.length} 个镜头</span>${s.bgm ? `<span class="chip">配乐 · ${esc(s.bgm)}</span>` : ''}</div>
+        <div class="hit accent"><div class="muted small">黄金 3 秒钩子</div><div style="font-size:18px;font-weight:700">${esc(s.hook)}</div></div>
+        ${s.scenes.map((sc) => `<div class="scene"><div class="scene-n">${sc.n}<small>${esc(sc.time || '')}</small></div><div><div class="row"><span class="chip">${esc(sc.shot || '')}</span><span class="chip">运镜 · ${esc(sc.motion || '')}</span></div>
+          <div class="vo">${esc(sc.voiceover)}</div><div class="meta">字幕：${esc(sc.caption)}</div><div class="meta">画面：${esc(sc.visual)}</div><div class="meta" style="font-family:Consolas,monospace;font-size:11.5px">${esc(sc.imagePrompt || '')}</div></div></div>`).join('')}
         <div class="grid g2"><div class="hit"><div class="muted small">发布文案</div>${esc(s.caption)}</div><div class="hit"><div class="muted small">CTA</div>${esc(s.cta)}</div></div>
         <div class="tag-list">${(s.hashtags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
         <div class="row" style="justify-content:flex-end;border-top:1px solid var(--line);padding-top:14px">

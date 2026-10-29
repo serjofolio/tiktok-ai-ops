@@ -1,12 +1,12 @@
 import { api, icon, esc, toast, withLoading, $, $$, empty, modal, confirmBox, copy } from '../lib.js';
 
 const STYLES = [
-  ['📸', '商业摄影', 'commercial product photography, studio lighting, ultra detailed, 8k'],
-  ['🏠', '生活场景', 'lifestyle scene, cozy modern home, natural window light, authentic UGC feel'],
+  ['', '商业摄影', 'commercial product photography, studio lighting, ultra detailed, 8k'],
+  ['', '生活场景', 'lifestyle scene, cozy modern home, natural window light, authentic UGC feel'],
   ['⬜', '极简白底', 'minimalist pure white background, soft shadow, e-commerce main image'],
-  ['🌃', '霓虹潮酷', 'neon cyberpunk lighting, vibrant pink and cyan glow, trendy'],
-  ['🌸', '日系清新', 'japanese soft pastel aesthetic, airy, film grain, fresh'],
-  ['🧊', '3D 渲染', '3d render, octane, glossy materials, floating product, colorful backdrop'],
+  ['', '霓虹潮酷', 'neon cyberpunk lighting, vibrant pink and cyan glow, trendy'],
+  ['', '日系清新', 'japanese soft pastel aesthetic, airy, film grain, fresh'],
+  ['', '3D 渲染', '3d render, octane, glossy materials, floating product, colorful backdrop'],
 ];
 const SIZES = [['1024x1792', '9:16 竖版'], ['1024x1024', '1:1 方图'], ['1792x1024', '16:9 横版']];
 
@@ -17,7 +17,7 @@ export async function render(view) {
   view.innerHTML = `<div class="split">
     <div class="card card-pad col sticky">
       <h3 style="font-size:15px">${icon('sparkles')} 文生图</h3>
-      <label class="field">从商品快速填充<select class="input" id="pp"><option value="">— 选择商品 —</option>${products.map((p) => `<option value="${p.id}">${p.emoji} ${esc(p.nameCn)}</option>`).join('')}</select></label>
+      <label class="field">从商品快速填充<select class="input" id="pp"><option value="">— 选择商品 —</option>${products.map((p) => `<option value="${p.id}">${esc(p.nameCn)}</option>`).join('')}</select></label>
       <label class="field">提示词（建议英文）<textarea class="input" id="prompt" rows="5" placeholder="A heatless curling headband on a marble vanity, soft morning sunlight, close-up product shot"></textarea></label>
       <div class="field">风格<div class="preset-grid" id="st">${STYLES.map((s, i) => `<div class="preset ${i === 0 ? 'on' : ''}" data-i="${i}"><span class="e">${s[0]}</span>${s[1]}</div>`).join('')}</div></div>
       <div class="grid g2">
@@ -39,7 +39,7 @@ export async function render(view) {
   function renderRef() {
     const box = $('#ref', view);
     $$('.ref-prev', box).forEach((x) => x.remove());
-    if (reference) box.insertAdjacentHTML('beforeend', `<span class="chip ref-prev"><img src="${reference}" style="width:22px;height:22px;border-radius:5px;object-fit:cover">已选参考图 <a href="javascript:;" id="clr">✕</a></span>`);
+    if (reference) box.insertAdjacentHTML('beforeend', `<span class="chip ref-prev"><img src="${reference}" style="width:22px;height:22px;border-radius:5px;object-fit:cover">已选参考图 <a href="javascript:;" id="clr"></a></span>`);
     const clr = $('#clr', box);
     if (clr) clr.onclick = () => { reference = ''; renderRef(); };
   }

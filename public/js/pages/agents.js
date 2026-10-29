@@ -1,5 +1,8 @@
 import { api, icon, esc, toast, withLoading, $, $$, md, modal, confirmBox, timeAgo, copy } from '../lib.js';
 
+// 智能体头像：取名称首字（英文取首字母）
+const ini = (a) => esc((String(a?.name || '?').match(/[\u4e00-\u9fa5]|[A-Za-z]/) || ['?'])[0].toUpperCase());
+
 const SUGGEST = ['推荐 5 个宠物类潜力爆品', '分析评分最高的美妆商品', '给厨房类爆品写一个开箱脚本', '为最火的家居商品生成一张海报图', 'TikTok Shop 有哪些违规风险？', '启动一键全流程工作流'];
 
 export async function render(view, [agentId]) {
@@ -25,7 +28,7 @@ export async function render(view, [agentId]) {
   </div>`;
 
   function renderAgents() {
-    $('#agents', view).innerHTML = agents.map((a) => `<div class="agent-item ${a.id === agent?.id ? 'on' : ''}" data-id="${a.id}"><div class="avatar">${a.avatar}</div><div style="min-width:0;flex:1"><b>${esc(a.name)}</b><div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.type === 'external' ? '🔗 外部智能体' : esc(a.role)}</div></div></div>`).join('');
+    $('#agents', view).innerHTML = agents.map((a) => `<div class="agent-item ${a.id === agent?.id ? 'on' : ''}" data-id="${a.id}"><div class="avatar">${ini(a)}</div><div style="min-width:0;flex:1"><b>${esc(a.name)}</b><div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.type === 'external' ? '外部智能体' : esc(a.role)}</div></div></div>`).join('');
     $$('#agents .agent-item', view).forEach((el) => (el.onclick = () => { agent = agents.find((a) => a.id === el.dataset.id); session = null; history.replaceState(null, '', `#/agents/${agent.id}`); renderAgents(); loadSessions(); }));
   }
 
@@ -50,14 +53,14 @@ export async function render(view, [agentId]) {
   }
 
   function renderHead() {
-    $('#chat-head', view).innerHTML = `<div class="avatar">${agent.avatar}</div><div style="min-width:0"><h3>${esc(agent.name)}</h3><div class="muted small">${esc(agent.description || agent.role)}</div></div><div class="spacer"></div>
-      <div class="row" style="gap:4px">${agent.type === 'external' ? `<span class="chip">🔗 ${esc(agent.endpoint || '')}</span>` : (agent.tools || []).map((t) => `<span class="chip" title="${esc(tools.find((x) => x.name === t)?.description || '')}">${esc(tools.find((x) => x.name === t)?.title || t)}</span>`).join('')}</div>
+    $('#chat-head', view).innerHTML = `<div class="avatar">${ini(agent)}</div><div style="min-width:0"><h3>${esc(agent.name)}</h3><div class="muted small">${esc(agent.description || agent.role)}</div></div><div class="spacer"></div>
+      <div class="row" style="gap:4px">${agent.type === 'external' ? `<span class="chip">${esc(agent.endpoint || '')}</span>` : (agent.tools || []).map((t) => `<span class="chip" title="${esc(tools.find((x) => x.name === t)?.description || '')}">${esc(tools.find((x) => x.name === t)?.title || t)}</span>`).join('')}</div>
       <button class="icon-btn" id="edit-agent" title="编辑智能体">${icon('settings', 16)}</button>`;
     $('#edit-agent', view).onclick = () => agentDialog(agent);
   }
 
   function msgHTML(m, all) {
-    if (m.role === 'user') return `<div class="msg user"><div class="avatar">🧑</div><div class="bubble">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`;
+    if (m.role === 'user') return `<div class="msg user"><div class="avatar me">我</div><div class="bubble">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`;
     if (m.role === 'tool') return '';
     if (m.toolCalls?.length) {
       return m.toolCalls.map((c) => {
@@ -65,18 +68,18 @@ export async function render(view, [agentId]) {
         let pretty = res?.content || '';
         try { pretty = JSON.stringify(JSON.parse(pretty), null, 2); } catch {}
         const t = tools.find((x) => x.name === c.name);
-        return `<div class="msg ai"><div class="avatar" style="width:42px;background:transparent;border:0">${icon('zap', 18)}</div><details class="tool-call"><summary>${res ? '✅' : '<span class="spinner"></span>'} 调用工具 <b>${esc(t?.title || c.name)}</b> <code>${esc(JSON.stringify(c.args)).slice(0, 90)}</code></summary><pre>${esc(pretty)}</pre></details></div>`;
-      }).join('') + (m.content ? `<div class="msg ai"><div class="avatar">${agent.avatar}</div><div class="bubble md">${md(m.content)}</div></div>` : '');
+        return `<div class="msg ai"><div class="avatar" style="width:42px;background:transparent;border:0">${icon('zap', 18)}</div><details class="tool-call"><summary>${res ? icon('check', 14) : '<span class="spinner"></span>'} 调用工具 <b>${esc(t?.title || c.name)}</b> <code>${esc(JSON.stringify(c.args)).slice(0, 90)}</code></summary><pre>${esc(pretty)}</pre></details></div>`;
+      }).join('') + (m.content ? `<div class="msg ai"><div class="avatar">${ini(agent)}</div><div class="bubble md">${md(m.content)}</div></div>` : '');
     }
-    return `<div class="msg ai"><div class="avatar">${agent.avatar}</div><div class="bubble md">${md(m.content)}<div class="row" style="justify-content:flex-end;margin-top:6px"><button class="icon-btn" data-cp="${esc(m.content)}" style="width:26px;height:26px" title="复制">${icon('copy', 13)}</button></div></div></div>`;
+    return `<div class="msg ai"><div class="avatar">${ini(agent)}</div><div class="bubble md">${md(m.content)}<div class="row" style="justify-content:flex-end;margin-top:6px"><button class="icon-btn" data-cp="${esc(m.content)}" style="width:26px;height:26px" title="复制">${icon('copy', 13)}</button></div></div></div>`;
   }
 
   function renderMsgs(pending) {
     const box = $('#msgs', view);
     const msgs = session?.messages || [];
     box.innerHTML = msgs.length || pending
-      ? msgs.map((m) => msgHTML(m, msgs)).join('') + (pending ? `<div class="msg user"><div class="avatar">🧑</div><div class="bubble">${esc(pending).replace(/\n/g, '<br>')}</div></div><div class="msg ai"><div class="avatar">${agent.avatar}</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span> <span class="muted small">思考中，可能会调用多个工具…</span></div></div>` : '')
-      : `<div class="empty" style="margin:auto">${`<div class="avatar" style="width:72px;height:72px;font-size:38px">${agent.avatar}</div>`}<h3 style="color:var(--text)">我是 ${esc(agent.name)}</h3><p style="max-width:440px">${esc(agent.description || '')}</p></div>`;
+      ? msgs.map((m) => msgHTML(m, msgs)).join('') + (pending ? `<div class="msg user"><div class="avatar me">我</div><div class="bubble">${esc(pending).replace(/\n/g, '<br>')}</div></div><div class="msg ai"><div class="avatar">${ini(agent)}</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span> <span class="muted small">思考中，可能会调用多个工具…</span></div></div>` : '')
+      : `<div class="empty" style="margin:auto">${`<div class="avatar" style="width:64px;height:64px;font-size:26px">${ini(agent)}</div>`}<h3 style="color:var(--text)">我是 ${esc(agent.name)}</h3><p style="max-width:440px">${esc(agent.description || '')}</p></div>`;
     $$('[data-cp]', box).forEach((b) => (b.onclick = () => copy(b.dataset.cp)));
     box.scrollTop = box.scrollHeight;
     $('#sug', view).innerHTML = msgs.length ? '' : SUGGEST.map((s) => `<span class="chip click">${s}</span>`).join('');
@@ -113,11 +116,11 @@ export async function render(view, [agentId]) {
 
   function agentDialog(a) {
     const isNew = !a;
-    a = a || { name: '', avatar: '🤖', role: '', description: '', systemPrompt: '你是一名 TikTok 跨境电商运营专家。', tools: tools.map((t) => t.name), kbIds: kbs.map((k) => k.id), type: 'builtin' };
+    a = a || { name: '', avatar: '', role: '', description: '', systemPrompt: '你是一名 TikTok 跨境电商运营专家。', tools: tools.map((t) => t.name), kbIds: kbs.map((k) => k.id), type: 'builtin' };
     modal({
       title: isNew ? '新建智能体' : `编辑 ${esc(a.name)}`, wide: true,
       body: `<form id="af" class="col">
-        <div class="grid" style="grid-template-columns:90px 1fr 1fr"><label class="field">头像<input class="input" name="avatar" value="${esc(a.avatar)}" style="text-align:center;font-size:20px"></label><label class="field">名称 *<input class="input" name="name" value="${esc(a.name)}" placeholder="如：直播运营 Mia"></label><label class="field">角色<input class="input" name="role" value="${esc(a.role)}" placeholder="直播运营专家"></label></div>
+        <div class="grid g2"><label class="field">名称 *<input class="input" name="name" value="${esc(a.name)}" placeholder="如：直播运营 Mia"></label><label class="field">角色<input class="input" name="role" value="${esc(a.role)}" placeholder="直播运营专家"></label></div>
         <label class="field">简介<input class="input" name="description" value="${esc(a.description)}"></label>
         <div class="field">接入方式<div class="seg" id="atype"><button type="button" data-t="builtin" class="${a.type !== 'external' ? 'on' : ''}">平台内置（可调用工具）</button><button type="button" data-t="external" class="${a.type === 'external' ? 'on' : ''}">外部智能体（OpenAI 兼容端点）</button></div></div>
         <div id="ext" class="grid g3" style="${a.type === 'external' ? '' : 'display:none'}"><label class="field">Base URL<input class="input" name="endpoint" value="${esc(a.endpoint || '')}" placeholder="https://api.dify.ai/v1"></label><label class="field">API Key<input class="input" name="apiKey" type="password" placeholder="${a.hasKey ? '已保存（留空不修改）' : 'sk-...'}"></label><label class="field">模型名<input class="input" name="model" value="${esc(a.model || '')}" placeholder="可选"></label>
@@ -125,7 +128,7 @@ export async function render(view, [agentId]) {
         <label class="field">系统提示词<textarea class="input" name="systemPrompt" rows="4">${esc(a.systemPrompt)}</textarea></label>
         <div id="intern" style="${a.type === 'external' ? 'display:none' : ''}" class="col">
           <div class="field">可调用的工具<div class="switch-grid">${tools.map((t) => `<label class="check hit" style="padding:8px 10px"><input type="checkbox" name="tool" value="${t.name}" ${a.tools?.includes(t.name) ? 'checked' : ''}><span><b>${esc(t.title)}</b><br><span class="muted small">${esc(t.description)}</span></span></label>`).join('')}</div></div>
-          <div class="field">绑定知识库<div class="row">${kbs.map((k) => `<label class="check chip"><input type="checkbox" name="kb" value="${k.id}" ${a.kbIds?.includes(k.id) ? 'checked' : ''}>${k.icon} ${esc(k.name)}</label>`).join('')}</div></div>
+          <div class="field">绑定知识库<div class="row">${kbs.map((k) => `<label class="check chip"><input type="checkbox" name="kb" value="${k.id}" ${a.kbIds?.includes(k.id) ? 'checked' : ''}>${esc(k.name)}</label>`).join('')}</div></div>
         </div></form>`,
       footer: `${!isNew ? `<button class="btn ghost" id="del" style="color:var(--err)">${icon('trash', 15)}删除</button><div class="spacer"></div>` : ''}<button class="btn ghost" data-close>取消</button><button class="btn" id="save">保存</button>`,
       onMount(el, close) {
@@ -175,7 +178,7 @@ export async function render(view, [agentId]) {
 function apiDoc() {
   const base = location.origin;
   modal({
-    title: '🔗 外部 Agent 接入', wide: true,
+    title: '外部 Agent 接入', wide: true,
     body: `<div class="col"><p class="text-2" style="margin:0">平台的全部能力都以 HTTP 工具形式开放，可被 <b>Dify、Coze、n8n、LangChain、Claude / OpenAI Function Calling</b> 等任意 Agent 框架调用；反过来也可以在「新建智能体」中把外部智能体接入本平台对话。</p>
       <h4>1. 获取工具清单（JSON Schema）</h4><div class="code">GET ${base}/api/tools</div>
       <h4>2. 调用工具</h4><div class="code">POST ${base}/api/tools/search_products

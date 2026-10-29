@@ -1,5 +1,5 @@
 // 应用外壳：导航、路由、主题
-import { icon, api, $ } from './lib.js';
+import { icon, api, $, countUp } from './lib.js';
 
 const ROUTES = [
   { group: '工作台' },
@@ -24,14 +24,41 @@ nav.innerHTML = ROUTES.map((r) =>
 $('#menu-btn').innerHTML = icon('menu');
 $('#menu-btn').onclick = () => $('#app').classList.toggle('nav-open');
 
-function setThemeIcon() {
-  $('#theme-btn').innerHTML = icon(document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun');
+// ---------- 导航滑块：激活项背后的墨色块弹性滑动 ----------
+const indicator = document.createElement('div');
+indicator.className = 'nav-indicator';
+nav.prepend(indicator);
+function moveIndicator() {
+  const a = nav.querySelector('a.active');
+  if (!a) return (indicator.style.opacity = 0);
+  indicator.style.opacity = 1;
+  indicator.style.height = `${a.offsetHeight}px`;
+  indicator.style.transform = `translateY(${a.offsetTop}px)`;
 }
-$('#theme-btn').onclick = () => {
-  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = t;
-  try { localStorage.setItem('theme', t); } catch {}
-  setThemeIcon();
+window.addEventListener('resize', moveIndicator);
+
+// ---------- 主题：圆形扩散切换 ----------
+let themeTransition = null;
+function setThemeIcon() {
+  $('#theme-btn').innerHTML = icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon');
+}
+$('#theme-btn').onclick = (e) => {
+  const apply = () => {
+    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('theme', t); } catch {}
+    setThemeIcon();
+  };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!document.startViewTransition || reduce || themeTransition) return apply();
+  document.documentElement.style.setProperty('--vx', `${e.clientX}px`);
+  document.documentElement.style.setProperty('--vy', `${e.clientY}px`);
+  // 过渡被中断（连续点击、页面不可见等）时仍保证主题切换生效
+  let applied = false;
+  themeTransition = document.startViewTransition(() => { applied = true; apply(); });
+  themeTransition.updateCallbackDone.catch(() => !applied && apply());
+  themeTransition.ready.catch(() => {});
+  themeTransition.finished.catch(() => {}).finally(() => (themeTransition = null));
 };
 setThemeIcon();
 
@@ -47,22 +74,33 @@ export async function refreshMode() {
   } catch {}
 }
 
+// 新渲染出的 [data-count] 数字自动滚动
+new MutationObserver(() => countUp($('#view'))).observe($('#view'), { childList: true, subtree: true });
+
+const progress = document.createElement('div');
+progress.className = 'topbar-progress';
+$('.topbar').appendChild(progress);
+
 let cleanup = null;
 async function route() {
   const [, path = 'dashboard', ...rest] = location.hash.split('/');
   const r = ROUTES.find((x) => x.path === path) || ROUTES[1];
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.path === r.path));
+  moveIndicator();
   $('#page-title').textContent = r.title;
   $('#page-sub').textContent = r.sub;
-  document.title = `${r.title} · TikTok AI 运营智能体`;
+  document.title = `${r.title} · TikTok AI 运营台`;
   $('#app').classList.remove('nav-open');
   if (typeof cleanup === 'function') cleanup();
   cleanup = null;
-  const view = $('#view');
+  // 每次路由渲染到新的容器：上一个页面的迟到渲染只会写入已脱离文档的节点
+  const view = document.createElement('div');
+  view.className = 'page';
+  $('#view').replaceChildren(view);
+  progress.className = 'topbar-progress';
+  void progress.offsetWidth;
+  progress.classList.add('go');
   view.innerHTML = '<div class="skeleton" style="height:160px"></div>';
-  view.style.animation = 'none';
-  void view.offsetHeight;
-  view.style.animation = '';
   try {
     const mod = await import(`./pages/${r.path}.js`);
     cleanup = await mod.render(view, rest.map(decodeURIComponent));
@@ -70,6 +108,7 @@ async function route() {
     console.error(e);
     view.innerHTML = `<div class="card card-pad"><h3>页面加载失败</h3><p class="muted">${e.message}</p></div>`;
   }
+  progress.classList.add('done');
 }
 
 window.addEventListener('hashchange', route);

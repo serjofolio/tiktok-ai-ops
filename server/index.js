@@ -218,6 +218,23 @@ app.put('/api/settings', h(async (req, res) => {
   settings.update(req.body);
   res.json(settings.publicView());
 }));
+// 从上游服务商自动获取模型列表；body 可携带表单中尚未保存的 baseUrl/apiKey（脱敏 key 回退到已保存值）
+app.post('/api/settings/models/:kind', h(async (req, res) => {
+  const kind = req.params.kind;
+  const saved = settings.get()[kind];
+  if (!saved) throw Object.assign(new Error('未知类型'), { status: 400 });
+  const body = req.body || {};
+  const cfg = { ...saved, ...body };
+  if (!body.apiKey || String(body.apiKey).includes('••')) cfg.apiKey = saved.apiKey;
+  if (['mock', 'local'].includes(cfg.provider)) return res.json({ models: [] });
+  if (cfg.provider === 'ark' || cfg.provider === 'generic') cfg.provider = 'openai';
+  try {
+    res.json({ models: await llm.listModels(cfg, kind) });
+  } catch (e) {
+    throw Object.assign(new Error(`上游返回错误：${e.message}`), { status: 502 });
+  }
+}));
+
 app.post('/api/settings/test/:kind', h(async (req, res) => {
   const kind = req.params.kind;
   const t0 = Date.now();

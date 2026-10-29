@@ -172,4 +172,36 @@ async function test(cfg) {
   return r.text;
 }
 
-module.exports = { isMock, chat, complete, completeJSON, safeJSON, test, http, trimSlash };
+// ---------- 从上游拉取可用模型列表 ----------
+const KIND_PATTERNS = {
+  embedding: /embed|bge|m3e|gte-|e5-/i,
+  image: /image|seedream|kolors|flux|dall-?e|stable-?diffusion|sdxl|cogview|wanx|imagen|midjourney|recraft/i,
+  video: /video|seedance|kling|wan2|wan-|hailuo|veo|sora|runway|minimax-video|cogvideo|vidu|pixverse/i,
+};
+
+/**
+ * 调用上游 /models 接口获取模型列表，并把与用途匹配的模型排在前面
+ * @param {object} cfg 服务商配置（provider/baseUrl/apiKey）
+ * @param {'llm'|'embedding'|'image'|'video'} kind 用途
+ */
+async function listModels(cfg, kind) {
+  if (!cfg.apiKey) throw new Error('请先填写 API Key');
+  let items;
+  if (cfg.provider === 'anthropic') {
+    const data = await http(`${trimSlash(cfg.baseUrl || 'https://api.anthropic.com')}/v1/models?limit=1000`, {
+      headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+    }, 20000);
+    items = (data.data || []).map((m) => ({ id: m.id, name: m.display_name || m.id, created: m.created_at }));
+  } else {
+    const data = await http(`${trimSlash(cfg.baseUrl)}/models`, { headers: { Authorization: `Bearer ${cfg.apiKey}` } }, 20000);
+    const list = Array.isArray(data) ? data : data.data || data.models || [];
+    items = list.map((m) => (typeof m === 'string' ? { id: m } : { id: m.id || m.name || m.model, name: m.display_name || m.name, owner: m.owned_by, created: m.created }));
+  }
+  items = items.filter((m) => m.id);
+  const others = Object.entries(KIND_PATTERNS).filter(([k]) => k !== kind).map(([, re]) => re);
+  for (const m of items) m.match = KIND_PATTERNS[kind] ? KIND_PATTERNS[kind].test(m.id) : !others.some((re) => re.test(m.id));
+  items.sort((a, b) => b.match - a.match || a.id.localeCompare(b.id));
+  return items;
+}
+
+module.exports = { isMock, chat, complete, completeJSON, safeJSON, test, http, trimSlash, listModels };

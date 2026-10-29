@@ -208,20 +208,47 @@ export function copy(text) {
 }
 
 // 迷你折线图（SVG）
-export function sparkline(values, { w = 120, h = 36, color = 'var(--accent)' } = {}) {
+// 迷你折线图（SVG）：墨色折线入场描绘，末端点标出最新值
+export function sparkline(values, { w = 120, h = 36, color = 'var(--ink)' } = {}) {
   if (!values?.length) return '';
   const max = Math.max(...values), min = Math.min(...values);
-  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 3 - ((v - min) / (max - min || 1)) * (h - 6)]);
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 4 - ((v - min) / (max - min || 1)) * (h - 8)]);
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
-  const gid = 'sg' + Math.random().toString(36).slice(2, 8);
-  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${d}L${w},${h}L0,${h}Z" fill="url(#${gid})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const [lx, ly] = pts[pts.length - 1];
+  const up = values[values.length - 1] >= values[0];
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path class="area" d="${d}L${w},${h}L0,${h}Z" fill="${color}" fill-opacity=".06"/><path class="line" pathLength="1" d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle class="area" cx="${lx}" cy="${ly}" r="3" fill="${up ? 'var(--lime)' : 'var(--coral)'}" stroke="${color}" stroke-width="1.2"/></svg>`;
 }
 
 export const statusBadge = (s) => {
   const map = { done: ['完成', 'ok'], succeeded: ['完成', 'ok'], running: ['进行中', 'run'], queued: ['排队中', 'run'], pending: ['等待', 'muted'], failed: ['失败', 'err'], ready: ['就绪', 'ok'], indexing: ['索引中', 'run'] };
   const [t, c] = map[s] || [s, 'muted'];
-  return `<span class="badge badge-${c}">${c === 'run' ? '<i class="pulse"></i>' : ''}${t}</span>`;
+  return `<span class="badge badge-${c}">${t}</span>`;
 };
+
+// 字母方块：用英文名首字母代替 emoji 作为商品/智能体标识
+export function monogram(name, size = '') {
+  const words = String(name || '?').replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  const text = /[一-龥]/.test(words[0] || '') ? (words[0] || '?').slice(0, 2) : words.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return `<span class="mono-tile ${size}">${esc(text || '?')}</span>`;
+}
+
+// 数字滚动：为 [data-count] 元素做一次计数动画
+export function countUp(root = document) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of root.querySelectorAll('[data-count]:not([data-counted])')) {
+    el.dataset.counted = '1';
+    const target = Number(el.dataset.count) || 0;
+    const fmt = el.dataset.fmt === 'num' ? fmtNum : (n) => Math.round(n).toLocaleString();
+    if (reduce) { el.textContent = fmt(target); continue; }
+    const t0 = performance.now(), dur = 1100;
+    const tick = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      el.textContent = fmt(target * (1 - Math.pow(1 - p, 4)));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}
 
 export const empty = (text, ic = 'sparkles', action = '') =>
   `<div class="empty">${icon(ic, 40)}<p>${text}</p>${action}</div>`;

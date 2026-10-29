@@ -1,4 +1,4 @@
-import { api, icon, esc, toast, withLoading, $, $$, md, modal, confirmBox, timeAgo, empty, statusBadge, fmtNum } from '../lib.js';
+import { api, icon, esc, toast, withLoading, $, $$, md, modal, confirmBox, timeAgo, empty, statusBadge, fmtNum, monogram } from '../lib.js';
 
 export async function render(view, [kbId]) {
   let { items: kbs } = await api('/kbs');
@@ -8,12 +8,12 @@ export async function render(view, [kbId]) {
   view.innerHTML = `<div class="split" style="grid-template-columns:300px minmax(0,1fr)">
     <div class="card sticky"><div class="card-head"><h3>${icon('book')}知识库</h3><div class="spacer"></div><button class="btn sm" id="new-kb">${icon('plus', 14)}新建</button></div><div id="kbs" style="padding:8px"></div>
       <div class="card-pad small muted" style="border-top:1px solid var(--line)">支持 PDF、Word（docx）、Markdown、TXT、CSV、HTML、JSON。文档自动切片并建立 BM25 中文索引；配置 Embedding 模型后启用向量 + 关键词混合检索。</div></div>
-    <div class="col"><div class="seg" id="tabs" style="align-self:flex-start"><button data-t="docs" class="on">📄 文档管理</button><button data-t="ask">💬 知识问答</button><button data-t="search">🔍 检索测试</button></div><div id="pane"></div></div>
+    <div class="col"><div class="seg" id="tabs" style="align-self:flex-start"><button data-t="docs" class="on">文档管理</button><button data-t="ask">知识问答</button><button data-t="search">检索测试</button></div><div id="pane"></div></div>
   </div>`;
 
   function renderKbs() {
     $('#kbs', view).innerHTML = kbs.length
-      ? kbs.map((k) => `<div class="list-item ${k.id === kb?.id ? 'on' : ''}" data-id="${k.id}"><span style="font-size:24px">${k.icon || '📁'}</span><div style="flex:1;min-width:0"><b>${esc(k.name)}</b><div class="muted small">${k.docCount || 0} 文档 · ${k.chunkCount || 0} 切片</div></div></div>`).join('')
+      ? kbs.map((k) => `<div class="list-item ${k.id === kb?.id ? 'on' : ''}" data-id="${k.id}">${monogram(k.name, 'sm')}<div style="flex:1;min-width:0"><b>${esc(k.name)}</b><div class="muted small">${k.docCount || 0} 文档 · ${k.chunkCount || 0} 切片</div></div></div>`).join('')
       : '<p class="muted small" style="padding:10px">暂无知识库</p>';
     $$('#kbs .list-item', view).forEach((el) => (el.onclick = () => { kb = kbs.find((k) => k.id === el.dataset.id); history.replaceState(null, '', `#/knowledge/${kb.id}`); renderKbs(); renderPane(); }));
   }
@@ -35,7 +35,7 @@ export async function render(view, [kbId]) {
 
   async function docsPane(pane) {
     const { items: docs } = await api(`/kbs/${kb.id}/docs`);
-    pane.innerHTML = `<div class="card"><div class="card-head"><span style="font-size:22px">${kb.icon}</span><div><h3>${esc(kb.name)}</h3><div class="muted small">${esc(kb.description || '')}</div></div><div class="spacer"></div><button class="btn sm ghost" id="paste">${icon('file', 14)}粘贴文本</button><button class="icon-btn danger" id="rm-kb" title="删除知识库">${icon('trash', 15)}</button></div>
+    pane.innerHTML = `<div class="card"><div class="card-head">${monogram(kb.name)}<div><h3>${esc(kb.name)}</h3><div class="muted small">${esc(kb.description || '')}</div></div><div class="spacer"></div><button class="btn sm ghost" id="paste">${icon('file', 14)}粘贴文本</button><button class="icon-btn danger" id="rm-kb" title="删除知识库">${icon('trash', 15)}</button></div>
       <div class="card-pad col"><div class="dropzone" id="dz">${icon('upload', 30)}<p style="margin:6px 0 0">点击或拖拽文件到这里上传（可多选）</p><input type="file" id="file" multiple hidden accept=".pdf,.docx,.md,.txt,.csv,.html,.htm,.json"></div>
       ${docs.length ? `<div class="table-wrap"><table><thead><tr><th>文档</th><th>来源</th><th>字数</th><th>切片</th><th>索引</th><th>状态</th><th>时间</th><th></th></tr></thead><tbody>
       ${docs.map((d) => `<tr><td><a href="javascript:;" data-view="${d.id}"><b>${icon('file', 14)} ${esc(d.title)}</b></a></td><td><span class="chip">${{ builtin: '内置', upload: '上传', manual: '手动' }[d.source] || d.source}</span></td><td>${fmtNum(d.chars)}</td><td>${d.chunkCount || 0}</td><td>${d.embedded ? '<span class="badge badge-run">向量+BM25</span>' : '<span class="badge badge-muted">BM25</span>'}</td><td>${statusBadge(d.status)}</td><td class="muted small">${timeAgo(d.createdAt)}</td><td><button class="icon-btn danger" data-del="${d.id}">${icon('trash', 14)}</button></td></tr>`).join('')}</tbody></table></div>` : empty('知识库还没有文档')}
@@ -88,7 +88,7 @@ export async function render(view, [kbId]) {
     $$('[data-view]', pane).forEach((b) => (b.onclick = async () => {
       const d = docs.find((x) => x.id === b.dataset.view);
       const { items } = await api(`/docs/${d.id}/chunks`);
-      modal({ title: `📄 ${esc(d.title)} · ${items.length} 个切片`, wide: true, body: `<div class="col">${items.map((c) => `<div class="hit"><div class="hit-head"><span>#${c.index + 1}</span><span>${c.content.length} 字</span></div><div style="white-space:pre-wrap">${esc(c.content)}</div></div>`).join('')}</div>` });
+      modal({ title: `${esc(d.title)} · ${items.length} 个切片`, wide: true, body: `<div class="col">${items.map((c) => `<div class="hit"><div class="hit-head"><span>#${c.index + 1}</span><span>${c.content.length} 字</span></div><div style="white-space:pre-wrap">${esc(c.content)}</div></div>`).join('')}</div>` });
     }));
   }
 
@@ -99,7 +99,7 @@ export async function render(view, [kbId]) {
       const q = $('#q', pane).value.trim();
       if (!q) return;
       const r = await api('/rag/ask', { method: 'POST', body: { question: q, kbIds: [kb.id] } });
-      $('#ans', pane).innerHTML = `<div class="hit md" style="padding:18px">${md(r.answer)}</div>${r.citations.length ? `<h4 class="mt">📎 引用来源</h4><div class="col">${r.citations.map((c) => `<details class="hit"><summary style="cursor:pointer"><b>[${c.n}] 《${esc(c.docTitle)}》</b> <span class="muted small">相关度 ${c.score}</span></summary><div style="white-space:pre-wrap;margin-top:8px" class="text-2">${esc(c.content)}</div></details>`).join('')}</div>` : ''}`;
+      $('#ans', pane).innerHTML = `<div class="hit md" style="padding:18px">${md(r.answer)}</div>${r.citations.length ? `<h4 class="mt">引用来源</h4><div class="col">${r.citations.map((c) => `<details class="hit"><summary style="cursor:pointer"><b>[${c.n}] 《${esc(c.docTitle)}》</b> <span class="muted small">相关度 ${c.score}</span></summary><div style="white-space:pre-wrap;margin-top:8px" class="text-2">${esc(c.content)}</div></details>`).join('')}</div>` : ''}`;
     });
     $('#ask', pane).onclick = go;
     $('#q', pane).onkeydown = (e) => e.key === 'Enter' && !e.isComposing && go();
@@ -118,11 +118,11 @@ export async function render(view, [kbId]) {
 
   $('#new-kb', view).onclick = () => modal({
     title: '新建知识库',
-    body: `<div class="col"><div class="grid" style="grid-template-columns:80px 1fr"><label class="field">图标<input class="input" id="ic" value="📁" style="text-align:center;font-size:18px"></label><label class="field">名称<input class="input" id="n" placeholder="如：产品资料库"></label></div><label class="field">描述<input class="input" id="d" placeholder="用途说明"></label></div>`,
+    body: `<div class="col"><label class="field">名称<input class="input" id="n" placeholder="如：产品资料库"></label><label class="field">描述<input class="input" id="d" placeholder="用途说明"></label></div>`,
     footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="ok">创建</button>`,
     onMount(el, close) {
       $('#ok', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const k = await api('/kbs', { method: 'POST', body: { name: $('#n', el).value, description: $('#d', el).value, icon: $('#ic', el).value } });
+        const k = await api('/kbs', { method: 'POST', body: { name: $('#n', el).value, description: $('#d', el).value, icon: '' } });
         kb = k;
         await refreshKbs();
         renderPane();

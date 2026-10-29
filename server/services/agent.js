@@ -148,21 +148,21 @@ async function mockAgent(agent, text, push) {
 
 function summarize(agent, text, results) {
   if (!results.length)
-    return `你好，我是 ${agent.name}（${agent.role}）。我可以帮你：\n\n- 🔎 **选品**：例如「推荐 5 个宠物类潜力爆品」\n- 📊 **分析**：例如「分析一下评分最高的美妆商品」\n- 🎬 **写脚本**：例如「给厨房类爆品写一个开箱脚本」\n- 🖼️ **生成图片**：例如「为最火的家居商品生成一张海报图」\n- 📚 **知识问答**：例如「TikTok 有哪些违规风险？」\n- ⚡ **一键工作流**：例如「启动一键全流程」\n\n> 当前为离线演示模式，配置大模型后可自由对话。`;
+    return `你好，我是 ${agent.name}（${agent.role}）。我可以帮你：\n\n- **选品**：例如「推荐 5 个宠物类潜力爆品」\n- **分析**：例如「分析一下评分最高的美妆商品」\n- **写脚本**：例如「给厨房类爆品写一个开箱脚本」\n- **生成图片**：例如「为最火的家居商品生成一张海报图」\n- **知识问答**：例如「TikTok 有哪些违规风险？」\n- **一键工作流**：例如「启动一键全流程」\n\n> 当前为离线演示模式，配置大模型后可自由对话。`;
   const parts = [];
   for (const [name, r] of results) {
-    if (r?.error) parts.push(`⚠️ ${TOOLS[name].title}失败：${r.error}`);
+    if (r?.error) parts.push(`${TOOLS[name].title}失败：${r.error}`);
     else if (name === 'search_products')
-      parts.push(`### 🔎 潜力商品 Top ${r.length}\n\n| 商品 | 品类 | 价格 | 7日销量 | 增长 | 评分 |\n|---|---|---|---|---|---|\n${r.map((p) => `| ${p.nameCn} | ${p.category} | $${p.price} | ${p.sales7d.toLocaleString()} | ${p.salesGrowth}% | **${p.score}** ${p.grade} |`).join('\n')}`);
+      parts.push(`### 潜力商品 Top ${r.length}\n\n| 商品 | 品类 | 价格 | 7日销量 | 增长 | 评分 |\n|---|---|---|---|---|---|\n${r.map((p) => `| ${p.nameCn} | ${p.category} | $${p.price} | ${p.sales7d.toLocaleString()} | ${p.salesGrowth}% | **${p.score}** ${p.grade} |`).join('\n')}`);
     else if (name === 'analyze_product')
-      parts.push(`### 📊 选品分析：${r.product}（${r.verdict}）\n\n${r.summary}\n\n**核心卖点**\n${r.sellingPoints.map((s) => `- ${s}`).join('\n')}\n\n**建议动作**\n${r.actions.map((s) => `- ${s}`).join('\n')}`);
+      parts.push(`### 选品分析：${r.product}（${r.verdict}）\n\n${r.summary}\n\n**核心卖点**\n${r.sellingPoints.map((s) => `- ${s}`).join('\n')}\n\n**建议动作**\n${r.actions.map((s) => `- ${s}`).join('\n')}`);
     else if (name === 'search_knowledge')
-      parts.push(`### 📚 知识库要点\n\n${r.slice(0, 3).map((h) => `- **《${h.doc}》** ${h.content.replace(/\n+/g, ' ').slice(0, 140)}…`).join('\n') || '未检索到相关内容'}`);
+      parts.push(`### 知识库要点\n\n${r.slice(0, 3).map((h) => `- **《${h.doc}》** ${h.content.replace(/\n+/g, ' ').slice(0, 140)}…`).join('\n') || '未检索到相关内容'}`);
     else if (name === 'write_script')
-      parts.push(`### 🎬 脚本：${r.title}\n\n**钩子：** ${r.hook}\n\n${r.scenes.map((s) => `${s.n}. \`${s.time}\` **${s.shot}** — ${s.voiceover}`).join('\n')}\n\n${r.hashtags.join(' ')}\n\n> 完整脚本已保存到「脚本工坊」`);
-    else if (name === 'generate_image') parts.push(`### 🖼️ 图片已生成\n\n![image](${r.url})`);
-    else if (name === 'generate_video') parts.push(`### 🎞️ 视频任务已提交（${r.videoId}），${r.tip}`);
-    else if (name === 'run_workflow') parts.push(`### ⚡ 工作流已启动\n\n运行 ID：\`${r.runId}\`，${r.tip}`);
+      parts.push(`### 脚本：${r.title}\n\n**钩子：** ${r.hook}\n\n${r.scenes.map((s) => `${s.n}. \`${s.time}\` **${s.shot}** — ${s.voiceover}`).join('\n')}\n\n${r.hashtags.join(' ')}\n\n> 完整脚本已保存到「脚本工坊」`);
+    else if (name === 'generate_image') parts.push(`### 图片已生成\n\n![image](${r.url})`);
+    else if (name === 'generate_video') parts.push(`### 视频任务已提交（${r.videoId}），${r.tip}`);
+    else if (name === 'run_workflow') parts.push(`### 工作流已启动\n\n运行 ID：\`${r.runId}\`，${r.tip}`);
   }
   return parts.join('\n\n---\n\n');
 }

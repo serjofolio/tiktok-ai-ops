@@ -2,12 +2,12 @@ import { api, icon, esc, toast, withLoading, $, $$, empty, modal, confirmBox, st
 import { mountPlayer, thumb } from '../player.js';
 
 const MOTIONS = [
-  ['🔍', '缓慢推近', 'Slow push-in camera, the product stays in focus, soft light sweeps across the surface, cinematic', 'zoom-in'],
-  ['🔄', '环绕展示', 'Smooth orbit camera around the product, 360 degree reveal, studio lighting', 'zoom-out'],
-  ['↔️', '横向平移', 'Smooth lateral pan from left to right, lifestyle scene, natural motion', 'pan-right'],
-  ['🤳', '手持实拍', 'Handheld UGC style camera, slight shake, person using the product, authentic TikTok vibe', 'pan-left'],
-  ['✨', '高光闪耀', 'Sparkles and light flares around the product, magical reveal, slow motion', 'zoom-in'],
-  ['💥', '快速冲击', 'Fast dynamic zoom, energetic motion, bold reveal for a viral hook', 'zoom-in'],
+  ['', '缓慢推近', 'Slow push-in camera, the product stays in focus, soft light sweeps across the surface, cinematic', 'zoom-in'],
+  ['', '环绕展示', 'Smooth orbit camera around the product, 360 degree reveal, studio lighting', 'zoom-out'],
+  ['', '横向平移', 'Smooth lateral pan from left to right, lifestyle scene, natural motion', 'pan-right'],
+  ['', '手持实拍', 'Handheld UGC style camera, slight shake, person using the product, authentic TikTok vibe', 'pan-left'],
+  ['', '高光闪耀', 'Sparkles and light flares around the product, magical reveal, slow motion', 'zoom-in'],
+  ['', '快速冲击', 'Fast dynamic zoom, energetic motion, bold reveal for a viral hook', 'zoom-in'],
 ];
 
 export async function render(view, [first, second]) {
@@ -21,7 +21,7 @@ export async function render(view, [first, second]) {
       <div class="field">首帧图片<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><div class="media" id="img" style="width:110px;flex-shrink:0;cursor:pointer"></div><div class="col" style="gap:8px"><button class="btn sm ghost" id="pick">${icon('image', 15)}从图库选择</button><a class="btn sm ghost" href="#/images">${icon('sparkles', 15)}去生成图片</a></div></div></div>
       <div class="field">运镜模板<div class="preset-grid" id="mo">${MOTIONS.map((m, i) => `<div class="preset ${i === 0 ? 'on' : ''}" data-i="${i}"><span class="e">${m[0]}</span>${m[1]}</div>`).join('')}</div></div>
       <label class="field">运动描述<textarea class="input" id="prompt" rows="3">${MOTIONS[0][2]}</textarea></label>
-      <label class="field">屏幕字幕（本地合成模式）<input class="input" id="cap" placeholder="Stop scrolling! You need this 🤯"></label>
+      <label class="field">屏幕字幕（本地合成模式）<input class="input" id="cap" placeholder="Stop scrolling! You need this "></label>
       <div class="grid g2">
         <label class="field">时长<select class="input" id="dur"><option value="5">5 秒</option><option value="10">10 秒</option></select></label>
         <label class="field">比例<select class="input" id="ratio"><option>9:16</option><option>1:1</option><option>16:9</option></select></label>
@@ -71,7 +71,7 @@ export async function render(view, [first, second]) {
 
   function openPlayer(v) {
     modal({
-      title: `🎬 ${esc(v.title)}`,
+      title: esc(v.title),
       body: `<div id="pl"></div>${v.storyboard?.length > 1 ? `<div class="col mt">${v.storyboard.map((s, i) => `<div class="row small" style="flex-wrap:nowrap"><span class="chip">${i + 1}</span><span style="flex:1">${esc(s.caption || '')}</span><span class="muted">${s.duration}s · ${s.video ? 'AI 片段' : esc(s.motion)}</span></div>`).join('')}</div>` : ''}`,
       async onMount(el) {
         disposePlayer = await mountPlayer($('#pl', el), v, { autoplay: true });

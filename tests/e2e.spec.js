@@ -7,7 +7,7 @@ let errors = [];
 test.beforeEach(async ({ page }) => {
   errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && !/favicon/.test(m.text()) && errors.push(m.text()));
+  page.on('console', (m) => m.type() === 'error' && !/favicon|status of 502/.test(m.text()) && errors.push(m.text()));
 });
 test.afterEach(async () => {
   expect(errors, `页面存在 JS 错误：\n${errors.join('\n')}`).toEqual([]);
@@ -37,7 +37,9 @@ test('所有页面均可正常打开', async ({ page }) => {
 test('总览：统计与潜力爆品', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.hero h2')).toContainText('今天打造哪款爆品');
-  await expect(page.locator('.stat')).toHaveCount(4);
+  await expect(page.locator('.stat-strip > div')).toHaveCount(4);
+  await expect(page.locator('.stat-value').first()).not.toHaveText('0');
+  await expect(page.locator('.ticker-item').first()).toBeVisible();
   await expect(page.locator('table tbody tr')).toHaveCount(6);
   await expect(page.locator('#mode-chip')).toContainText('离线演示模式');
 });
@@ -164,7 +166,6 @@ test('智能体：新建自定义智能体', async ({ page }) => {
   await page.goto('/#/agents');
   await page.click('#new-agent');
   await page.fill('.modal [name=name]', '直播运营 Mia');
-  await page.fill('.modal [name=avatar]', '🎤');
   await page.click('.modal #save');
   await expect(page.locator('#agents .agent-item')).toHaveCount(4);
   await expect(page.locator('#chat-head')).toContainText('直播运营 Mia');
@@ -201,9 +202,9 @@ test('系统设置：预设切换与保存', async ({ page }) => {
 test('主题切换与移动端布局', async ({ page }) => {
   await page.goto('/');
   await page.click('#theme-btn');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await page.click('#theme-btn');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.click('#theme-btn');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#menu-btn');
   await expect(page.locator('#app')).toHaveClass(/nav-open/);
@@ -220,4 +221,51 @@ test('开放工具 API', async ({ request }) => {
   const s = await request.post('/api/tools/search_products', { data: { category: '3C数码', limit: 3 } });
   const { result } = await s.json();
   expect(result).toHaveLength(3);
+});
+
+test('系统设置：从上游自动获取模型列表', async ({ page }) => {
+  // 启动一个模拟的 OpenAI 兼容上游
+  const http = require('http');
+  const upstream = http.createServer((req, res) => {
+    if (req.url === '/v1/models' && req.headers.authorization === 'Bearer sk-test') {
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }, { id: 'text-embedding-v3' }, { id: 'doubao-seedream-4-0' }] }));
+    }
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: { message: 'invalid key' } }));
+  });
+  await new Promise((r) => upstream.listen(3901, r));
+  try {
+    await page.goto('/#/settings');
+    const llm = page.locator('[data-sec=llm]');
+    await llm.locator('[data-preset="1"]').click();
+    await llm.locator('[name=baseUrl]').fill('http://localhost:3901/v1');
+    await llm.locator('[name=apiKey]').fill('sk-wrong');
+    await llm.locator('[data-fetch]').click();
+    await expect(llm.locator('[data-mcount]')).toContainText('获取失败');
+    await llm.locator('[name=apiKey]').fill('sk-test');
+    await llm.locator('[data-fetch]').click();
+    await expect(llm.locator('[data-mcount]')).toContainText('4 个模型');
+    await expect(llm.locator('.model-menu button')).toHaveCount(4);
+    await expect(llm.locator('.model-menu button').first()).toContainText('deepseek-chat');
+    await llm.locator('.model-menu button', { hasText: 'deepseek-reasoner' }).click();
+    await expect(llm.locator('[name=model]')).toHaveValue('deepseek-reasoner');
+    await llm.locator('[data-save]').click();
+    // 已保存 key 后再次进入页面会自动拉取
+    await page.goto('/#/dashboard');
+    await page.goto('/#/settings');
+    await expect(page.locator('[data-sec=llm] [data-mcount]')).toContainText('4 个模型');
+    const emb = page.locator('[data-sec=embedding]');
+    await emb.locator('[data-preset="1"]').click();
+    await emb.locator('[name=baseUrl]').fill('http://localhost:3901/v1');
+    await emb.locator('[name=apiKey]').fill('sk-test');
+    await emb.locator('[data-fetch]').click();
+    await expect(emb.locator('.model-menu button').first()).toContainText('text-embedding-v3');
+    // 恢复离线模式，避免影响其他用例
+    await page.locator('[data-sec=llm] [data-preset="0"]').click();
+    await page.locator('[data-sec=llm] [data-save]').click();
+    await expect(page.locator('#mode-chip')).toContainText('离线演示模式');
+  } finally {
+    upstream.close();
+  }
 });
