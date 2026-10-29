@@ -40,8 +40,10 @@ function mockSVG({ prompt, title, emoji, size }) {
   const [w, h] = (size || '1024x1792').split('x').map(Number);
   const seed = [...(prompt || '')].reduce((a, c) => a + c.charCodeAt(0), 0);
   const [c1, c2] = PALETTES[seed % PALETTES.length];
-  const lines = wrap(prompt || '', 22);
-  const t = esc(title || 'AI Generated');
+  // 版式：标题在上、主体居中、提示词在中下，底部 30% 留给视频字幕
+  const lines = wrap(prompt || '', 34).slice(0, 3);
+  const titleLines = wrap(title || 'AI Generated', /[一-龥]/.test(title || '') ? 12 : 22).slice(0, 2);
+  const font = 'Segoe UI, PingFang SC, Microsoft YaHei, sans-serif';
   const circles = Array.from({ length: 6 }, (_, i) => {
     const r = 80 + ((seed * (i + 3)) % 220);
     const cx = (seed * (i + 7) * 37) % w;
@@ -53,15 +55,14 @@ function mockSVG({ prompt, title, emoji, size }) {
 <radialGradient id="glow" cx="0.5" cy="0.42" r="0.4"><stop offset="0" stop-color="#fff" stop-opacity="0.45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
 <rect width="100%" height="100%" fill="url(#g)"/>${circles}
 <rect width="100%" height="100%" fill="url(#glow)"/>
-<text x="50%" y="${h * 0.42}" font-size="${Math.round(w * 0.28)}" text-anchor="middle" dominant-baseline="middle">${esc(emoji || '🛍️')}</text>
-<text x="50%" y="${h * 0.64}" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="${Math.round(w * 0.065)}" font-weight="800" fill="#fff" text-anchor="middle">${t}</text>
-${lines
-  .map(
-    (l, i) =>
-      `<text x="50%" y="${h * 0.7 + i * w * 0.05}" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="${Math.round(w * 0.034)}" fill="#fff" opacity="0.85" text-anchor="middle">${esc(l)}</text>`,
-  )
+${titleLines
+  .map((l, i) => `<text x="50%" y="${h * 0.13 + i * w * 0.075}" font-family="${font}" font-size="${Math.round(w * 0.058)}" font-weight="800" fill="#fff" text-anchor="middle">${esc(l)}</text>`)
   .join('\n')}
-<text x="50%" y="${h - w * 0.06}" font-family="Segoe UI, sans-serif" font-size="${Math.round(w * 0.025)}" fill="#fff" opacity="0.6" text-anchor="middle">DEMO · 离线演示图 · 配置图像模型后生成真实图片</text>
+<text x="50%" y="${h * 0.38}" font-size="${Math.round(w * 0.3)}" text-anchor="middle" dominant-baseline="middle">${esc(emoji || '🛍️')}</text>
+${lines
+  .map((l, i) => `<text x="50%" y="${h * 0.56 + i * w * 0.042}" font-family="${font}" font-size="${Math.round(w * 0.03)}" fill="#fff" opacity="0.8" text-anchor="middle">${esc(l)}</text>`)
+  .join('\n')}
+<text x="50%" y="${h - w * 0.06}" font-family="${font}" font-size="${Math.round(w * 0.024)}" fill="#fff" opacity="0.55" text-anchor="middle">DEMO · 离线演示图 · 配置图像模型后生成真实图片</text>
 </svg>`;
 }
 

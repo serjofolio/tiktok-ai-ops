@@ -5,7 +5,7 @@ export async function render(view) {
   const s = d.stats;
   const maxGmv = Math.max(...d.categoryStats.map((c) => c.gmv), 1);
   const stats = [
-    ['target', '商品库', s.products, `${s.hotProducts} 个 A 级以上潜力款`],
+    ['target', '商品库', s.products, `${s.hotProducts} 个潜力款`],
     ['script', '视频脚本', s.scripts, 'AI 分镜脚本'],
     ['image', 'AI 图片', s.images, '文生图素材'],
     ['video', '视频', s.videos, '图生视频 / 成片'],
@@ -47,7 +47,7 @@ export async function render(view) {
         <tbody>${d.topProducts.map((p) => `<tr style="cursor:pointer" onclick="location.hash='#/products/${p.id}'">
           <td><div class="row" style="flex-wrap:nowrap"><span style="font-size:22px">${p.emoji}</span><div><b>${esc(p.nameCn)}</b><div class="p-sub">${esc(p.name)}</div></div></div></td>
           <td><span class="chip">${esc(p.category)}</span></td><td>$${p.price}</td><td>${fmtNum(p.sales7d)}</td>
-          <td class="${p.salesGrowth >= 0 ? 'up' : 'down'}">${p.salesGrowth >= 0 ? '▲' : '▼'} ${Math.abs(p.salesGrowth)}%</td>
+          <td style="white-space:nowrap" class="${p.salesGrowth >= 0 ? 'up' : 'down'}">${p.salesGrowth >= 0 ? '▲' : '▼'} ${Math.abs(p.salesGrowth)}%</td>
           <td>${sparkline(p.trend, { w: 90, h: 28 })}</td>
           <td><div class="row" style="flex-wrap:nowrap"><span class="grade grade-${p.grade}">${p.grade}</span><b>${p.score}</b></div></td></tr>`).join('')}</tbody>
       </table></div>
