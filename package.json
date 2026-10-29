@@ -1,0 +1,26 @@
+{
+  "name": "tiktok-ai-ops",
+  "version": "1.0.0",
+  "description": "TikTok 跨境电商全能运营智能体平台",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js --open",
+    "dev": "node --watch server/index.js",
+    "test": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.3.0",
+    "mammoth": "^1.13.0",
+    "multer": "^2.5.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
