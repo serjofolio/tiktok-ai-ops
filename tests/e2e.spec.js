@@ -232,3 +232,15 @@ test('页面自己会动：开启系统「减少动画」且不移动鼠标，�
   const anim = await page.evaluate(() => getComputedStyle(document.querySelector('.mock')).animationName);
   expect(anim).toBe('mockSway');
 });
+
+test('页面大标题的强调词可见', async ({ page }) => {
+  for (const p of ['products', 'scripts', 'knowledge', 'providers']) {
+    await page.goto(`/#/${p}`);
+    const em = page.locator('.page-hero h2 em .ch').first();
+    await em.waitFor();
+    await page.waitForTimeout(1200);
+    const style = await em.evaluate((e) => { const s = getComputedStyle(e); return { color: s.color, opacity: s.opacity, clip: s.backgroundClip || s.webkitBackgroundClip }; });
+    expect(style.color, p).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    expect(Number(style.opacity), p).toBeGreaterThan(0.9);
+  }
+});

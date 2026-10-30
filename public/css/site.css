@@ -272,7 +272,10 @@ body.is-home .content { max-width: none; padding: 0; }
 .brand-logo { animation: logoPulse 3s ease-in-out infinite; }
 @keyframes logoPulse { 50% { box-shadow: 0 0 0 6px rgba(255, 179, 92, 0.12), 0 0 24px rgba(255, 179, 92, 0.35); } }
 .verdict.v-go { animation: breatheGlow 3s ease-in-out infinite; }
-.page-hero h2 em, .sec-head h2 em { background: var(--warm-grad); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: gradShift 5s ease-in-out infinite alternate; }
+/* 标题强调词：被拆成单字后不能用背景裁切文字（会变透明），改为每个字的颜色依次流动 */
+.page-hero h2 em { color: var(--amber); }
+.page-hero h2 em .ch { animation: chIn 0.9s var(--ease) forwards, colorWave 4.5s ease-in-out infinite; animation-delay: calc(var(--i) * 28ms + 120ms), calc(var(--i) * -0.18s); }
+@keyframes colorWave { 0%, 100% { color: #f3e9d2; } 33% { color: #ffb35c; } 66% { color: #ff6a4d; } }
 
 /* 网格上自动亮起的光点 */
 .bg-grid::after { content: ''; position: absolute; width: 64px; height: 64px; left: 0; top: 0; background: radial-gradient(circle, rgba(255, 190, 120, 0.35), transparent 70%); animation: gridSpark 12s steps(1) infinite; }
