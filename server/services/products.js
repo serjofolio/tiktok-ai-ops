@@ -91,8 +91,11 @@ function parseDelimited(text) {
 async function parseFile(buffer, filename) {
   if (/\.xlsx$/i.test(filename)) {
     const readXlsx = require('read-excel-file/node');
-    const rows = await readXlsx(buffer);
-    return rows.map((r) => r.map((c) => (c instanceof Date ? c.toISOString().slice(0, 10) : c === null ? '' : c)));
+    const out = await readXlsx(buffer);
+    // v9 起返回 [{ sheet, data }]（多个工作表），旧版直接返回二维数组；取数据行最多的工作表
+    const sheets = Array.isArray(out) && out[0] && !Array.isArray(out[0]) && out[0].data ? out.map((x) => x.data) : [out];
+    const rows = sheets.sort((a, b) => b.length - a.length)[0] || [];
+    return rows.map((r) => r.map((c) => (c instanceof Date ? c.toISOString().slice(0, 10) : c === null || c === undefined ? '' : c)));
   }
   if (/\.xls$/i.test(filename)) throw Object.assign(new Error('暂不支持旧版 .xls，请在 Excel 里另存为 .xlsx 或 .csv'), { status: 400 });
   return parseDelimited(buffer.toString('utf8'));
@@ -126,12 +129,21 @@ function commit(token, mapping) {
   if (mapping.name === undefined || mapping.name === '' || mapping.name === null) throw Object.assign(new Error('必须指定「商品名称」对应的列'), { status: 400 });
   let created = 0, updated = 0;
   const now = db.now();
+  // Excel 的百分比单元格以小数存储（0.86 = 86%）：该列全是数字且都在 ±10 以内、含小数时按比例换算
+  const fraction = {};
+  for (const field of ['growth', 'commissionRate']) {
+    const idx = mapping[field];
+    if (idx === '' || idx === undefined || idx === null) continue;
+    const vals = job.data.map((r) => r[Number(idx)]).filter((v) => v !== '' && v != null);
+    fraction[field] = vals.length > 0 && vals.every((v) => typeof v === 'number' && Math.abs(v) <= 10) && vals.some((v) => v % 1 !== 0);
+  }
   for (const r of job.data) {
     const p = {};
     for (const [field, idx] of Object.entries(mapping)) {
       if (idx === '' || idx === null || idx === undefined) continue;
       const raw = r[Number(idx)];
       p[field] = NUMERIC.includes(field) ? parseNum(raw) : String(raw ?? '').trim();
+      if (fraction[field] && typeof p[field] === 'number') p[field] = Math.round(p[field] * 1000) / 10;
     }
     if (!p.name) continue;
     if (p.tiktokUrl && /fastmoss\.com/i.test(p.tiktokUrl)) (p.fastmossUrl = p.tiktokUrl), delete p.tiktokUrl;
@@ -139,7 +151,7 @@ function commit(token, mapping) {
     // 没有增长率但有上一周期销量时自行计算
     if (p.growth == null && p.sales7d != null && p.salesPrev) p.growth = Math.round(((p.sales7d - p.salesPrev) / p.salesPrev) * 1000) / 10;
     // 佣金率可能是 0.15 这种小数
-    if (p.commissionRate != null && p.commissionRate > 0 && p.commissionRate < 1) p.commissionRate = Math.round(p.commissionRate * 1000) / 10;
+    if (!fraction.commissionRate && p.commissionRate != null && p.commissionRate > 0 && p.commissionRate < 1) p.commissionRate = Math.round(p.commissionRate * 1000) / 10;
     const exist = db.products.all().find((x) => (p.productId && x.productId === p.productId) || (!p.productId && x.name === p.name));
     if (exist) {
       db.products.update(exist.id, { ...p, dataAt: now });

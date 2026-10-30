@@ -244,3 +244,15 @@ test('页面大标题的强调词可见', async ({ page }) => {
     expect(Number(style.opacity), p).toBeGreaterThan(0.9);
   }
 });
+
+test('智能选品：导入 FastMoss 风格的 Excel（标题行 + 百分比单元格 + 日期）', async ({ page }) => {
+  await page.goto('/#/products');
+  await page.click('#import');
+  await page.setInputFiles('#file', require('path').join(__dirname, 'fixtures', 'fastmoss-sample.xlsx'));
+  await expect(page.locator('[data-f=name]')).not.toHaveValue('');
+  for (const f of ['productId', 'price', 'sales7d', 'growth', 'creatorCount', 'videoCount', 'commissionRate', 'shop', 'category']) await expect(page.locator(`[data-f=${f}]`), f).not.toHaveValue('');
+  await page.click('#commit');
+  const row = page.locator('.prow', { hasText: 'Product 3 迷你风扇' });
+  await expect(row).toContainText('-7%');
+  await expect(row.locator('a[href*="detail/1729384756102900003"]')).toHaveCount(1);
+});

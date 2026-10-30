@@ -52,15 +52,20 @@ export async function render(view, [openId]) {
 
   let all = [];
   let assumptions = {};
+  // 商品多时分批渲染，避免一次画几千行卡顿
+  const PAGE = 100;
+  let shown = PAGE;
   async function load() {
     const d = await api(`/products?${new URLSearchParams({ q: state.q, sort: state.sort, status: ['candidate', 'testing', 'dropped'].includes(state.status) ? state.status : '' })}`);
     assumptions = d.assumptions;
     all = d.items;
-    const items = state.status === 'go' ? all.filter((p) => p.evaluation.verdict === '推荐测款') : all;
+    const matched = state.status === 'go' ? all.filter((p) => p.evaluation.verdict === '推荐测款') : all;
+    const items = matched.slice(0, shown);
     $('#summary', view).textContent = `${all.length} 个商品 · 推荐测款 ${all.filter((p) => p.evaluation.verdict === '推荐测款').length} · 测款中 ${all.filter((p) => p.status === 'testing').length}`;
     const box = $('#list', view);
     if (!all.length && !state.q && !state.status) return (box.innerHTML = onboarding());
     if (!items.length) return (box.innerHTML = `<div class="card">${empty('没有符合条件的商品', 'search')}</div>`);
+    const more = matched.length > items.length ? `<div class="row mt" style="justify-content:center"><button class="btn ghost" id="more">显示更多（还有 ${matched.length - items.length} 个）</button></div>` : '';
     box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>商品</th><th class="r">售价</th><th class="r">7 天销量</th><th class="r">环比</th><th class="r">视频 / 达人</th><th class="r">净利率</th><th>硬指标</th><th>结论</th><th></th></tr></thead><tbody>
       ${items.map((p) => `<tr class="prow" data-id="${p.id}">
         <td><b>${esc(p.name)}</b><div class="p-sub">${esc([p.category, p.shop, p.status && p.status !== 'candidate' ? STATUS[p.status] : ''].filter(Boolean).join(' · ') || '—')}</div></td>
@@ -69,7 +74,9 @@ export async function render(view, [openId]) {
         <td class="r">${p.evaluation.profit ? `<span class="${p.evaluation.profit.margin >= assumptions.targetMargin ? 'up' : 'down'}">${p.evaluation.profit.margin}%</span>` : '<span class="muted small">待填成本</span>'}</td>
         <td><span class="dots">${p.evaluation.checks.map((c) => `<i class="${c.status}" title="${esc(c.title)}"></i>`).join('')}</span></td>
         <td>${verdict(p.evaluation.verdict)}</td>
-        <td><a class="icon-btn" href="${esc(p.fastmossLink)}" target="_blank" rel="noopener" title="在 FastMoss 查看" data-stop>${icon('link', 14)}</a></td></tr>`).join('')}</tbody></table></div>`;
+        <td><a class="icon-btn" href="${esc(p.fastmossLink)}" target="_blank" rel="noopener" title="在 FastMoss 查看" data-stop>${icon('link', 14)}</a></td></tr>`).join('')}</tbody></table></div>${more}`;
+    const mb = box.querySelector('#more');
+    if (mb) mb.onclick = () => { shown += PAGE; load(); };
     $$('.prow', box).forEach((tr) => tr.addEventListener('click', (e) => !e.target.closest('[data-stop]') && openDetail(tr.dataset.id)));
   }
 
@@ -252,9 +259,9 @@ export async function render(view, [openId]) {
   }
 
   let t;
-  $('#q', view).oninput = (e) => { clearTimeout(t); t = setTimeout(() => ((state.q = e.target.value), load()), 250); };
+  $('#q', view).oninput = (e) => { clearTimeout(t); t = setTimeout(() => ((state.q = e.target.value), (shown = PAGE), load()), 250); };
   $$('#tabs button', view).forEach((b) => (b.onclick = () => { state.status = b.dataset.s; $$('#tabs button', view).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
-  $('#sort', view).onchange = (e) => ((state.sort = e.target.value), load());
+  $('#sort', view).onchange = (e) => ((state.sort = e.target.value), (shown = PAGE), load());
   $('#import', view).onclick = importDialog;
   $('#add', view).onclick = addDialog;
   $('#assume', view).onclick = assumeDialog;
