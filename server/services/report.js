@@ -10,7 +10,7 @@ const products = require('./products');
 const rag = require('./rag');
 
 const reports = db.collection('reports');
-const BATCH = 10; // 每次让模型研判的商品数
+const BATCH = 8; // 每次让模型研判的商品数（太多容易超出输出长度被截断）
 const MAX = 200;
 const running = new Map(); // reportId → 进度（内存）
 
@@ -78,7 +78,7 @@ const row = (p, i) => {
     规则评分: ev.score, 规则结论: ev.ruleVerdict,
     维度: Object.fromEntries(ev.dims.map((d) => [d.label, d.score])),
     利润倒推: ev.profit ? `成本上限 ¥${ev.profit.ceilingCny}` : null,
-    风险: ev.flags.filter((f) => f.level !== 'info').map((f) => f.title),
+    风险: ev.flags.filter((f) => f.level !== 'info').map((f) => `[${{ block: '硬伤', major: '重大', minor: '注意' }[f.level]}]${f.title}`),
     数据解读: ev.flags.filter((f) => f.level === 'info').map((f) => f.detail),
   };
 };
@@ -110,13 +110,36 @@ ${kb ? `\n【选品方法参考】\n${kb}\n` : ''}
  "avoid": [{"what": "不要做什么", "why": "原因（合规、品牌、价格、趋势等）"}],
  "nextSteps": ["接下来 7 天的具体动作，按顺序"]
 }`,
-    { system: persona() + '只输出 JSON。', maxTokens: 6000, timeoutMs: 300000 },
+    { system: persona() + '只输出 JSON。', maxTokens: 16000, timeoutMs: 300000, noThinking: true },
   );
+}
+
+// 模型输出被截断时，从残缺的 {"items": [...] 里救回已经完整的条目
+function salvageItems(text) {
+  const start = text.indexOf('[');
+  if (start < 0) return [];
+  const out = [];
+  let depth = 0, from = -1, inStr = false, esc = false;
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') { if (depth++ === 0) from = i; }
+    else if (c === '}' && depth > 0 && --depth === 0) {
+      try { out.push(JSON.parse(text.slice(from, i + 1))); } catch {}
+    }
+  }
+  return out;
 }
 
 async function judgeBatch(items, offset) {
   const rows = items.map((p, k) => row(p, offset + k + 1));
-  const out = await llm.completeJSON(
+  const r = await llm.chat({ system: persona() + '只输出 JSON。', json: true, temperature: 0.4, maxTokens: 16000, timeoutMs: 300000, noThinking: true, messages: [{ role: 'user', content: 
     `逐个研判下面 ${rows.length} 个 TikTok Shop 商品能不能上。每个商品都有程序算好的六维评分（0-100）和风险标记，你要结合数据给出自己的结论，可以和规则结论不同，但要说明理由。
 
 判断要点：
@@ -124,16 +147,39 @@ async function judgeBatch(items, offset) {
 - 达人：带货达人数、出单率高说明寄样招达人容易复制；没有达人却有销量说明不是内容驱动；
 - 竞争：品牌官方店、头部店铺扎堆、达人和视频过多都意味着难进入；新上架就进头部说明还有机会；
 - 利润：按「成本上限」（为达到目标净利，采购+物流最多能花多少人民币）对比你对 1688 同类货源价格的估算，判断利润是否成立；
-- 风险：定邀类目、带电、品牌/IP、认证、数据可疑（刷单或价格异常）等直接影响能否上。
+- 风险：标了 [硬伤] 的（定邀类目、带电、品牌/IP、数据可疑、客单价太低）一律判「不建议上」，可以在 angle 里写替代方向；[重大] 风险最多判「谨慎测试」。
 
 商品：${JSON.stringify(rows)}
 
 只输出 JSON：{"items": [{"i": 编号, "verdict": "可以上 | 谨慎测试 | 不建议上", "score": 0-100, "headline": "一句话结论（20 字内）",
 "reasons": {"需求": "", "趋势": "", "达人": "", "竞争": "", "利润": "", "风险": ""}, "est1688": "预估 1688 采购价区间（¥，估算）", "kw1688": "1688 中文搜索关键词（具体到款式规格）", "profitOk": true/false, "angle": "如果要做，差异化切入点 / 做什么款；不建议的写替代方向", "nextStep": "下一步动作"}]}
-每个 reasons 字段一句话，必须引用数据。`,
-    { system: persona() + '只输出 JSON。', maxTokens: 8000, timeoutMs: 300000 },
-  );
-  return Array.isArray(out.items) ? out.items : Array.isArray(out) ? out : [];
+每个 reasons 字段一句话（40 字以内），必须引用数据。` }] });
+  const parsed = llm.safeJSON(r.text);
+  const list = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : salvageItems(r.text || '');
+  if (!list.length) throw new Error(r.text ? '模型返回的内容不完整（可能超出输出长度）' : '模型没有返回内容');
+  return list;
+}
+
+// 一批失败时拆成两半各重试一次，尽量多拿到结论
+async function judgeWithRetry(items, offset, depth = 0) {
+  try {
+    const got = await judgeBatch(items, offset);
+    const seen = new Set(got.map((x) => Number(x.i)));
+    const missing = items.map((p, k) => [p, offset + k]).filter(([, idx]) => !seen.has(idx + 1));
+    // 被截断丢掉的商品单独补一次
+    if (missing.length && depth === 0) {
+      const rest = await judgeBatch(missing.map(([p]) => p), 0).catch(() => []);
+      for (const x of rest) x.i = missing[Number(x.i) - 1]?.[1] + 1;
+      got.push(...rest.filter((x) => Number.isFinite(x.i)));
+    }
+    return got;
+  } catch (e) {
+    if (depth > 0 || items.length < 4) throw e;
+    const half = Math.ceil(items.length / 2);
+    const [a, b] = await Promise.all([judgeWithRetry(items.slice(0, half), offset, 1).catch(() => []), judgeWithRetry(items.slice(half), offset + half, 1).catch(() => [])]);
+    if (!a.length && !b.length) throw e;
+    return [...a, ...b];
+  }
 }
 
 // 有限并发执行
@@ -171,7 +217,7 @@ async function run(report, items) {
     },
     ...batches.map(([chunk, offset]) => async () => {
       try {
-        const res = await judgeBatch(chunk, offset);
+        const res = await judgeWithRetry(chunk, offset);
         for (const r of res) {
           const p = items[Number(r.i) - 1];
           if (!p || !['可以上', '谨慎测试', '不建议上'].includes(r.verdict)) continue;

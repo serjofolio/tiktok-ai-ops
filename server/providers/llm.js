@@ -96,7 +96,9 @@ function toAnthropicMessages(messages) {
   return out;
 }
 
-function buildRequest(cfg, { system, messages, tools, temperature, json, stream, maxTokens }) {
+const isGLM = (cfg) => /bigmodel\.cn|z\.ai/i.test(cfg.baseUrl || '');
+
+function buildRequest(cfg, { system, messages, tools, temperature, json, stream, maxTokens, noThinking }) {
   const temp = temperature ?? cfg.temperature ?? 0.7;
   if (cfg.protocol === 'anthropic') {
     const body = { model: cfg.model, max_tokens: maxTokens || 8192, temperature: Math.min(1, temp), messages: toAnthropicMessages(messages) };
@@ -111,6 +113,7 @@ function buildRequest(cfg, { system, messages, tools, temperature, json, stream,
   if (json && !tools?.length) body.response_format = { type: 'json_object' };
   if (stream) body.stream = true;
   if (maxTokens) body.max_tokens = maxTokens;
+  if (noThinking && isGLM(cfg)) body.thinking = { type: 'disabled' };
   return { url: `${trimSlash(cfg.baseUrl)}/chat/completions`, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` }, body };
 }
 
@@ -132,8 +135,9 @@ async function chat(opts, cfgOverride) {
     data = await send(req.body);
   } catch (e) {
     // 部分 OpenAI 兼容服务不支持 response_format，去掉后重试一次
-    if (req.body.response_format && /response_format|json_object|400/.test(e.message)) {
+    if ((req.body.response_format || req.body.thinking) && /response_format|json_object|thinking|400/.test(e.message)) {
       delete req.body.response_format;
+      delete req.body.thinking;
       data = await send(req.body);
     } else throw e;
   }
@@ -142,7 +146,7 @@ async function chat(opts, cfgOverride) {
     return { text: blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n'), toolCalls: blocks.filter((b) => b.type === 'tool_use').map((b) => ({ id: b.id, name: b.name, args: b.input })) };
   }
   const msg = data.choices?.[0]?.message || {};
-  return { text: msg.content || '', toolCalls: (msg.tool_calls || []).map((c) => ({ id: c.id, name: c.function?.name, args: safeJSON(c.function?.arguments) || {} })) };
+  return { text: msg.content || '', finishReason: data.choices?.[0]?.finish_reason, toolCalls: (msg.tool_calls || []).map((c) => ({ id: c.id, name: c.function?.name, args: safeJSON(c.function?.arguments) || {} })) };
 }
 
 // ---------- 流式：onDelta({ text?, think? })，返回完整文本 ----------
@@ -211,8 +215,8 @@ async function complete(prompt, { system, temperature } = {}) {
   return (await chat({ system, messages: [{ role: 'user', content: prompt }], temperature })).text;
 }
 
-async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs } = {}) {
-  const r = await chat({ system, messages: [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs });
+async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs, noThinking } = {}) {
+  const r = await chat({ system, messages: [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs, noThinking });
   const parsed = safeJSON(r.text);
   if (!parsed) throw new Error('模型返回的内容不是合法 JSON，请重试或换一个模型：' + r.text.slice(0, 160));
   return parsed;

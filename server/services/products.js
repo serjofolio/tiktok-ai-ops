@@ -198,8 +198,10 @@ function commit(token, mapping) {
 // ---------- 评估 ----------
 function enrich(p, groups) {
   const ev = selection.assess(p, groups);
-  // AI 研判过的以 AI 结论为准，规则结论保留用于对照
-  return { ...p, fastmossLink: fastmossLink(p), evaluation: { ...ev, ruleVerdict: ev.verdict, verdict: p.ai?.verdict || ev.verdict } };
+  // AI 研判过的以 AI 结论为准，规则结论保留用于对照；但硬伤（定邀、带电、品牌/IP、刷单数据、客单价太低）AI 不能推翻
+  const hard = ev.flags.some((f) => f.level === 'block');
+  const verdict = hard ? '不建议上' : p.ai?.verdict || ev.verdict;
+  return { ...p, fastmossLink: fastmossLink(p), evaluation: { ...ev, ruleVerdict: ev.verdict, verdict, aiOverruled: !!(hard && p.ai && p.ai.verdict !== '不建议上') } };
 }
 
 const VERDICT_ORDER = { 可以上: 0, 谨慎测试: 1, 数据不足: 2, 不建议上: 3 };
