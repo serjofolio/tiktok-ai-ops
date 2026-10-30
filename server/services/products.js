@@ -2,6 +2,7 @@
 const db = require('../db');
 const llm = require('../providers/llm');
 const settings = require('../settings');
+const ctx = require('../ctx');
 const rag = require('./rag');
 
 // ---------- 导入：列名识别（FastMoss 中英文导出、手动整理的表格都能认） ----------
@@ -111,8 +112,8 @@ function preview(rows) {
   });
   const headers = rows[hi].map((h) => String(h).trim());
   const data = rows.slice(hi + 1).filter((r) => r.some((c) => String(c).trim()));
-  const token = Math.random().toString(36).slice(2);
-  pending.set(token, { headers, data, at: Date.now() });
+  const token = require('crypto').randomBytes(12).toString('hex');
+  pending.set(token, { headers, data, at: Date.now(), uid: ctx.user()?.id });
   for (const [k, v] of pending) if (Date.now() - v.at > 3600e3) pending.delete(k);
   return { token, headers, sample: data.slice(0, 5), total: data.length, mapping: guessMapping(headers), fields: Object.fromEntries(Object.entries(FIELDS).map(([k, v]) => [k, v.label])) };
 }
@@ -125,7 +126,7 @@ function fastmossLink(p) {
 
 function commit(token, mapping) {
   const job = pending.get(token);
-  if (!job) throw Object.assign(new Error('预览已过期，请重新上传'), { status: 400 });
+  if (!job || job.uid !== ctx.user()?.id) throw Object.assign(new Error('预览已过期，请重新上传'), { status: 400 });
   if (mapping.name === undefined || mapping.name === '' || mapping.name === null) throw Object.assign(new Error('必须指定「商品名称」对应的列'), { status: 400 });
   let created = 0, updated = 0;
   const now = db.now();

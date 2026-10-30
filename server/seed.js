@@ -136,21 +136,24 @@ const METHOD_DOC = {
 第三方工具（FastMoss 等）的销量和 GMV 是估算值，用于比较方向和趋势，不能当作财务数据。`,
 };
 
+// 在系统上下文执行（不按用户过滤）
 async function run() {
   products.removeDemo();
-  // 早期版本的预设智能体已由 Agent 聊天取代
-  if (db.agents.count()) db.agents.replaceAll([]);
 
-  let ref = db.kbs.all().find((k) => k.builtin || k.name === 'TikTok 运营手册');
+  // 平台内置参考知识库：所有用户只读共享，只有管理员能修改
+  const desc = '平台内置的选品方法、脚本公式、规则摘要，仅供参考';
+  let ref = db.kbs.all().find((k) => k.builtin || (!k.uid && k.name === 'TikTok 运营手册'));
   if (!ref) {
-    ref = db.kbs.insert({ name: '运营参考（平台内置，非官方）', description: '平台内置的选品方法、脚本公式、规则摘要，仅供参考', icon: '', builtin: true });
+    ref = db.kbs.insert({ name: '运营参考（平台内置，非官方）', description: desc, icon: '', builtin: true, shared: true });
     for (const d of DOCS) await rag.addDocument(ref.id, { ...d, source: 'builtin' });
-  } else if (!ref.builtin) db.kbs.update(ref.id, { name: '运营参考（平台内置，非官方）', description: '平台内置的选品方法、脚本公式、规则摘要，仅供参考', builtin: true });
-  if (!db.docs.all().some((d) => d.title === METHOD_DOC.title)) await rag.addDocument(ref.id, { ...METHOD_DOC, source: 'builtin' });
-
-  if (!db.kbs.all().some((k) => k.official)) {
-    db.kbs.insert({ name: 'TikTok 官方文档', description: '上传从飞书/Lark 导出的 TikTok Shop 官方文档（Word/PDF），Agent 会优先依据这里回答', icon: '', official: true, docCount: 0, chunkCount: 0 });
+  } else if (!ref.builtin || !ref.shared) {
+    db.kbs.update(ref.id, { name: '运营参考（平台内置，非官方）', description: desc, builtin: true, shared: true });
+    const mark = (c) => c.replaceAll(c.all().map((x) => (x.kbId === ref.id ? Object.assign(x, { shared: true }) : x)));
+    mark(db.docs);
+    mark(db.chunks);
   }
+  if (!db.docs.all().some((d) => d.title === METHOD_DOC.title)) await rag.addDocument(ref.id, { ...METHOD_DOC, source: 'builtin' });
+  // 每个用户自己的「TikTok 官方文档」知识库在注册时创建（见 auth.initUserData）
 }
 
 module.exports = { run };

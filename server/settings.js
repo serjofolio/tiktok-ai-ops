@@ -1,4 +1,4 @@
-// 平台配置，保存在 data/settings.json：
+// 平台配置，保存在 data/settings.json，每个用户一份（users[uid]），互相不可见：
 // - providers：大模型供应商列表（类似 CC Switch，可添加/编辑/删除/一键启用）
 // - dataSources：FastMoss、1688 等数据源接口凭证（申请通过后填写）
 // - selection：利润测算的默认参数
@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { DATA_DIR } = require('./db');
+const ctx = require('./ctx');
 
 const FILE = path.join(DATA_DIR, 'settings.json');
 
@@ -27,7 +28,8 @@ const DEFAULTS = {
   store: { name: '我的 TikTok 小店', market: 'US', language: 'English' },
 };
 
-let current = null;
+// 文件结构：{ system: { allowRegister }, users: { [uid]: 用户配置 }, legacy: 单用户版本的旧配置（等第一个管理员认领） }
+let file = null;
 
 function merge(base, over) {
   const out = { ...base };
@@ -38,28 +40,71 @@ function merge(base, over) {
 }
 
 function save() {
-  fs.writeFileSync(FILE, JSON.stringify(current, null, 2));
+  const tmp = FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(file, null, 2));
+  fs.renameSync(tmp, FILE);
 }
 
-function get() {
-  if (current) return current;
+function loadFile() {
+  if (file) return file;
   let saved = {};
   try {
     if (fs.existsSync(FILE)) saved = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   } catch {}
-  current = merge(DEFAULTS, saved);
-  current.providers = Array.isArray(saved.providers) ? saved.providers : [];
+  if (saved.users) file = { system: { allowRegister: true }, ...saved };
+  else file = { system: { allowRegister: true }, users: {}, ...(Object.keys(saved).length ? { legacy: saved } : {}) };
+  return file;
+}
+
+function normalize(saved = {}) {
+  const cur = merge(DEFAULTS, saved);
+  cur.providers = Array.isArray(saved.providers) ? saved.providers : [];
   // 旧版单一 llm 配置迁移为一个供应商
-  if (saved.llm && saved.llm.provider && saved.llm.provider !== 'mock' && saved.llm.apiKey && !current.providers.length) {
+  if (saved.llm && saved.llm.provider && saved.llm.provider !== 'mock' && saved.llm.apiKey && !cur.providers.length) {
     const p = { id: newId(), name: '已迁移的配置', protocol: saved.llm.provider === 'anthropic' ? 'anthropic' : 'openai', baseUrl: saved.llm.baseUrl, apiKey: saved.llm.apiKey, model: saved.llm.model, temperature: saved.llm.temperature ?? 0.7 };
-    current.providers.push(p);
-    current.activeProviderId = p.id;
+    cur.providers.push(p);
+    cur.activeProviderId = p.id;
   }
-  delete current.llm;
-  delete current.image;
-  delete current.video;
-  delete current.embedding;
-  return current;
+  for (const k of ['llm', 'image', 'video', 'embedding']) delete cur[k];
+  return cur;
+}
+
+// 当前登录用户的配置；系统任务（无用户）返回默认值
+function get() {
+  const f = loadFile();
+  const u = ctx.user();
+  if (!u) return normalize();
+  if (!f.users[u.id]) f.users[u.id] = normalize();
+  return f.users[u.id];
+}
+
+function set(value) {
+  const u = ctx.user();
+  if (!u) throw Object.assign(new Error('请先登录'), { status: 401 });
+  loadFile().users[u.id] = value;
+  save();
+}
+
+// 单用户版本的旧配置（含已接入的模型 Key）交给第一个管理员
+function claimLegacy(uid) {
+  const f = loadFile();
+  if (!f.legacy) return false;
+  f.users[uid] = normalize(f.legacy);
+  delete f.legacy;
+  save();
+  return true;
+}
+
+function removeUser(uid) {
+  delete loadFile().users[uid];
+  save();
+}
+
+const system = () => loadFile().system;
+function setSystem(patch) {
+  Object.assign(loadFile().system, patch);
+  save();
+  return system();
 }
 
 const newId = () => 'pv_' + crypto.randomBytes(5).toString('hex');
@@ -73,11 +118,11 @@ function update(patch) {
     }
   }
   const { providers, activeProviderId, ...rest } = patch || {};
-  current = merge(prev, rest);
-  current.providers = prev.providers;
-  current.activeProviderId = prev.activeProviderId;
-  save();
-  return current;
+  const next = merge(prev, rest);
+  next.providers = prev.providers;
+  next.activeProviderId = prev.activeProviderId;
+  set(next);
+  return next;
 }
 
 // ---------- 供应商 ----------
@@ -103,7 +148,7 @@ function saveProvider(input) {
     s.providers.push(p);
     if (!s.activeProviderId) s.activeProviderId = p.id; // 第一个添加的自动启用
   }
-  save();
+  set(s);
   return p;
 }
 
@@ -111,14 +156,14 @@ function removeProvider(id) {
   const s = get();
   s.providers = s.providers.filter((p) => p.id !== id);
   if (s.activeProviderId === id) s.activeProviderId = s.providers[0]?.id || '';
-  save();
+  set(s);
 }
 
 function activate(id) {
   const s = get();
   if (!s.providers.some((p) => p.id === id)) throw Object.assign(new Error('供应商不存在'), { status: 404 });
   s.activeProviderId = id;
-  save();
+  set(s);
 }
 
 function getProvider(id) {
@@ -137,4 +182,4 @@ function publicView() {
   return s;
 }
 
-module.exports = { get, update, publicView, DEFAULTS, activeProvider, saveProvider, removeProvider, activate, getProvider };
+module.exports = { get, update, claimLegacy, removeUser, system, setSystem, publicView, DEFAULTS, activeProvider, saveProvider, removeProvider, activate, getProvider };

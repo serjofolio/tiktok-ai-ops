@@ -6,6 +6,8 @@ const express = require('express');
 const multer = require('multer');
 
 const db = require('./db');
+const ctx = require('./ctx');
+const auth = require('./auth');
 const settings = require('./settings');
 const llm = require('./providers/llm');
 const products = require('./services/products');
@@ -30,14 +32,69 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
 // 异步路由统一错误处理；上游模型错误返回 424（不用 502：Cloudflare 会把源站 502 的错误说明替换掉）
+// 每个请求都在当前用户的上下文里执行，数据读写自动按用户隔离
 const h = (fn) => (req, res) =>
-  Promise.resolve(fn(req, res)).catch((e) => {
+  Promise.resolve()
+    .then(() => ctx.run(req.user, () => fn(req, res)))
+    .catch((e) => {
     console.error(`[api] ${req.method} ${req.path}:`, e.message);
     if (!res.headersSent) res.status(e.status === 502 ? 424 : e.status || (/^(上游|无法连接上游|请求上游)/.test(e.message) ? 424 : 500)).json({ error: e.message, code: e.code });
   });
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 const notFound = (what = '资源') => Object.assign(new Error(`${what}不存在`), { status: 404 });
 const fileName = (f) => Buffer.from(f.originalname, 'latin1').toString('utf8');
+
+// ---------- 账号 ----------
+// 跨站提交拦截：带 Origin 的写请求必须来自本站
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || !req.headers.origin) return next();
+  let host = '';
+  try {
+    host = new URL(req.headers.origin).host;
+  } catch {}
+  if (host && host === req.headers.host) return next();
+  res.status(403).json({ error: '跨站请求已拦截' });
+});
+app.use((req, res, next) => {
+  req.token = auth.readToken(req);
+  req.user = auth.userFromToken(req.token);
+  next();
+});
+const signIn = (req, res, user) => {
+  auth.setCookie(req, res, auth.createSession(user));
+  res.json({ user: auth.publicUser(user) });
+};
+// 注册限流：同一 IP 每小时最多 5 个
+const regLog = new Map();
+app.get('/api/auth/me', h(async (req, res) => res.json({ user: auth.publicUser(req.user), allowRegister: settings.system().allowRegister, firstUser: !auth.hasUsers() })));
+app.post('/api/auth/register', h(async (req, res) => {
+  const ip = auth.clientIp(req);
+  const recent = (regLog.get(ip) || []).filter((t) => Date.now() - t < 3600e3);
+  if (recent.length >= 5) throw Object.assign(new Error('注册太频繁，请稍后再试'), { status: 429 });
+  const user = await auth.register(req.body || {});
+  regLog.set(ip, [...recent, Date.now()]);
+  signIn(req, res, user);
+}));
+app.post('/api/auth/login', h(async (req, res) => signIn(req, res, await auth.login(req.body || {}, auth.clientIp(req)))));
+app.post('/api/auth/logout', h(async (req, res) => {
+  if (req.user) auth.endSessions(req.user.id, null);
+  auth.setCookie(req, res, '');
+  res.json({ ok: true });
+}));
+// 以下接口都需要登录
+app.use('/api', (req, res, next) => (req.user ? next() : res.status(401).json({ error: '请先登录', code: 'auth' })));
+app.post('/api/auth/password', h(async (req, res) => {
+  await auth.changePassword(req.user, req.body.oldPassword, req.body.newPassword, req.token);
+  res.json({ ok: true });
+}));
+
+// ---------- 管理员：用户管理 ----------
+app.use('/api/admin', (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: '只有管理员可以操作' })));
+app.get('/api/admin/users', h(async (req, res) => res.json({ items: auth.listUsers(), system: settings.system() })));
+app.patch('/api/admin/users/:id', h(async (req, res) => res.json(await auth.adminUpdate(req.user, req.params.id, req.body || {}))));
+app.post('/api/admin/users/:id/reset-password', h(async (req, res) => res.json(await auth.adminResetPassword(req.user, req.params.id))));
+app.delete('/api/admin/users/:id', h(async (req, res) => res.json(auth.adminDelete(req.user, req.params.id))));
+app.put('/api/admin/system', h(async (req, res) => res.json(settings.setSystem({ allowRegister: !!req.body.allowRegister }))));
 
 // ---------- 总览 ----------
 app.get('/api/dashboard', h(async (req, res) => {
@@ -80,7 +137,10 @@ app.get('/api/products/:id', h(async (req, res) => {
 }));
 app.post('/api/products', h(async (req, res) => res.json(products.createManual(req.body))));
 app.patch('/api/products/:id', h(async (req, res) => res.json(products.patch(req.params.id, req.body))));
-app.delete('/api/products/:id', h(async (req, res) => res.json({ ok: db.products.remove(req.params.id) })));
+app.delete('/api/products/:id', h(async (req, res) => {
+  if (!db.products.get(req.params.id)) throw notFound('商品');
+  res.json({ ok: db.products.remove(req.params.id) });
+}));
 app.post('/api/products/:id/analyze', h(async (req, res) => res.json(await products.analyze(req.params.id))));
 // 导入：先预览（自动识别列），确认列对应关系后再写入
 app.post('/api/products/import/preview', upload.single('file'), h(async (req, res) => {
@@ -113,7 +173,7 @@ app.post('/api/scripts/generate', h(async (req, res) => res.json(await scripts.g
 app.delete('/api/scripts/:id', h(async (req, res) => res.json({ ok: db.scripts.remove(req.params.id) })));
 
 // ---------- 知识库 ----------
-app.get('/api/kbs', h(async (req, res) => res.json({ items: db.kbs.all() })));
+app.get('/api/kbs', h(async (req, res) => res.json({ items: db.kbs.all().map((k) => ({ ...k, readonly: !db.kbs.canEdit(k.id) })) })));
 app.post('/api/kbs', h(async (req, res) => {
   if (!req.body.name) throw bad('请输入知识库名称');
   res.json(db.kbs.insert({ name: req.body.name, description: req.body.description || '', icon: '', docCount: 0, chunkCount: 0 }));
@@ -192,7 +252,7 @@ app.post('/api/chats/:id/stream', async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
   try {
-    await chat.reply(req.params.id, req.body || {}, send, ctrl.signal);
+    await ctx.run(req.user, () => chat.reply(req.params.id, req.body || {}, send, ctrl.signal));
   } catch (e) {
     console.error('[chat]', e.message);
     send('error', { error: e.message, code: e.code });
@@ -201,7 +261,6 @@ app.post('/api/chats/:id/stream', async (req, res) => {
 });
 
 // ---------- 静态资源 ----------
-app.use('/media', express.static(db.MEDIA_DIR, { maxAge: '7d' }));
 // 前端 3D 依赖从本地 node_modules 提供，不依赖外部 CDN
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build'), { maxAge: '30d' }));
 // 静态资源按版本号加路径前缀：每次重启（部署）后 URL 都变，浏览器和 Cloudflare 不会再用到旧脚本
@@ -211,7 +270,7 @@ app.use('/v/:build', express.static(PUBLIC, { maxAge: '365d', immutable: true })
 app.use(express.static(PUBLIC, { index: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
 const indexHtml = () =>
   fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace(/(href|src)="\/(css|js)\//g, `$1="/v/${BUILD}/$2/`);
-app.get(/^\/(?!api|media|vendor|v\/).*/, (req, res) => {
+app.get(/^\/(?!api|vendor|v\/).*/, (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.type('html').send(indexHtml());
 });

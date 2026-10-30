@@ -94,9 +94,11 @@ const cosine = (a, b) => {
 
 // ---------- 入库 ----------
 async function addDocument(kbId, { title, text, source = 'manual', fileName }) {
-  if (!db.kbs.get(kbId)) throw new Error('知识库不存在');
-  if (!text || !text.trim()) throw new Error('文档内容为空');
-  const doc = db.docs.insert({ kbId, title, source, fileName, chars: text.length, status: 'indexing' });
+  const kb = editableKb(kbId);
+  if (!text || !text.trim()) throw Object.assign(new Error('文档内容为空'), { status: 400 });
+  // 平台内置知识库的文档对所有用户可读
+  const shared = kb.shared ? { shared: true } : {};
+  const doc = db.docs.insert({ kbId, title, source, fileName, chars: text.length, status: 'indexing', ...shared });
   const pieces = chunkText(text);
   let vectors = null;
   try {
@@ -105,16 +107,24 @@ async function addDocument(kbId, { title, text, source = 'manual', fileName }) {
     console.warn('[rag] embedding 失败，降级为 BM25：', e.message);
   }
   pieces.forEach((content, i) =>
-    db.chunks.insert({ kbId, docId: doc.id, docTitle: title, index: i, content, tokens: tokenize(content), vector: vectors?.[i] || null }),
+    db.chunks.insert({ kbId, docId: doc.id, docTitle: title, index: i, content, tokens: tokenize(content), vector: vectors?.[i] || null, ...shared }),
   );
   db.docs.update(doc.id, { status: 'ready', chunkCount: pieces.length, embedded: !!vectors });
   refreshKbStats(kbId);
   return db.docs.get(doc.id);
 }
 
+function editableKb(kbId) {
+  const kb = db.kbs.get(kbId);
+  if (!kb) throw Object.assign(new Error('知识库不存在'), { status: 404 });
+  if (!db.kbs.canEdit(kbId)) throw Object.assign(new Error('平台内置知识库只能由管理员修改'), { status: 403 });
+  return kb;
+}
+
 function removeDocument(docId) {
   const doc = db.docs.get(docId);
   if (!doc) return false;
+  editableKb(doc.kbId);
   db.chunks.replaceAll(db.chunks.all().filter((c) => c.docId !== docId));
   db.docs.remove(docId);
   refreshKbStats(doc.kbId);
@@ -122,6 +132,7 @@ function removeDocument(docId) {
 }
 
 function removeKb(kbId) {
+  editableKb(kbId);
   db.chunks.replaceAll(db.chunks.all().filter((c) => c.kbId !== kbId));
   db.docs.replaceAll(db.docs.all().filter((d) => d.kbId !== kbId));
   return db.kbs.remove(kbId);
@@ -204,6 +215,7 @@ async function ask(question, { kbIds } = {}) {
 
 // ---------- 从网页链接导入 ----------
 async function importUrl(kbId, url) {
+  editableKb(kbId);
   if (!/^https?:\/\//i.test(url || '')) throw Object.assign(new Error('请输入以 http(s):// 开头的链接'), { status: 400 });
   const lark = /(larkoffice|larksuite|feishu)\.(com|cn)/i.test(url);
   let res;

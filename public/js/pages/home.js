@@ -1,5 +1,7 @@
 // 官网式首页：首屏 + 集成墙 + 功能 Bento + 流程 + 数据 + 行动区 + FAQ
 import { api, icon, esc, fmtNum, sparkline } from '../lib.js';
+import { session } from '../session.js';
+import { scramble, sparkles } from '../fx/ambient.js';
 
 const WORDS = ['能卖的品', '算清的利润', '可拍的脚本', '清晰的测款方案'];
 const LOGOS = ['TikTok Shop', 'FastMoss', '1688', '智谱 GLM', 'DeepSeek', 'Kimi', '通义千问', 'Claude', 'Cloudflare'];
@@ -12,7 +14,8 @@ const FAQ = [
 ];
 
 export async function render(view) {
-  const [d, prov] = await Promise.all([api('/dashboard'), api('/providers').catch(() => ({ items: [] }))]);
+  // 未登录时首页仍可访问，产品卡片显示示例
+  const [d, prov] = session.user ? await Promise.all([api('/dashboard'), api('/providers').catch(() => ({ items: [] }))]) : [{ topProducts: [] }, { items: [] }];
   const active = prov.items?.find((p) => p.id === prov.activeId);
   const top = d.topProducts.find((p) => p.evaluation.verdict === '推荐测款') || d.topProducts[0];
   const demo = !top;
@@ -23,6 +26,11 @@ export async function render(view) {
 
   view.innerHTML = `<div class="lp">
   <section class="lp-hero">
+    <div class="hero-fx" aria-hidden="true">
+      <div class="spot-cone"></div>
+      <div class="beams">${Array.from({ length: 9 }, (_, i) => `<i style="--x:${6 + i * 11}%;--d:${(i * 0.73) % 4}s;--t:${3.2 + (i % 4) * 0.9}s"></i>`).join('')}</div>
+      <div class="horizon"><div class="floor"></div><div class="sun"></div></div>
+    </div>
     <div>
       <span class="pill"><b>${active ? '已接入' : '开始使用'}</b>${active ? `${esc(active.name)} · ${esc(active.model)}` : 'TikTok Shop 跨境卖家的选品与内容工作台'}</span>
       <h1><span class="l1">把 FastMoss 数据</span><br>变成<span class="rotator" id="rot">${WORDS.map((w, i) => `<span class="grad-text ${i === 0 ? 'on' : ''}">${w}</span>`).join('')}</span></h1>
@@ -35,7 +43,7 @@ export async function render(view) {
       <div class="note"><span>真实数据，无演示假数据</span><span>多模型一键切换</span><span>密钥只存在你的服务器</span></div>
     </div>
     <div class="mock-wrap" id="mockwrap">
-      <div class="mock" id="mock"><div class="mock-inner">
+      <div class="mock beam-border" id="mock"><div class="mock-inner">
         <div class="mock-bar"><i></i><i></i><i></i><span>tkagent / 智能选品</span></div>
         ${demo ? '<span class="label-demo">示例</span>' : ''}
         <div class="mock-head"><div><div class="muted small">今日推荐</div><b>${esc(m.name)}</b></div><span class="verdict ${m.verdict === '推荐测款' ? 'v-go' : 'v-watch'}">${esc(m.verdict)}</span></div>
@@ -76,10 +84,10 @@ export async function render(view) {
 
   <section class="lp-sec" data-reveal>
     <div class="lp-stats">
-      <div><b data-count="${d.stats.products}">0</b><span>选品库商品</span></div>
-      <div><b data-count="${d.stats.recommended}">0</b><span>推荐测款</span></div>
-      <div><b data-count="${d.stats.scripts}">0</b><span>已生成脚本</span></div>
-      <div><b data-count="${d.stats.docs}">0</b><span>知识库文档</span></div>
+      ${(d.stats
+        ? [[d.stats.products, '选品库商品'], [d.stats.recommended, '推荐测款'], [d.stats.scripts, '已生成脚本'], [d.stats.docs, '知识库文档']]
+        : [[6, '步选品方法'], [5, '项硬指标逐条检查'], [11, '家模型服务一键接入'], [100, '% 账号间数据隔离']]
+      ).map(([v, l]) => `<div><b data-count="${v}">0</b><span>${l}</span></div>`).join('')}
     </div>
   </section>
 
@@ -105,6 +113,7 @@ export async function render(view) {
     cur.classList.add('out');
     rot[wi].classList.remove('out');
     rot[wi].classList.add('on');
+    scramble(rot[wi], WORDS[wi]);
     setTimeout(() => cur.classList.remove('out'), 800);
   }, 2600));
 
@@ -139,7 +148,10 @@ export async function render(view) {
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
+  const stopSparkles = sparkles(view.querySelector('.lp-hero h1'));
+
   return () => {
+    stopSparkles();
     timers.forEach(clearInterval);
     removeEventListener('pointermove', onMove);
     removeEventListener('scroll', onScroll);

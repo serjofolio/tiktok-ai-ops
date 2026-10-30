@@ -8,6 +8,8 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   }
   const res = await fetch(`/api${path}`, opts);
   const data = await res.json().catch(() => ({}));
+  // 登录过期：交给外壳跳转到登录页
+  if (res.status === 401 && data.code === 'auth') dispatchEvent(new CustomEvent('unauthorized'));
   if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`);
   return data;
 }

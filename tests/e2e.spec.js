@@ -5,11 +5,18 @@ const path = require('path');
 const fs = require('fs');
 
 const UP = 'http://127.0.0.1:3902';
+const ADMIN = { username: 'admin', password: 'admin-pass-123' };
+// 以管理员身份登录（全新数据目录里第一个注册的账号就是管理员）
+async function login(page, who = ADMIN) {
+  const r = await page.request.post('/api/auth/login', { data: who });
+  if (r.status() === 401) expect((await page.request.post('/api/auth/register', { data: who })).ok()).toBeTruthy();
+}
 let errors = [];
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, info) => {
+  if (!info.title.startsWith('账号')) await login(page);
   errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && !/favicon|status of (400|424|502)/.test(m.text()) && errors.push(m.text()));
+  page.on('console', (m) => m.type() === 'error' && !/favicon|status of (400|401|403|424|502)/.test(m.text()) && errors.push(m.text()));
 });
 test.afterEach(async () => {
   expect(errors, `页面存在 JS 错误：\n${errors.join('\n')}`).toEqual([]);
@@ -191,7 +198,7 @@ test('总览：3D 主视觉、拖动旋转、统计', async ({ page }) => {
 
 test('移动端布局不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ['home', 'dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat']) {
+  for (const p of ['home', 'dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat', 'account', 'admin']) {
     await page.goto(`/#/${p}`);
     await expect(page.locator('#view .skeleton')).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -255,4 +262,112 @@ test('智能选品：导入 FastMoss 风格的 Excel（标题行 + 百分比单�
   const row = page.locator('.prow', { hasText: 'Product 3 迷你风扇' });
   await expect(row).toContainText('-7%');
   await expect(row.locator('a[href*="detail/1729384756102900003"]')).toHaveCount(1);
+});
+
+test('首页按钮互不遮挡：流光按钮的高光扫过时不会盖住旁边的按钮', async ({ page }) => {
+  await page.goto('/');
+  const btns = page.locator('.lp-hero .ctas .btn');
+  await expect(btns).toHaveCount(3);
+  // 高光每 4.5 秒扫一次，连续采样 5 秒，每个按钮中心点命中的始终是它自己
+  for (let t = 0; t < 25; t++) {
+    const bad = await btns.evaluateAll((els) => els.filter((b) => {
+      const r = b.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width * 0.3, r.top + r.height / 2);
+      return !b.contains(hit);
+    }).map((b) => b.textContent.trim()));
+    expect(bad, '被遮挡的按钮').toEqual([]);
+    await page.waitForTimeout(200);
+  }
+});
+
+test('账号：未登录跳转登录页，登录失败提示，登录后回到原页面，退出登录', async ({ page }) => {
+  await page.goto('/#/products');
+  await expect(page).toHaveURL(/#\/login\/products/);
+  expect((await page.request.get('/api/providers')).status()).toBe(401);
+  // 首页无需登录
+  await page.goto('/');
+  await expect(page.locator('.lp-hero h1')).toBeVisible();
+  await expect(page.locator('#account')).toContainText('登录');
+  await page.goto('/#/login/products');
+  await page.fill('[name=username]', ADMIN.username);
+  await page.fill('[name=password]', 'wrong-password');
+  await page.click('#go');
+  await expect(page.locator('#err')).toContainText('用户名或密码错误');
+  await page.fill('[name=password]', ADMIN.password);
+  await page.click('#go');
+  await expect(page).toHaveURL(/#\/products/);
+  await expect(page.locator('#user-btn')).toContainText('admin');
+  await expect(page.locator('#user-btn')).toContainText('管理员');
+  await page.click('#user-btn');
+  await page.click('#logout');
+  await expect(page.locator('#account')).toContainText('登录');
+  expect((await page.request.get('/api/products')).status()).toBe(401);
+});
+
+test('账号：其他用户注册后看不到管理员的模型配置、商品和知识库', async ({ page, browser }) => {
+  // 管理员已有数据（前面的用例里接入了模型、导入了商品）
+  await login(page);
+  const adminProducts = (await (await page.request.get('/api/products')).json()).items;
+  expect(adminProducts.length).toBeGreaterThan(0);
+  const ctx = await browser.newContext();
+  const bob = await ctx.newPage();
+  await bob.goto('/#/login/register');
+  await expect(bob.locator('#tabs button.on')).toHaveText('注册');
+  await bob.fill('[name=username]', 'bob');
+  await bob.fill('[name=password]', 'bob-pass-123');
+  await bob.fill('[name=password2]', 'bob-pass-123');
+  await bob.click('#go');
+  await expect(bob).toHaveURL(/#\/dashboard/);
+  await expect(bob.locator('#user-btn')).not.toContainText('管理员');
+  await expect(bob.locator('#mode-chip')).toContainText('未接入大模型');
+  const get = async (u) => (await bob.request.get('/api' + u)).json();
+  expect((await get('/providers')).items).toEqual([]);
+  expect((await get('/products')).items).toEqual([]);
+  expect((await bob.request.get('/api/products/' + adminProducts[0].id)).status()).toBe(404);
+  expect((await bob.request.delete('/api/products/' + adminProducts[0].id)).status()).toBe(404);
+  // 内置知识库只读共享，自己的官方文档库是空的
+  const kbs = (await get('/kbs')).items;
+  expect(kbs.find((k) => k.builtin).readonly).toBe(true);
+  expect(kbs.find((k) => k.official).docCount).toBe(0);
+  expect((await bob.request.delete('/api/kbs/' + kbs.find((k) => k.builtin).id)).status()).toBe(403);
+  await bob.goto('/#/knowledge/' + kbs.find((k) => k.builtin).id);
+  await expect(bob.locator('#pane')).toContainText('只读');
+  await expect(bob.locator('#dz')).toHaveCount(0);
+  // 普通用户进不了用户管理
+  expect((await bob.request.get('/api/admin/users')).status()).toBe(403);
+  await bob.goto('/#/admin');
+  await expect(bob).toHaveURL(/#\/dashboard/);
+  await ctx.close();
+});
+
+test('账号：管理员管理用户、关闭注册、修改密码', async ({ page, browser }) => {
+  await login(page);
+  await page.goto('/#/admin');
+  const row = page.locator('tr', { hasText: 'bob' });
+  await expect(row).toBeVisible();
+  await row.locator('[data-act=toggle]').click();
+  await expect(row).toContainText('已停用');
+  expect((await page.request.post('/api/auth/login', { data: { username: 'bob', password: 'bob-pass-123' } })).status()).toBe(403);
+  await login(page);
+  await page.goto('/#/admin');
+  await page.locator('tr', { hasText: 'bob' }).locator('[data-act=toggle]').click();
+  await expect(page.locator('tr', { hasText: 'bob' })).toContainText('正常');
+  // 关闭注册
+  await page.locator('.toggle').click();
+  await expect(page.locator('#reg')).not.toBeChecked();
+  const ctx = await browser.newContext();
+  const r = await ctx.request.post(page.url().replace(/#.*/, '') + 'api/auth/register', { data: { username: 'carol', password: 'carol-pass-1' } });
+  expect(r.status()).toBe(403);
+  await ctx.close();
+  await page.locator('.toggle').click();
+  await expect(page.locator('#reg')).toBeChecked();
+  // 修改密码后用新密码登录，再改回来
+  await page.goto('/#/account');
+  await page.fill('[name=oldPassword]', ADMIN.password);
+  await page.fill('[name=newPassword]', 'new-pass-456');
+  await page.fill('[name=newPassword2]', 'new-pass-456');
+  await page.click('#save');
+  await expect(page.locator('.toast').last()).toContainText('密码已修改');
+  expect((await page.request.post('/api/auth/login', { data: { username: 'admin', password: 'new-pass-456' } })).ok()).toBeTruthy();
+  expect((await page.request.post('/api/auth/password', { data: { oldPassword: 'new-pass-456', newPassword: ADMIN.password } })).ok()).toBeTruthy();
 });

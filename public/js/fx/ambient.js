@@ -226,3 +226,72 @@ export function initSpotlight() {
     el.style.setProperty('--my', `${e.clientY - r.top}px`);
   }, { passive: true });
 }
+
+// ---------- 文字解码：切换时字符先乱码滚动，再逐个定格为目标文字 ----------
+const GLYPHS = '#$%&*+<>?/\\=ABCDEFGHJKLMNPQRSTUVWXYZ0123456789选品利润脚本测款爆款数据增长';
+export function scramble(el, text, { duration = 700 } = {}) {
+  if (!el) return;
+  const chars = [...text];
+  const start = performance.now();
+  cancelAnimationFrame(el._scr);
+  const tick = (t) => {
+    const p = Math.min(1, (t - start) / duration);
+    const fixed = Math.floor(p * chars.length);
+    el.textContent = chars.map((c, i) => (i < fixed || c === ' ' ? c : GLYPHS[(Math.random() * GLYPHS.length) | 0])).join('');
+    if (p < 1) el._scr = requestAnimationFrame(tick);
+    else el.textContent = text;
+  };
+  el._scr = requestAnimationFrame(tick);
+}
+
+// ---------- 闪光星点：在元素周围不断随机冒出四角星，返回停止函数 ----------
+export function sparkles(el, { every = 260, colors = ['#ffd59a', '#ffb35c', '#ff7a59', '#fff4e0'] } = {}) {
+  if (!el) return () => {};
+  el.classList.add('sparkle-host');
+  const timer = setInterval(() => {
+    if (document.hidden) return;
+    const s = document.createElement('i');
+    s.className = 'sparkle';
+    const size = 8 + Math.random() * 14;
+    s.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 100}%;width:${size}px;height:${size}px;color:${colors[(Math.random() * colors.length) | 0]}`;
+    s.innerHTML = '<svg viewBox="0 0 160 160"><path fill="currentColor" d="M80 0C80 0 84.2 41.2 101.5 58.5C118.8 75.8 160 80 160 80C160 80 118.8 84.2 101.5 101.5C84.2 118.8 80 160 80 160C80 160 75.8 118.8 58.5 101.5C41.2 84.2 0 80 0 80C0 80 41.2 75.8 58.5 58.5C75.8 41.2 80 0 80 0Z"/></svg>';
+    el.appendChild(s);
+    setTimeout(() => s.remove(), 1400);
+  }, every);
+  return () => clearInterval(timer);
+}
+
+// ---------- 开场动画：每次打开网站播放一次（纯视觉层，不拦截点击） ----------
+export function initIntro() {
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem('intro') === '1';
+    sessionStorage.setItem('intro', '1');
+  } catch {}
+  if (seen || navigator.webdriver) return;
+  const el = document.createElement('div');
+  el.className = 'intro';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `<div class="intro-half top"></div><div class="intro-half bottom"></div>
+    <div class="intro-core"><div class="intro-ring"></div><div class="intro-ring r2"></div><div class="intro-logo">T</div>
+    <div class="intro-name">${[...'TikTok 运营台'].map((c, i) => `<span style="--i:${i}">${c === ' ' ? '&nbsp;' : c}</span>`).join('')}</div>
+    <div class="intro-bar"><i></i></div></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('open'), 1500);
+  setTimeout(() => el.remove(), 2600);
+}
+
+// ---------- 点击按钮时迸发一圈光点 ----------
+export function initClickBurst() {
+  addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('.btn, .user-btn, .auth-tabs button');
+    if (!b) return;
+    const box = document.createElement('div');
+    box.className = 'burst';
+    box.style.left = `${e.clientX}px`;
+    box.style.top = `${e.clientY}px`;
+    box.innerHTML = Array.from({ length: 10 }, (_, i) => `<i style="--a:${i * 36}deg"></i>`).join('');
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 700);
+  }, { passive: true });
+}

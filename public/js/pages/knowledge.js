@@ -48,6 +48,18 @@ export async function render(view, [kbId]) {
       ${docs.length ? `<div class="table-wrap"><table><thead><tr><th>文档</th><th>来源</th><th>字数</th><th>切片</th><th>索引</th><th>状态</th><th>时间</th><th></th></tr></thead><tbody>
       ${docs.map((d) => `<tr><td><a href="javascript:;" data-view="${d.id}"><b>${icon('file', 14)} ${esc(d.title)}</b></a></td><td><span class="chip">${{ builtin: '内置', upload: '上传', manual: '手动' }[d.source] || d.source}</span></td><td>${fmtNum(d.chars)}</td><td>${d.chunkCount || 0}</td><td>${d.embedded ? '<span class="badge badge-run">向量+BM25</span>' : '<span class="badge badge-muted">BM25</span>'}</td><td>${statusBadge(d.status)}</td><td class="muted small">${timeAgo(d.createdAt)}</td><td><button class="icon-btn danger" data-del="${d.id}">${icon('trash', 14)}</button></td></tr>`).join('')}</tbody></table></div>` : empty('知识库还没有文档')}
       </div></div>`;
+    $$('[data-view]', pane).forEach((b) => (b.onclick = async () => {
+      const d = docs.find((x) => x.id === b.dataset.view);
+      const { items } = await api(`/docs/${d.id}/chunks`);
+      modal({ title: `${esc(d.title)} · ${items.length} 个切片`, wide: true, body: `<div class="col">${items.map((c) => `<div class="hit"><div class="hit-head"><span>#${c.index + 1}</span><span>${c.content.length} 字</span></div><div style="white-space:pre-wrap">${esc(c.content)}</div></div>`).join('')}</div>` });
+    }));
+    // 平台内置知识库对普通用户只读
+    if (kb.readonly) {
+      ['#paste', '#rm-kb', '#dz'].forEach((sel) => $(sel, pane)?.remove());
+      $$('[data-del]', pane).forEach((b) => b.remove());
+      $('.card-head .spacer', pane).insertAdjacentHTML('afterend', '<span class="chip">平台内置 · 只读</span>');
+      return;
+    }
     $('#dz', pane).insertAdjacentHTML('afterend', `<div class="row" style="flex-wrap:nowrap"><input class="input" id="url" placeholder="从公开网页链接导入，例如 TikTok Shop 学习中心的文章链接"><button class="btn ghost" id="urlgo" data-loading="读取中…">${icon('link', 15)}从链接导入</button></div>`);
     $('#urlgo', pane).onclick = (e) => withLoading(e.currentTarget, async () => {
       const url = $('#url', pane).value.trim();
@@ -101,11 +113,6 @@ export async function render(view, [kbId]) {
       await api(`/docs/${b.dataset.del}`, { method: 'DELETE' });
       await refreshKbs();
       docsPane(pane);
-    }));
-    $$('[data-view]', pane).forEach((b) => (b.onclick = async () => {
-      const d = docs.find((x) => x.id === b.dataset.view);
-      const { items } = await api(`/docs/${d.id}/chunks`);
-      modal({ title: `${esc(d.title)} · ${items.length} 个切片`, wide: true, body: `<div class="col">${items.map((c) => `<div class="hit"><div class="hit-head"><span>#${c.index + 1}</span><span>${c.content.length} 字</span></div><div style="white-space:pre-wrap">${esc(c.content)}</div></div>`).join('')}</div>` });
     }));
   }
 

@@ -17,7 +17,7 @@ module.exports = defineConfig({
   },
   webServer: {
     command: 'node tests/serve.js',
-    url: `http://localhost:${PORT}/api/dashboard`,
+    url: `http://localhost:${PORT}/api/auth/me`,
     reuseExistingServer: false,
     timeout: 30000,
     env: { PORT: String(PORT), DATA_DIR: path.join(__dirname, 'test-results', 'data') },

@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const ctx = require('./ctx');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
@@ -51,38 +52,103 @@ process.on('exit', flushAll);
 const id = (prefix = '') => prefix + crypto.randomBytes(6).toString('hex');
 const now = () => new Date().toISOString();
 
-// 简单集合封装
-function collection(name) {
+const forbidden = () => Object.assign(new Error('没有权限修改这条数据'), { status: 403 });
+const SCOPED = new Set();
+
+/**
+ * 集合封装。scoped 集合的每条记录带 uid（所属用户）：
+ * - 登录用户只能看到自己的记录，以及 shared（平台内置、所有人可读）的记录；
+ * - shared 记录只有管理员能改；
+ * - 没有请求上下文时（启动初始化、命令行）不做过滤。
+ */
+function collection(name, { scoped = true } = {}) {
+  if (scoped) SCOPED.add(name);
+  const scope = () => (scoped ? ctx.store() : undefined);
+  const visible = (x, s) => !s || (s.user && x.uid === s.user.id) || !!x.shared;
+  const editable = (x, s) => !s || (s.user && x.uid === s.user.id) || (!!x.shared && s.user?.role === 'admin');
+  const all = () => {
+    const s = scope();
+    return s ? load(name).filter((x) => visible(x, s)) : load(name);
+  };
+  const get = (key) => {
+    const s = scope();
+    return load(name).find((x) => x.id === key && visible(x, s));
+  };
+  const own = (key) => {
+    const item = get(key);
+    if (item && !editable(item, scope())) throw forbidden();
+    return item;
+  };
   return {
-    all: () => load(name),
-    get: (key) => load(name).find((x) => x.id === key),
-    find: (fn) => load(name).filter(fn),
+    all,
+    get,
+    find: (fn) => all().filter(fn),
+    canEdit: (key) => {
+      const item = get(key);
+      return !!item && editable(item, scope());
+    },
     insert(doc) {
-      const item = { id: id(name.slice(0, 2) + '_'), createdAt: now(), ...doc };
+      const s = scope();
+      if (s && !s.user) throw Object.assign(new Error('请先登录'), { status: 401 });
+      const item = { id: id(name.slice(0, 2) + '_'), createdAt: now(), ...(s ? { uid: s.user.id } : {}), ...doc };
       load(name).unshift(item);
       save(name);
       return item;
     },
     update(key, patch) {
-      const item = load(name).find((x) => x.id === key);
+      const item = own(key);
       if (!item) return null;
       Object.assign(item, typeof patch === 'function' ? patch(item) : patch, { updatedAt: now() });
       save(name);
       return item;
     },
     remove(key) {
+      if (!own(key)) return false;
       const list = load(name);
-      const i = list.findIndex((x) => x.id === key);
-      if (i >= 0) list.splice(i, 1);
+      list.splice(list.findIndex((x) => x.id === key), 1);
       save(name);
-      return i >= 0;
+      return true;
     },
+    // 用户上下文中只替换自己能看到的那部分，其他用户的数据原样保留
     replaceAll(items) {
+      const s = scope();
+      if (s) {
+        const keep = new Set(items.map((x) => x.id));
+        const dropped = load(name).filter((x) => visible(x, s) && !keep.has(x.id));
+        if (dropped.some((x) => !editable(x, s))) throw forbidden();
+        items = [...load(name).filter((x) => !visible(x, s)), ...items];
+      }
       cache.set(name, items);
       save(name);
     },
-    count: () => load(name).length,
+    count: () => all().length,
   };
+}
+
+// 删除某个用户的全部数据
+function purgeUser(uid) {
+  for (const name of SCOPED) {
+    const list = load(name);
+    const rest = list.filter((x) => x.uid !== uid || x.shared);
+    if (rest.length !== list.length) cache.set(name, rest), save(name);
+  }
+}
+
+// 早期单用户版本留下的无主数据，归到第一个管理员名下
+function claimOrphans(uid) {
+  let n = 0;
+  for (const name of SCOPED) {
+    for (const x of load(name)) if (!x.uid && !x.shared) (x.uid = uid), n++;
+    save(name);
+  }
+  return n;
+}
+
+// 每个用户的数据量（管理员查看用户列表用）
+function usage(uid) {
+  const out = {};
+  for (const name of SCOPED) out[name] = load(name).filter((x) => x.uid === uid && !x.shared).length;
+  return out;
 }
 
 module.exports = {
@@ -95,15 +161,13 @@ module.exports = {
   id,
   now,
   collection,
+  purgeUser,
+  claimOrphans,
+  usage,
   products: collection('products'),
   scripts: collection('scripts'),
-  images: collection('images'),
-  videos: collection('videos'),
   kbs: collection('knowledge_bases'),
   docs: collection('documents'),
   chunks: collection('chunks'),
-  agents: collection('agents'),
-  sessions: collection('agent_sessions'),
-  runs: collection('workflow_runs'),
   activity: collection('activity'),
 };
