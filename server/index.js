@@ -204,8 +204,17 @@ app.post('/api/chats/:id/stream', async (req, res) => {
 app.use('/media', express.static(db.MEDIA_DIR, { maxAge: '7d' }));
 // 前端 3D 依赖从本地 node_modules 提供，不依赖外部 CDN
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build'), { maxAge: '30d' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
-app.get(/^\/(?!api|media|vendor).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
+// 静态资源按版本号加路径前缀：每次重启（部署）后 URL 都变，浏览器和 Cloudflare 不会再用到旧脚本
+const PUBLIC = path.join(__dirname, '..', 'public');
+const BUILD = Date.now().toString(36);
+app.use('/v/:build', express.static(PUBLIC, { maxAge: '365d', immutable: true }));
+app.use(express.static(PUBLIC, { index: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
+const indexHtml = () =>
+  fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace(/(href|src)="\/(css|js)\//g, `$1="/v/${BUILD}/$2/`);
+app.get(/^\/(?!api|media|vendor|v\/).*/, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.type('html').send(indexHtml());
+});
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
 
 const PORT = Number(process.env.PORT) || 3800;
