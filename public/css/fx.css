@@ -129,13 +129,7 @@
   .terrain, .mega, .gallery3d { margin-left: -16px; margin-right: -16px; }
   .orb-label { display: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .chars .ch { opacity: 1; transform: none; filter: none; animation: none; }
-  .reveal-armed [data-reveal] { opacity: 1; transform: none; }
-  .curtain { display: none; }
-  .gallery3d { height: auto; }
-  .gallery3d .viewport { position: relative; height: 70vh; }
-}
+
 .gallery3d .float.text { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; padding: 16px; background: linear-gradient(160deg, var(--panel-2), var(--bg)); }
 .gallery3d .float.text b { font-family: var(--display); font-size: 22px; font-weight: 500; line-height: 1.2; }
 .gallery3d .float.text small { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
@@ -221,7 +215,7 @@ h1, h2, h3, h4, .stat-value { font-weight: 500; }
 
 @media (max-width: 1100px) { .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } .drawer-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (prefers-reduced-motion: reduce) { .grain { animation: none; } .page-hero::after { animation: none; } .btn::after { display: none; } }
+
 
 /* 接入配置 */
 .provider-item { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 20px; transition: border-color 0.3s, transform 0.3s var(--ease); }

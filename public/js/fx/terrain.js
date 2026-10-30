@@ -79,7 +79,7 @@ export function mountTerrain(host, { items = [], onPick } = {}) {
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
-    camera.position.set(mouse.x * 1.6 + 2, 6.2 + mouse.y * 0.8, 12.5);
+    camera.position.set(Math.sin(now * 0.12) * 3 + mouse.x * 1.6 + 2, 6.2 + Math.sin(now * 0.09) * 0.8 + mouse.y * 0.8, 12.5 + Math.cos(now * 0.1));
     camera.lookAt(1.5, -0.5, 0);
 
     // 只对商品方块做命中检测

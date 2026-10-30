@@ -109,10 +109,11 @@ export async function render(view) {
   }, 2600));
 
   // 产品界面跟随鼠标倾斜
-  const mock = view.querySelector('#mock');
+  // 产品界面自己会摇摆漂浮（CSS 动画）；鼠标只在外层叠加少量偏移
+  const wrap = view.querySelector('#mockwrap');
   const onMove = (e) => {
     const x = e.clientX / innerWidth - 0.5, y = e.clientY / innerHeight - 0.5;
-    mock.style.transform = `rotateY(${-12 + x * 14}deg) rotateX(${6 - y * 10}deg)`;
+    wrap.style.transform = `rotateY(${x * 8}deg) rotateX(${-y * 6}deg)`;
   };
   addEventListener('pointermove', onMove, { passive: true });
 

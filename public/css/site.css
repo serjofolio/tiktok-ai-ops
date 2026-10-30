@@ -221,10 +221,7 @@ body.is-home .content { max-width: none; padding: 0; }
   .site-nav .btn-glow { display: none; }
   .chat-layout { height: auto; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .bg-aurora i, .bg-grid, .logo-track, .float-chip, .btn-glow::before, .cta-band::before, .viz-bars i, .grad-text { animation: none !important; }
-  .rotator span { transition: none; }
-}
+
 .lp-hero > div { min-width: 0; }
 @media (max-width: 760px) { .lp-hero h1 { font-size: 34px; } .rotator { display: inline-grid; } .lp-hero .lead { font-size: 15px; } }
 .lp-hero h1 { font-size: clamp(40px, 5vw, 74px); }
@@ -232,3 +229,55 @@ body.is-home .content { max-width: none; padding: 0; }
 .float-chip.c1 { left: 28px; top: -30px; }
 .viz-bars i { height: 100%; }
 @media (max-width: 760px) { .lp-hero h1 .l1 { white-space: normal; } .float-chip.c1 { top: -24px; } }
+
+/* ==========  自动播放的动效（不依赖鼠标）  ========== */
+/* 首屏产品界面：自己缓慢摇摆漂浮（鼠标只作用在外层，叠加一点偏移） */
+.mock { animation: mockSway 9s ease-in-out infinite alternate; transition: none; }
+@keyframes mockSway {
+  0% { transform: rotateY(-16deg) rotateX(7deg) translateY(0); }
+  50% { transform: rotateY(-8deg) rotateX(3deg) translateY(-14px); }
+  100% { transform: rotateY(-13deg) rotateX(9deg) translateY(6px); }
+}
+.mock-wrap { transition: transform 0.6s var(--ease); transform-style: preserve-3d; }
+.mock::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 235, 200, 0.16) 50%, transparent 65%); background-size: 250% 100%; animation: glare 5s ease-in-out infinite; }
+@keyframes glare { 0% { background-position: 120% 0; } 60%, 100% { background-position: -120% 0; } }
+
+/* 卡片边框上自己绕行的光点 */
+.bento > div::after, .step::after, .provider-item.on::after, .hook-box::after, .stat-strip::after, .onboard::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 2;
+  background: conic-gradient(from var(--ang), transparent 0 80%, rgba(255, 190, 120, 0.9) 88%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: spinAng 6s linear infinite;
+}
+.bento > div:nth-child(2)::after, .step:nth-child(2)::after { animation-delay: -1.2s; }
+.bento > div:nth-child(3)::after, .step:nth-child(3)::after { animation-delay: -2.4s; }
+.bento > div:nth-child(4)::after, .step:nth-child(4)::after { animation-delay: -3.6s; }
+.bento > div:nth-child(5)::after, .step:nth-child(5)::after { animation-delay: -4.8s; }
+.step:nth-child(6)::after { animation-delay: -5.4s; }
+.stat-strip, .onboard { position: relative; }
+
+/* 大按钮：每隔几秒自动扫过一道高光，主按钮带呼吸光晕 */
+.btn.lg::after { animation: shineAuto 4.5s ease-in-out infinite; }
+@keyframes shineAuto { 0%, 70% { left: -60%; } 90%, 100% { left: 130%; } }
+.btn-solid { animation: breatheGlow 3.2s ease-in-out infinite; }
+@keyframes breatheGlow { 50% { box-shadow: 0 18px 60px -8px rgba(255, 140, 70, 0.95); } }
+
+/* 卡片与数字的轻微浮动、发光 */
+.bento > div { animation: floatCard 7s ease-in-out infinite; }
+.bento > div:nth-child(even) { animation-delay: -3.5s; }
+@keyframes floatCard { 50% { transform: translateY(-6px); } }
+.lp-stats b, .stat-value { animation: numGlow 4s ease-in-out infinite; }
+@keyframes numGlow { 50% { text-shadow: 0 0 24px rgba(255, 179, 92, 0.45); } }
+.brand-logo { animation: logoPulse 3s ease-in-out infinite; }
+@keyframes logoPulse { 50% { box-shadow: 0 0 0 6px rgba(255, 179, 92, 0.12), 0 0 24px rgba(255, 179, 92, 0.35); } }
+.verdict.v-go { animation: breatheGlow 3s ease-in-out infinite; }
+.page-hero h2 em, .sec-head h2 em { background: var(--warm-grad); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: gradShift 5s ease-in-out infinite alternate; }
+
+/* 网格上自动亮起的光点 */
+.bg-grid::after { content: ''; position: absolute; width: 64px; height: 64px; left: 0; top: 0; background: radial-gradient(circle, rgba(255, 190, 120, 0.35), transparent 70%); animation: gridSpark 12s steps(1) infinite; }
+@keyframes gridSpark {
+  0% { transform: translate(256px, 128px); } 12% { transform: translate(768px, 64px); } 24% { transform: translate(1152px, 256px); }
+  36% { transform: translate(384px, 384px); } 48% { transform: translate(960px, 192px); } 60% { transform: translate(128px, 320px); }
+  72% { transform: translate(640px, 448px); } 84% { transform: translate(1280px, 128px); } 100% { transform: translate(512px, 64px); }
+}

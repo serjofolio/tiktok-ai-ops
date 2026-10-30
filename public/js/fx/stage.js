@@ -3,7 +3,7 @@ import * as THREE from 'three';
 
 export { THREE };
 
-export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const reducedMotion = () => false /* 按产品要求始终播放动效 */;
 
 // 读取 CSS 变量颜色，保证 3D 场景跟随当前界面风格
 export function cssColor(name, fallback = '#ffffff') {

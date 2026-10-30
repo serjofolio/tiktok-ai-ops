@@ -1,5 +1,5 @@
 // 全站动效：星尘背景、跟随光标、磁吸按钮、卡片 3D 倾斜、逐字浮现、滚动浮现、滚动驱动的 3D 素材长廊
-const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduce = () => false /* 按产品要求始终播放动效 */;
 const finePointer = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
 const pointer = { x: innerWidth / 2, y: innerHeight / 2 };
 addEventListener('pointermove', (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
@@ -21,6 +21,9 @@ export function initStars() {
   build();
   addEventListener('resize', build);
   let px = 0, py = 0;
+  // 流星：每隔几秒从右上方划过
+  const meteors = [];
+  let nextMeteor = 0;
   const draw = (now) => {
     requestAnimationFrame(draw);
     if (document.documentElement.dataset.style !== 'cinema' || document.hidden) return;
@@ -37,6 +40,25 @@ export function initStars() {
       ctx.beginPath();
       ctx.arc(x, y, s.r * s.z + 0.2, 0, 6.283);
       ctx.fill();
+    }
+    if (now > nextMeteor) {
+      nextMeteor = now + 1800 + Math.random() * 3200;
+      meteors.push({ x: w * (0.35 + Math.random() * 0.7), y: -20, vx: -(5 + Math.random() * 4), vy: 3 + Math.random() * 2.5, life: 1 });
+    }
+    for (let i = meteors.length - 1; i >= 0; i--) {
+      const m = meteors[i];
+      m.x += m.vx; m.y += m.vy; m.life -= 0.012;
+      if (m.life <= 0 || m.y > h + 40) { meteors.splice(i, 1); continue; }
+      const g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * 18, m.y - m.vy * 18);
+      g.addColorStop(0, `rgba(255, 225, 180, ${m.life})`);
+      g.addColorStop(1, 'rgba(255, 180, 110, 0)');
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x - m.vx * 18, m.y - m.vy * 18);
+      ctx.stroke();
     }
   };
   requestAnimationFrame(draw);

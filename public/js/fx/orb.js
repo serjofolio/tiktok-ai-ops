@@ -184,7 +184,7 @@ export function mountOrb(host, { bars = [] } = {}) {
       c.scale.y = Math.max(0.001, e);
       c.position.y = -1.7 + (c.userData.h * c.scale.y) / 2;
     });
-    camera.position.set(mouse.x * 1.1, 1.5 + mouse.y * 0.7, 9.2);
+    camera.position.set(Math.sin(now * 0.18) * 1.6 + mouse.x * 1.1, 1.5 + Math.sin(now * 0.11) * 0.6 + mouse.y * 0.7, 9.2 + Math.cos(now * 0.14) * 0.6);
     camera.lookAt(world.position.x * 0.55, 0.1, 0);
     // 立柱顶部的 HTML 标签：投影到屏幕，转到背面时淡出
     world.getWorldPosition(center);

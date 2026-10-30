@@ -234,7 +234,7 @@ export function monogram(name, size = '') {
 
 // 数字滚动：为 [data-count] 元素做一次计数动画
 export function countUp(root = document) {
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduce = false /* 按产品要求始终播放动效 */;
   for (const el of root.querySelectorAll('[data-count]:not([data-counted])')) {
     el.dataset.counted = '1';
     const target = Number(el.dataset.count) || 0;

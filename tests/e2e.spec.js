@@ -215,3 +215,20 @@ test('官网首页：首屏、轮播、集成墙、功能、流程、FAQ', async
   await expect(page).toHaveURL(/#\/products/);
   await expect(page.locator('body')).not.toHaveClass(/is-home/);
 });
+
+test('页面自己会动：开启系统「减少动画」且不移动鼠标，画面仍在变化', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const p of ['home', 'dashboard', 'products']) {
+    await page.goto(`/#/${p}`);
+    await page.waitForTimeout(1500);
+    const a = await page.screenshot();
+    await page.waitForTimeout(1500);
+    const b = await page.screenshot();
+    expect(Buffer.compare(a, b), `${p} 页面静止不动`).not.toBe(0);
+  }
+  // 关键动画没有被系统设置关掉
+  await page.goto('/#/home');
+  await page.locator('.mock').waitFor();
+  const anim = await page.evaluate(() => getComputedStyle(document.querySelector('.mock')).animationName);
+  expect(anim).toBe('mockSway');
+});
