@@ -254,10 +254,12 @@ async function listModels(cfg) {
   }
 }
 
+// 测试连接：给足 token，避免会先思考的模型（如 GLM-5 系列）在思考阶段就用完额度
 async function test(cfg) {
   const t0 = Date.now();
-  const r = await chat({ messages: [{ role: 'user', content: '请只回复：连接成功' }], temperature: 0.1, maxTokens: 50 }, resolve(cfg));
-  return { text: r.text.trim().slice(0, 80) || '（收到空回复）', ms: Date.now() - t0 };
+  const r = await chat({ messages: [{ role: 'user', content: '请只回复：连接成功' }], temperature: 0.1, maxTokens: 1024 }, resolve(cfg));
+  const text = r.text.trim();
+  return { text: text ? text.slice(0, 80) : '连接成功（模型只返回了思考内容）', ms: Date.now() - t0 };
 }
 
 module.exports = { PRESETS, isMock, noLLM, chat, stream, complete, completeJSON, safeJSON, test, http, trimSlash, listModels };

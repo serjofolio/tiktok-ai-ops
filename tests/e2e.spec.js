@@ -9,7 +9,7 @@ let errors = [];
 test.beforeEach(async ({ page }) => {
   errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && !/favicon|status of (400|502)/.test(m.text()) && errors.push(m.text()));
+  page.on('console', (m) => m.type() === 'error' && !/favicon|status of (400|424|502)/.test(m.text()) && errors.push(m.text()));
 });
 test.afterEach(async () => {
   expect(errors, `页面存在 JS 错误：\n${errors.join('\n')}`).toEqual([]);

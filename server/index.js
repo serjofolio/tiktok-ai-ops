@@ -29,11 +29,11 @@ if (ALLOWED_HOSTS.length) {
 app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
-// 异步路由统一错误处理；上游模型错误返回 502，便于前端区分
+// 异步路由统一错误处理；上游模型错误返回 424（不用 502：Cloudflare 会把源站 502 的错误说明替换掉）
 const h = (fn) => (req, res) =>
   Promise.resolve(fn(req, res)).catch((e) => {
     console.error(`[api] ${req.method} ${req.path}:`, e.message);
-    if (!res.headersSent) res.status(e.status || (/^(上游|无法连接上游|请求上游)/.test(e.message) ? 502 : 500)).json({ error: e.message, code: e.code });
+    if (!res.headersSent) res.status(e.status === 502 ? 424 : e.status || (/^(上游|无法连接上游|请求上游)/.test(e.message) ? 424 : 500)).json({ error: e.message, code: e.code });
   });
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 const notFound = (what = '资源') => Object.assign(new Error(`${what}不存在`), { status: 404 });
