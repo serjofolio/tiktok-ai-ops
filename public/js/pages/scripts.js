@@ -4,8 +4,8 @@ import { api, icon, esc, toast, withLoading, $, $$, empty, copy, timeAgo, confir
 const PART = { Hook: '钩子', Problem: '痛点', Demo: '演示', Proof: '证明', CTA: '行动号召' };
 
 export async function render(view, [first, second]) {
-  const [{ items: products }, sd] = await Promise.all([api('/products?sort=pass'), api('/scripts')]);
-  const rank = (p) => (p.status === 'testing' ? 0 : p.evaluation.verdict === '推荐测款' ? 1 : p.status === 'dropped' ? 3 : 2);
+  const [{ items: products }, sd] = await Promise.all([api('/products?sort=score'), api('/scripts')]);
+  const rank = (p) => (p.status === 'testing' ? 0 : p.evaluation.verdict === '可以上' ? 1 : p.status === 'dropped' || p.evaluation.verdict === '不建议上' ? 3 : 2);
   const pool = products.slice().sort((a, b) => rank(a) - rank(b));
   const preset = first === 'new' ? second : '';
   let current = first && first !== 'new' ? sd.items.find((s) => s.id === first) : null;
@@ -20,7 +20,7 @@ export async function render(view, [first, second]) {
   <div class="split">
     <div class="col sticky">
       <div class="card card-pad col">
-        ${pool.length ? `<label class="field">商品<select class="input" id="pid">${pool.map((p) => `<option value="${p.id}" ${p.id === preset ? 'selected' : ''}>${p.status === 'testing' ? '【测款中】' : p.evaluation.verdict === '推荐测款' ? '【推荐】' : ''}${esc(p.name)}</option>`).join('')}</select></label>` : `<div class="hit">选品库还是空的。<a href="#/products" style="color:var(--lime)">先去导入 FastMoss 数据 →</a></div>`}
+        ${pool.length ? `<label class="field">商品<select class="input" id="pid">${pool.map((p) => `<option value="${p.id}" ${p.id === preset ? 'selected' : ''}>${p.status === 'testing' ? '【测款中】' : p.evaluation.verdict === '可以上' ? '【可以上】' : ''}${esc(p.name)}</option>`).join('')}</select></label>` : `<div class="hit">选品库还是空的。<a href="#/products" style="color:var(--lime)">先去导入 FastMoss 数据 →</a></div>`}
         <div class="field">风格<div class="preset-grid" id="styles">${Object.entries(sd.styles).map(([k, t]) => `<div class="preset ${k === style ? 'on' : ''}" data-k="${k}">${esc(t.replace(/（.*）/, ''))}</div>`).join('')}</div></div>
         <div class="grid g2">
           <label class="field">时长<select class="input" id="dur"><option value="15">15 秒</option><option value="20" selected>20 秒</option><option value="30">30 秒</option><option value="45">45 秒</option></select></label>

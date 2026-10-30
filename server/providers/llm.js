@@ -125,7 +125,7 @@ function resolve(cfgOverride) {
 // ---------- 非流式 ----------
 async function chat(opts, cfgOverride) {
   const cfg = resolve(cfgOverride);
-  const send = (body) => http(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(body) }, 180000);
+  const send = (body) => http(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(body) }, opts.timeoutMs || 180000);
   const req = buildRequest(cfg, opts);
   let data;
   try {
@@ -211,8 +211,8 @@ async function complete(prompt, { system, temperature } = {}) {
   return (await chat({ system, messages: [{ role: 'user', content: prompt }], temperature })).text;
 }
 
-async function completeJSON(prompt, { system, temperature } = {}) {
-  const r = await chat({ system, messages: [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true });
+async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs } = {}) {
+  const r = await chat({ system, messages: [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs });
   const parsed = safeJSON(r.text);
   if (!parsed) throw new Error('模型返回的内容不是合法 JSON，请重试或换一个模型：' + r.text.slice(0, 160));
   return parsed;

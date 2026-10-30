@@ -89,61 +89,93 @@ test('接入配置：预设、获取模型、启用、测试、错误提示', as
   await expect(page.locator('.provider-item.on')).toContainText('测试 GLM');
 });
 
-test('智能选品：粘贴 FastMoss 表格 → 识别列 → 利润测算 → AI 分析 → 生成脚本', async ({ page }) => {
+test('智能选品：导入 FastMoss 真实导出 → 六维评分 → AI 选品报告 → 逐个研判', async ({ page }) => {
   await page.goto('/#/products');
-  await expect(page.locator('.step')).toHaveCount(6);
-  await expect(page.locator('.criteria')).toContainText('对标视频');
   await expect(page.locator('.onboard')).toBeVisible();
   await page.click('#import');
-  const tsv = '商品名称\t商品ID\t售价\t近7天销量\t销量增长率\t带货达人数\t带货视频数\t佣金率\t类目\t店铺\nMini Desk Fan\t1729384756102938475\t$15.99\t1.2万\t86%\t240\t120\t15%\t3C数码\tCoolShop\nOld Phone Case\t1729384756102938476\t$6.99\t800\t-35%\t12\t4\t10%\t3C数码\tCaseShop';
-  await page.fill('#paste', tsv);
-  await page.click('#parse');
-  await expect(page.locator('[data-f=name]')).toHaveValue('0');
-  await expect(page.locator('[data-f=growth]')).toHaveValue('4');
+  await page.setInputFiles('#file', path.join(__dirname, 'fixtures', 'fastmoss-my-3c.xlsx'));
+  await expect(page.locator('#imp')).toContainText('自动识别了 22 列');
+  await expect(page.locator('#imp')).toContainText('关键字段齐全');
   await page.click('#commit');
-  await expect(page.locator('.prow')).toHaveCount(2);
-  const fan = page.locator('.prow', { hasText: 'Mini Desk Fan' });
-  await expect(fan).toContainText('+86%');
-  await expect(fan.locator('a[href*="fastmoss.com/zh/e-commerce/detail/1729384756102938475"]')).toHaveCount(1);
-  await expect(page.locator('.prow', { hasText: 'Old Phone Case' })).toContainText('建议放弃');
+  await expect(page.locator('.prow')).toHaveCount(8);
+  // 规则研判：定邀类目、品牌、刷单数据、客单价太低都直接判「不建议上」
+  await expect(page.locator('.prow', { hasText: 'Bank Kuasa' })).toContainText('充电宝需定邀');
+  await expect(page.locator('.prow', { hasText: 'UGREEN' })).toContainText('不建议上');
+  await expect(page.locator('.prow', { hasText: 'Tali anti-hilang' })).toContainText('数据可疑');
+  await expect(page.locator('.prow', { hasText: 'Handheld Fan' })).toContainText('客单价太低');
+  const ear = page.locator('.prow', { hasText: 'Mini Sleep Earbuds' });
+  await expect(ear).toContainText('RM34.57');
+  await expect(ear).toContainText('2.41×');
+  await expect(ear).toContainText('可以上');
+  await expect(ear.locator('a[href*="detail/1730000000000000001"]')).toHaveCount(1);
+  // 导入后自动生成 AI 选品报告（前面的用例已接入模拟大模型）
+  await expect(page.locator('.rp-summary')).toContainText('睡眠耳机', { timeout: 20000 });
+  await expect(page.locator('.opp')).toHaveCount(1);
+  await expect(page.locator('.opp')).toContainText('RM29–35');
+  await expect(page.locator('.seg-table')).toContainText('无线耳机');
+  await expect(page.locator('.band').first()).toBeVisible();
+  await expect(page.locator('.avoid')).toContainText('充电宝');
+  await expect(page.locator('.prow .ai-dot')).toHaveCount(8, { timeout: 20000 });
+  await expect(page.locator('.rv.v-go b')).toHaveText('2');
+  await expect(page.locator('.rv.v-drop b')).toHaveText('4');
+  // 点报告里的「不建议上」只看这一类
+  await page.locator('.rv.v-drop').click();
+  await expect(page.locator('.prow')).toHaveCount(4);
+  await expect(page.locator('.rv.v-drop b')).toHaveText('4');
+});
 
-  await fan.click();
-  await expect(page.locator('.ck', { hasText: '销量在增长' })).toHaveClass(/pass/);
-  await page.fill('#cost', '3');
-  await page.fill('#ship', '2.5');
-  await expect(page.locator('.profit-table')).toContainText('27.6%');
+test('智能选品：商品详情 → 六维证据 → 人民币利润测算 → 评论 → 深度分析 → 生成脚本', async ({ page }) => {
+  await page.goto('/#/products');
+  await page.locator('.prow', { hasText: 'Mini Sleep Earbuds' }).click();
+  await expect(page.locator('.dim')).toHaveCount(6);
+  await expect(page.locator('.dim', { hasText: '增长趋势' })).toContainText('2.41 倍');
+  await expect(page.locator('.dim', { hasText: '达人带货验证' })).toContainText('出单率 100%');
+  await expect(page.locator('.ai-box')).toContainText('¥18–25');
+  await expect(page.locator('.ext-links a', { hasText: '1688' })).toHaveAttribute('href', /keywords=%E7%9D%A1%E7%9C%A0/);
+  await expect(page.locator('.profit-table')).toContainText('采购 + 物流最多');
+  // 1688 采购价 ¥20 + 物流 ¥5：RM34.57 扣平台 14% + 每单 RM0.54、佣金 8%、退货 5%、广告 10% → 净利率 17.6%
+  await page.fill('#cost', '20');
+  await page.fill('#ship', '5');
+  await expect(page.locator('.profit-table')).toContainText('17.6%');
+  await page.fill('#reviews', 'Sakit telinga bila tidur mengiring. 侧睡压耳朵，戴久了疼');
+  await page.locator('#reviews').blur();
+  await expect(page.locator('.toast').last()).toContainText('评论已保存');
   await page.locator('[data-j=visual] [data-v=true]').click();
   await page.locator('[data-j=wantBuy] [data-v=true]').click();
-  await expect(page.locator('#pd .verdict').first()).toHaveText('推荐测款');
   await page.click('#ai');
-  await expect(page.locator('.analysis')).toContainText('为什么选');
+  await expect(page.locator('.analysis')).toContainText('理由');
   await expect(page.locator('.analysis')).toContainText('止损线');
   await page.locator('[data-st=testing]').click();
   await page.locator('#pf a', { hasText: '生成视频脚本' }).click();
-
   await expect(page).toHaveURL(/#\/scripts\/new\//);
-  await expect(page.locator('#pid option:checked')).toContainText('Mini Desk Fan');
-  await page.fill('#bench', 'POV: your desk is a sauna...');
+  await expect(page.locator('#pid option:checked')).toContainText('Mini Sleep Earbuds');
+  await page.fill('#bench', 'POV: you finally sleep on your side...');
   await page.click('#gen');
   await expect(page.locator('.scene2')).toHaveCount(3);
   await expect(page.locator('.hook-box')).toContainText('Stop sweating');
   await expect(page.locator('#hist .list-item')).toHaveCount(1);
 });
 
-test('智能选品：上传 CSV 文件与利润参数', async ({ page }) => {
-  const csv = path.join(__dirname, '..', 'test-results', 'fastmoss.csv');
-  fs.mkdirSync(path.dirname(csv), { recursive: true });
-  fs.writeFileSync(csv, '﻿Product Name,Price,7d Sales,Growth,Creators,Videos,Category\nLED Strip,$12.50,5000,40%,300,90,Home\n');
+test('智能选品：粘贴美区表格（$ 售价）与利润测算参数', async ({ page }) => {
   await page.goto('/#/products');
   await page.click('#import');
-  await page.setInputFiles('#file', csv);
-  await expect(page.locator('[data-f=price]')).toHaveValue('1');
+  await page.fill('#paste', '商品名称\t售价\t近7天销量\t7天销售额\t28天销量\t带货达人数\t带货视频数\t佣金率\t类目\t店铺\nLED Strip Lights\t$12.50\t5000\t62500\t16000\t300\t900\t15%\tHome\tGlowShop');
+  await page.click('#parse');
+  await expect(page.locator('[data-f=gmv]')).toHaveValue('3');
+  await page.locator('#autoai').uncheck();
   await page.click('#commit');
-  await expect(page.locator('.prow', { hasText: 'LED Strip' })).toBeVisible();
+  const row = page.locator('.prow', { hasText: 'LED Strip Lights' });
+  await expect(row).toContainText('$12.50');
+  await expect(row).toContainText('1.25×');
   await page.click('#assume');
+  await expect(page.locator('.modal')).toContainText('马来西亚');
   await page.fill('#af [name=targetMargin]', '30');
+  await page.locator('#af [name=inv_charger]').check();
   await page.click('.modal #ok');
-  await expect(page.locator('.toast').last()).toContainText('重新测算');
+  await expect(page.locator('.toast').last()).toContainText('重新评估');
+  // 有了充电类定邀资质，UGREEN 充电器不再因定邀拦截（但仍是品牌商品）
+  await expect(page.locator('.prow', { hasText: 'UGREEN' })).not.toContainText('充电类目需定邀');
+  await expect(page.locator('.prow', { hasText: 'UGREEN' })).toContainText('品牌商品');
 });
 
 test('Agent：流式回答、引用知识库、会话列表', async ({ page }) => {
@@ -252,15 +284,16 @@ test('页面大标题的强调词可见', async ({ page }) => {
   }
 });
 
-test('智能选品：导入 FastMoss 风格的 Excel（标题行 + 百分比单元格 + 日期）', async ({ page }) => {
+test('智能选品：兼容其他格式的 Excel（标题行 + 百分比单元格 + 日期）', async ({ page }) => {
   await page.goto('/#/products');
   await page.click('#import');
-  await page.setInputFiles('#file', require('path').join(__dirname, 'fixtures', 'fastmoss-sample.xlsx'));
-  await expect(page.locator('[data-f=name]')).not.toHaveValue('');
+  await page.setInputFiles('#file', path.join(__dirname, 'fixtures', 'fastmoss-sample.xlsx'));
+  await page.locator('.map-details summary').click();
   for (const f of ['productId', 'price', 'sales7d', 'growth', 'creatorCount', 'videoCount', 'commissionRate', 'shop', 'category']) await expect(page.locator(`[data-f=${f}]`), f).not.toHaveValue('');
+  await page.locator('#autoai').uncheck();
   await page.click('#commit');
   const row = page.locator('.prow', { hasText: 'Product 3 迷你风扇' });
-  await expect(row).toContainText('-7%');
+  await expect(row).toContainText('0.93×');
   await expect(row.locator('a[href*="detail/1729384756102900003"]')).toHaveCount(1);
 });
 

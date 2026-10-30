@@ -14,6 +14,8 @@ const products = require('./services/products');
 const scripts = require('./services/scripts');
 const rag = require('./services/rag');
 const chat = require('./services/chat');
+const report = require('./services/report');
+const selection = require('./services/selection');
 const seed = require('./seed');
 
 const app = express();
@@ -113,7 +115,7 @@ app.get('/api/dashboard', h(async (req, res) => {
   res.json({
     stats: {
       products: list.length,
-      recommended: list.filter((p) => p.evaluation.verdict === '推荐测款').length,
+      recommended: list.filter((p) => p.evaluation.verdict === '可以上').length,
       testing: byStatus('testing'),
       scripts: db.scripts.count(),
       docs: db.docs.count(),
@@ -129,7 +131,15 @@ app.get('/api/dashboard', h(async (req, res) => {
 }));
 
 // ---------- 智能选品 ----------
-app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query), categories: products.categories(), assumptions: settings.get().selection })));
+app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query), categories: products.categories(), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
+// AI 选品报告：后台生成，前端轮询
+app.post('/api/reports', h(async (req, res) => res.json(report.start({ ids: req.body?.ids }))));
+app.get('/api/reports/latest', h(async (req, res) => res.json(report.latest() || {})));
+app.get('/api/reports/:id', h(async (req, res) => {
+  const r = report.get(req.params.id);
+  if (!r) throw notFound('报告');
+  res.json(r);
+}));
 app.get('/api/products/:id', h(async (req, res) => {
   const p = products.get(req.params.id);
   if (!p) throw notFound('商品');
@@ -157,8 +167,19 @@ app.post('/api/products/import/preview', upload.single('file'), h(async (req, re
 }));
 app.post('/api/products/import/commit', h(async (req, res) => res.json(products.commit(req.body.token, req.body.mapping || {}))));
 app.put('/api/selection', h(async (req, res) => {
+  const b = req.body || {};
   const a = {};
-  for (const k of ['platformFeeRate', 'creatorRate', 'returnRate', 'adRate', 'targetMargin']) if (req.body[k] !== undefined) a[k] = Math.max(0, Number(req.body[k]) || 0);
+  for (const k of ['creatorRate', 'returnRate', 'adRate', 'targetMargin']) if (b[k] !== undefined && b[k] !== '') a[k] = Math.max(0, Number(b[k]) || 0);
+  if (['crossborder', 'local'].includes(b.storeMode)) a.storeMode = b.storeMode;
+  if (b.invited) a.invited = { charger: !!b.invited.charger, powerbank: !!b.invited.powerbank };
+  if (b.markets && typeof b.markets === 'object') {
+    a.markets = {};
+    for (const [code, v] of Object.entries(b.markets)) {
+      if (!selection.MARKETS[code] || !v) continue;
+      a.markets[code] = {};
+      for (const k of ['platformFeeRate', 'fixedFee', 'cnyRate']) if (v[k] !== undefined && v[k] !== '' && Number.isFinite(Number(v[k]))) a.markets[code][k] = Math.max(0, Number(v[k]));
+    }
+  }
   res.json(settings.update({ selection: a }).selection);
 }));
 
@@ -282,6 +303,7 @@ const HOST = process.env.HOST || undefined;
 
 async function main() {
   await seed.run();
+  report.recover();
   const server = app.listen(PORT, HOST, () => {
     const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  TikTok 运营台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);

@@ -17,11 +17,12 @@ export async function render(view) {
   // 未登录时首页仍可访问，产品卡片显示示例
   const [d, prov] = session.user ? await Promise.all([api('/dashboard'), api('/providers').catch(() => ({ items: [] }))]) : [{ topProducts: [] }, { items: [] }];
   const active = prov.items?.find((p) => p.id === prov.activeId);
-  const top = d.topProducts.find((p) => p.evaluation.verdict === '推荐测款') || d.topProducts[0];
+  const top = d.topProducts.find((p) => p.evaluation.verdict === '可以上') || d.topProducts[0];
   const demo = !top;
+  const dimCheck = (dd) => ({ title: `${dd.label} ${dd.score ?? '—'}`, status: dd.score == null ? 'unknown' : dd.score >= 65 ? 'pass' : dd.score >= 45 ? 'warn' : 'fail' });
   const m = top
-    ? { name: top.name, price: top.price, sales: top.sales7d, growth: top.growth, margin: top.evaluation.profit?.margin, verdict: top.evaluation.verdict, checks: top.evaluation.checks.slice(0, 4), trend: [] }
-    : { name: 'Mini Desk Fan', price: 15.99, sales: 12000, growth: 86, margin: 27.6, verdict: '推荐测款', checks: [{ title: '销量在增长', status: 'pass' }, { title: '利润够', status: 'pass' }, { title: '对标视频足够多', status: 'pass' }, { title: '价格适合冲动下单', status: 'pass' }] };
+    ? { name: top.name, cur: top.evaluation.metrics.currency, price: top.evaluation.metrics.asp, sales: top.sales7d, growth: top.evaluation.metrics.momentum != null ? Math.round((top.evaluation.metrics.momentum - 1) * 100) : null, margin: top.evaluation.profit?.margin ?? null, ceiling: top.evaluation.profit?.ceilingCny, verdict: top.evaluation.verdict, checks: top.evaluation.dims.slice(0, 4).map(dimCheck), trend: [] }
+    : { name: 'Mini Desk Fan', cur: '$', price: 15.99, sales: 12000, growth: 86, margin: 27.6, verdict: '可以上', checks: [{ title: '需求规模 82', status: 'pass' }, { title: '增长趋势 91', status: 'pass' }, { title: '达人带货验证 78', status: 'pass' }, { title: '竞争格局 64', status: 'warn' }] };
   const trend = Array.from({ length: 16 }, (_, i) => 40 + i * 4 + Math.sin(i * 1.3) * 10 + (i > 10 ? (i - 10) * 9 : 0));
 
   view.innerHTML = `<div class="lp">
@@ -46,12 +47,12 @@ export async function render(view) {
       <div class="mock beam-border" id="mock"><div class="mock-inner">
         <div class="mock-bar"><i></i><i></i><i></i><span>tkagent / 智能选品</span></div>
         ${demo ? '<span class="label-demo">示例</span>' : ''}
-        <div class="mock-head"><div><div class="muted small">今日推荐</div><b>${esc(m.name)}</b></div><span class="verdict ${m.verdict === '推荐测款' ? 'v-go' : 'v-watch'}">${esc(m.verdict)}</span></div>
-        <div class="mock-kpis"><div><small>售价</small><b>${m.price != null ? '$' + m.price : '—'}</b></div><div><small>7 天销量</small><b>${m.sales != null ? fmtNum(m.sales) : '—'}</b></div><div><small>环比</small><b class="up">${m.growth != null ? (m.growth > 0 ? '+' : '') + m.growth + '%' : '—'}</b></div></div>
-        <div class="mock-checks">${m.checks.map((c, i) => `<div style="animation-delay:${0.6 + i * 0.18}s"><i>${c.status === 'pass' ? '✓' : c.status === 'fail' ? '✕' : '?'}</i>${esc(c.title)}</div>`).join('')}</div>
+        <div class="mock-head"><div><div class="muted small">今日推荐</div><b>${esc(m.name)}</b></div><span class="verdict ${m.verdict === '可以上' ? 'v-go' : m.verdict === '不建议上' ? 'v-drop' : 'v-watch'}">${esc(m.verdict)}</span></div>
+        <div class="mock-kpis"><div><small>成交均价</small><b>${m.price != null ? esc(m.cur) + m.price : '—'}</b></div><div><small>7 天销量</small><b>${m.sales != null ? fmtNum(m.sales) : '—'}</b></div><div><small>趋势</small><b class="${(m.growth ?? 0) >= 0 ? 'up' : 'down'}">${m.growth != null ? (m.growth > 0 ? '+' : '') + m.growth + '%' : '—'}</b></div></div>
+        <div class="mock-checks">${m.checks.map((c, i) => `<div style="animation-delay:${0.6 + i * 0.18}s"><i>${c.status === 'pass' ? '✓' : c.status === 'fail' ? '✕' : c.status === 'warn' ? '!' : '?'}</i>${esc(c.title)}</div>`).join('')}</div>
         <div class="mock-spark">${sparkline(trend, { w: 460, h: 70, color: '#ffb35c' })}</div>
       </div></div>
-      <div class="float-chip c1"><small>单件净利率</small><b class="up">${m.margin != null ? m.margin + '%' : '待填成本'}</b></div>
+      <div class="float-chip c1"><small>${m.margin != null ? '单件净利率' : '采购 + 物流上限'}</small><b class="up">${m.margin != null ? m.margin + '%' : m.ceiling != null ? '¥' + m.ceiling : '—'}</b></div>
       <div class="float-chip c2"><small>测款方案</small><b>15 位达人 · 7 天</b></div>
       <div class="float-chip c3"><small>开场钩子</small>“Stop sweating at your desk!”</div>
     </div>
@@ -62,7 +63,7 @@ export async function render(view) {
   <section class="lp-sec" id="features" data-reveal>
     <div class="sec-head"><div class="eyebrow">FEATURES</div><h2>从一张表格，<br>到一条能开拍的视频</h2><p>每一步都基于真实数据，每个结论都能追溯到原因。</p></div>
     <div class="bento">
-      <div class="b1"><div class="tag">智能选品</div><h3>FastMoss 数据导入，硬指标自动检查</h3><p>拖入导出文件或粘贴表格，自动识别列名；逐项检查销量增长、对标视频数量、价格带、达人分布，给出推荐测款 / 再观察 / 建议放弃。</p>
+      <div class="b1"><div class="tag">智能选品</div><h3>FastMoss 数据导入，AI 逐个研判能不能上</h3><p>导出文件原样拖进来，自动识别全部字段；按需求、趋势、达人、竞争、利润、风险六个维度打分，AI 写出类目报告，并说清每个商品可以上 / 谨慎测试 / 不建议上的理由。</p>
         <div class="viz"><div class="viz-bars">${[0.35, 0.5, 0.42, 0.66, 0.58, 0.8, 0.72, 0.95, 0.88, 1].map((h, i) => `<i style="--h:${h};animation-delay:${-i * 0.3}s"></i>`).join('')}</div></div></div>
       <div class="b2"><div class="tag">利润测算</div><h3>每件到底赚多少</h3><p>扣掉平台佣金、达人佣金、退货、广告、采购和物流。</p>
         <div class="viz viz-money"><div><span>售价</span><span>$15.99</span></div><div><span>− 佣金与预留</span><span>$6.08</span></div><div><span>− 采购 + 物流</span><span>$5.50</span></div><div class="tot"><span>净利</span><span>$4.41 · 27.6%</span></div></div></div>
@@ -85,7 +86,7 @@ export async function render(view) {
   <section class="lp-sec" data-reveal>
     <div class="lp-stats">
       ${(d.stats
-        ? [[d.stats.products, '选品库商品'], [d.stats.recommended, '推荐测款'], [d.stats.scripts, '已生成脚本'], [d.stats.docs, '知识库文档']]
+        ? [[d.stats.products, '选品库商品'], [d.stats.recommended, '可以上'], [d.stats.scripts, '已生成脚本'], [d.stats.docs, '知识库文档']]
         : [[6, '步选品方法'], [5, '项硬指标逐条检查'], [11, '家模型服务一键接入'], [100, '% 账号间数据隔离']]
       ).map(([v, l]) => `<div><b data-count="${v}">0</b><span>${l}</span></div>`).join('')}
     </div>

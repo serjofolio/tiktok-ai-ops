@@ -2,7 +2,7 @@
 import { api, icon, esc, fmtNum, timeAgo, empty } from '../lib.js';
 import { splitText, mountGallery } from '../fx/ambient.js';
 
-const VC = { 推荐测款: 'v-go', 再观察: 'v-watch', 建议放弃: 'v-drop', 数据不足: 'v-na' };
+const VC = { 可以上: 'v-go', 谨慎测试: 'v-watch', 不建议上: 'v-drop', 数据不足: 'v-na' };
 
 export async function render(view) {
   const d = await api('/dashboard');
@@ -11,7 +11,7 @@ export async function render(view) {
   const maxSales = Math.max(...cats.map((c) => c.sales || c.count), 1);
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
   const stats = [
-    ['选品库', s.products, `${s.recommended} 个推荐测款`, '#/products'],
+    ['选品库', s.products, `${s.recommended} 个可以上`, '#/products'],
     ['测款中', s.testing, '正在验证的商品', '#/products'],
     ['视频脚本', s.scripts, '可直接开拍', '#/scripts'],
     ['知识文档', s.docs, `${s.chats} 个 Agent 对话`, '#/knowledge'],
@@ -22,7 +22,7 @@ export async function render(view) {
     ['sparkles', 'AI 选品分析', '为什么选、怎么拍、测款方案', '#/products'],
     ['script', '一键生成视频脚本', '钩子 → 痛点 → 演示 → 证明 → CTA', '#/scripts'],
   ];
-  const cards = d.topProducts.slice(0, 9).map((p) => ({ title: p.name, sub: `${p.evaluation.verdict} · ${p.growth != null ? (p.growth > 0 ? '+' : '') + p.growth + '%' : '—'}`, href: `#/products/${p.id}` }));
+  const cards = d.topProducts.slice(0, 9).map((p) => ({ title: p.name, sub: `${p.evaluation.verdict} · ${p.evaluation.metrics.momentum != null ? '趋势 ' + p.evaluation.metrics.momentum + '×' : '—'}`, href: `#/products/${p.id}` }));
 
   view.innerHTML = `
   <section class="stage3d" id="stage">
@@ -58,10 +58,10 @@ export async function render(view) {
     <div class="card">
       <div class="card-head"><h3>选品库</h3><div class="spacer"></div><a class="btn sm ghost" href="#/products">全部 ${icon('arrow', 14)}</a></div>
       ${d.topProducts.length ? `<div style="overflow-x:auto"><table>
-        <thead><tr><th>商品</th><th class="r">售价</th><th class="r">7 天销量</th><th class="r">环比</th><th>结论</th></tr></thead>
+        <thead><tr><th>商品</th><th class="r">成交均价</th><th class="r">7 天销量</th><th class="r">趋势</th><th>结论</th></tr></thead>
         <tbody>${d.topProducts.map((p) => `<tr style="cursor:pointer" onclick="location.hash='#/products/${p.id}'">
-          <td><b>${esc(p.name)}</b><div class="p-sub">${esc(p.category || '')}</div></td><td class="r money">${p.price != null ? '$' + p.price : '—'}</td>
-          <td class="r">${p.sales7d != null ? fmtNum(p.sales7d) : '—'}</td><td class="r ${p.growth >= 0 ? 'up' : 'down'}">${p.growth != null ? (p.growth > 0 ? '+' : '') + p.growth + '%' : '—'}</td>
+          <td><b>${esc(p.name)}</b><div class="p-sub">${esc(p.category || '')}</div></td><td class="r money">${p.evaluation.metrics.asp != null ? p.evaluation.metrics.currency + p.evaluation.metrics.asp : '—'}</td>
+          <td class="r">${p.sales7d != null ? fmtNum(p.sales7d) : '—'}</td><td class="r ${(p.evaluation.metrics.momentum ?? 1) >= 1 ? 'up' : 'down'}">${p.evaluation.metrics.momentum != null ? p.evaluation.metrics.momentum + '×' : '—'}</td>
           <td><span class="verdict ${VC[p.evaluation.verdict] || 'v-na'}">${esc(p.evaluation.verdict)}</span></td></tr>`).join('')}</tbody></table></div>`
         : empty('选品库是空的：从 FastMoss 导出商品数据后导入', 'target', '<a class="btn sm" href="#/products">去导入</a>')}
     </div>
@@ -73,7 +73,7 @@ export async function render(view) {
     </div>
   </div>
 
-  ${cards.length >= 3 ? `<section class="gallery3d mt" id="gallery"><div class="viewport"><div class="title"><h3>候选商品，正在浮现</h3><div>${s.products} 个商品 // ${s.recommended} 个推荐测款 // 滚动浏览</div></div></div></section>` : ''}
+  ${cards.length >= 3 ? `<section class="gallery3d mt" id="gallery"><div class="viewport"><div class="title"><h3>候选商品，正在浮现</h3><div>${s.products} 个商品 // ${s.recommended} 个可以上 // 滚动浏览</div></div></div></section>` : ''}
 
   <div class="grid g2 mt" data-reveal>
     <div class="card">

@@ -19,11 +19,13 @@ const DEFAULTS = {
     ali1688: { appKey: '', appSecret: '', note: '' },
   },
   selection: {
-    platformFeeRate: 8, // TikTok Shop 平台佣金 %
-    creatorRate: 15, // 达人佣金 %（商品数据里有佣金率时以商品为准）
+    creatorRate: 10, // 达人佣金 %（商品数据里有佣金比例时以商品为准）
     returnRate: 5, // 退货/售后预留 %
     adRate: 10, // 广告/样品预留 %
     targetMargin: 20, // 净利率达标线 %
+    storeMode: 'crossborder', // crossborder 跨境店 | local 本土店
+    invited: { charger: false, powerbank: false }, // 已获得的定邀资质
+    markets: {}, // 各站点平台费率、每单固定费、人民币汇率的自定义值（默认值见 services/selection.js）
   },
   store: { name: '我的 TikTok 小店', market: 'US', language: 'English' },
 };
