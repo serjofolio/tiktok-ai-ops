@@ -7,6 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23111110'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='%23d2ff1f' font-family='Arial' font-weight='800'>T</text></svg>" />
   <link rel="stylesheet" href="/css/app.css" />
   <link rel="stylesheet" href="/css/fx.css" />
+  <link rel="stylesheet" href="/css/site.css" />
   <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
   <script>document.documentElement.dataset.style = "cinema"; document.documentElement.dataset.theme = "dark";</script>
 </head>
@@ -15,23 +16,25 @@
   <div class="cursor-dot" aria-hidden="true"></div><div class="cursor-ring" aria-hidden="true"></div>
   <div class="curtain" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>
+  <div class="bg-aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div class="bg-grid" aria-hidden="true"></div>
   <div class="app" id="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-logo">T</div>
-        <div><b>TikTok 运营台</b><small>跨境电商 · 选品到内容</small></div>
-      </div>
+    <header class="site-nav" id="sitenav">
+      <a class="brand" href="#/home"><div class="brand-logo">T</div><div><b>TikTok 运营台</b><small>选品到内容</small></div></a>
       <nav class="nav" id="nav"></nav>
-      <div class="side-foot"><div class="mode-chip" id="mode-chip"><i class="dot"></i><span>加载中…</span></div></div>
-    </aside>
-    <main class="main">
-      <header class="topbar">
+      <div class="nav-right">
+        <div class="mode-chip" id="mode-chip"><i class="dot"></i><span>加载中…</span></div>
+        <a class="btn sm btn-glow" href="#/products">开始选品</a>
         <button class="icon-btn menu-btn" id="menu-btn" aria-label="菜单"></button>
-        <div><h1 id="page-title">总览</h1></div>
-        <span class="sub" id="page-sub"></span>
-        <div class="spacer"></div>
-      </header>
+      </div>
+    </header>
+    <main class="main">
       <section class="content" id="view"></section>
+      <footer class="site-footer">
+        <div class="brand"><div class="brand-logo">T</div><div><b>TikTok 运营台</b><small>FastMoss 数据选品 · AI 测款方案 · 带货脚本</small></div></div>
+        <div class="foot-links"><a href="#/products">智能选品</a><a href="#/scripts">视频脚本</a><a href="#/knowledge">知识库</a><a href="#/providers">接入配置</a><a href="#/chat">Agent</a></div>
+        <div class="muted small">数据与密钥只保存在你自己的服务器上</div>
+      </footer>
     </main>
   </div>
   <script type="module" src="/js/app.js"></script>

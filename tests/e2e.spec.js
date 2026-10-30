@@ -25,7 +25,7 @@ test('导航与所有页面', async ({ page }) => {
   await expect(page.locator('#style-btn')).toHaveCount(0);
   for (const [p, title] of PAGES) {
     await page.goto(`/#/${p}`);
-    await expect(page.locator('#page-title')).toHaveText(title);
+    await expect(page).toHaveTitle(new RegExp(title));
     await expect(page.locator('#view .skeleton')).toHaveCount(0, { timeout: 10000 });
     await expect(page.locator('#view')).not.toContainText('页面加载失败');
   }
@@ -173,7 +173,7 @@ test('知识库：上传文档、检索、飞书链接给出导出指引', async
 });
 
 test('总览：3D 主视觉、拖动旋转、统计', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/dashboard');
   await expect(page.locator('#headline')).toContainText('今天选出能卖的品');
   await expect(page.locator('#stage canvas.webgl')).toHaveCount(1);
   await expect(page.locator('.stat-strip > a')).toHaveCount(4);
@@ -191,7 +191,7 @@ test('总览：3D 主视觉、拖动旋转、统计', async ({ page }) => {
 
 test('移动端布局不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ['dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat']) {
+  for (const p of ['home', 'dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat']) {
     await page.goto(`/#/${p}`);
     await expect(page.locator('#view .skeleton')).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -199,4 +199,19 @@ test('移动端布局不横向溢出', async ({ page }) => {
   }
   await page.click('#menu-btn');
   await expect(page.locator('#app')).toHaveClass(/nav-open/);
+});
+
+test('官网首页：首屏、轮播、集成墙、功能、流程、FAQ', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('body')).toHaveClass(/is-home/);
+  await expect(page.locator('.lp-hero h1')).toContainText('把 FastMoss 数据');
+  await expect(page.locator('#rot span.on')).toHaveCount(1);
+  const first = await page.locator('#rot span.on').textContent();
+  await expect(page.locator('#rot span.on')).not.toHaveText(first, { timeout: 5000 });
+  await expect(page.locator('.logo-track span').first()).toBeVisible();
+  await expect(page.locator('.bento > div')).toHaveCount(5);
+  await expect(page.locator('.faq details')).toHaveCount(5);
+  await page.locator('.lp-hero a', { hasText: '开始选品' }).click();
+  await expect(page).toHaveURL(/#\/products/);
+  await expect(page.locator('body')).not.toHaveClass(/is-home/);
 });

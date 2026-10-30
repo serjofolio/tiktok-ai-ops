@@ -7,24 +7,20 @@ initPointerFx();
 initSpotlight();
 
 const ROUTES = [
-  { group: '工作台' },
-  { path: 'dashboard', title: '总览', sub: '数据、进度与快捷入口', icon: 'home' },
-  { group: '选品到内容' },
-  { path: 'products', title: '智能选品', sub: 'FastMoss 数据 → 硬指标 → 利润测算 → AI 分析 → 测款方案', icon: 'target' },
-  { path: 'scripts', title: '视频脚本', sub: '选好的品，一键生成可直接开拍的带货脚本', icon: 'script' },
-  { group: '智能' },
-  { path: 'knowledge', title: '知识库', sub: 'TikTok 官方文档与运营资料，Agent 回答的依据', icon: 'book' },
-  { path: 'providers', title: '接入配置', sub: '模型供应商与 API 密钥，一键切换', icon: 'link' },
-  { path: 'chat', title: 'Agent', sub: '像正常 AI 一样对话，可引用知识库', icon: 'bot' },
+  { path: 'home', title: '首页', hidden: true, full: true },
+  { path: 'dashboard', title: '总览', icon: 'home' },
+  { path: 'products', title: '智能选品', icon: 'target' },
+  { path: 'scripts', title: '视频脚本', icon: 'script' },
+  { path: 'knowledge', title: '知识库', icon: 'book' },
+  { path: 'providers', title: '接入配置', icon: 'link' },
+  { path: 'chat', title: 'Agent', icon: 'bot' },
 ];
 
 const nav = $('#nav');
-nav.innerHTML = ROUTES.map((r) =>
-  r.group ? `<div class="nav-group">${r.group}</div>` : `<a href="#/${r.path}" data-path="${r.path}">${icon(r.icon)}<span>${r.title}</span></a>`,
-).join('');
+nav.innerHTML = ROUTES.filter((r) => !r.hidden).map((r) => `<a href="#/${r.path}" data-path="${r.path}">${icon(r.icon, 16)}<span>${r.title}</span></a>`).join('');
 
 $('#menu-btn').innerHTML = icon('menu');
-$('#menu-btn').onclick = () => $('#app').classList.toggle('nav-open');
+$('#menu-btn').onclick = () => { $('#app').classList.toggle('nav-open'); requestAnimationFrame(moveIndicator); };
 
 // ---------- 导航滑块：激活项背后的色块弹性滑动 ----------
 const indicator = document.createElement('div');
@@ -34,8 +30,11 @@ function moveIndicator() {
   const a = nav.querySelector('a.active');
   if (!a) return (indicator.style.opacity = 0);
   indicator.style.opacity = 1;
+  // 桌面端横向导航，移动端展开为纵向菜单
+  const vertical = getComputedStyle(nav).flexDirection === 'column';
+  indicator.style.width = vertical ? '' : `${a.offsetWidth}px`;
   indicator.style.height = `${a.offsetHeight}px`;
-  indicator.style.transform = `translateY(${a.offsetTop}px)`;
+  indicator.style.transform = vertical ? `translateY(${a.offsetTop}px)` : `translateX(${a.offsetLeft}px)`;
 }
 window.addEventListener('resize', moveIndicator);
 
@@ -44,6 +43,7 @@ const scrollBar = document.createElement('div');
 scrollBar.className = 'scroll-progress';
 document.body.appendChild(scrollBar);
 addEventListener('scroll', () => {
+  $('#sitenav').classList.toggle('scrolled', scrollY > 20);
   const max = document.documentElement.scrollHeight - innerHeight;
   scrollBar.style.transform = `scaleX(${max > 0 ? scrollY / max : 0})`;
 }, { passive: true });
@@ -65,7 +65,7 @@ new MutationObserver(() => countUp($('#view'))).observe($('#view'), { childList:
 
 const progress = document.createElement('div');
 progress.className = 'topbar-progress';
-$('.topbar').appendChild(progress);
+$('#sitenav').appendChild(progress);
 
 let cleanup = null;
 let firstRoute = true;
@@ -78,12 +78,11 @@ async function route() {
     curtain.classList.add('go');
   }
   firstRoute = false;
-  const [, path = 'dashboard', ...rest] = location.hash.split('/');
-  const r = ROUTES.find((x) => x.path === path) || ROUTES[1];
+  const [, path = 'home', ...rest] = location.hash.split('/');
+  const r = ROUTES.find((x) => x.path === path) || ROUTES[0];
+  document.body.classList.toggle('is-home', !!r.full);
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.path === r.path));
   moveIndicator();
-  $('#page-title').textContent = r.title;
-  $('#page-sub').textContent = r.sub;
   document.title = `${r.title} · TikTok 运营台`;
   $('#app').classList.remove('nav-open');
   if (typeof cleanup === 'function') cleanup();
