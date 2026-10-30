@@ -1,79 +1,36 @@
-# TikTok AI 全能运营智能体平台
+# TikTok 跨境电商运营台
 
-面向 TikTok Shop 跨境卖家的一站式 AI 运营平台：**智能选品 → AI 脚本 → 文生图 → 图生视频 → 发布素材包**，并内置 RAG 知识库和可调用工具的 AI 智能体。
+面向 TikTok Shop 卖家的选品与内容工具：**FastMoss 数据选品 → 硬指标与利润测算 → AI 选品分析与测款方案 → 一键带货视频脚本**，配套 TikTok 官方文档知识库和可对话的 Agent。
 
-> 无需任何 API Key 即可在「离线演示模式」下跑通全部流程；在「系统设置」接入大模型后即为真实 AI 生产。
+## 功能
 
-## ✨ 功能
-
-| 模块 | 能力 |
+| 模块 | 能做什么 |
 |---|---|
-| ⚡ 一键工作流 | 自动选品 → 选品分析 → 分镜脚本 → 每镜头文生图 → 图生视频 → 合成成片 → 标题/文案/话题/发布时间；支持选品池批量运行，实时进度 |
-| 🤖 AI 智能体 | Function Calling 工具调用循环，可调用选品、分析、知识库、写脚本、生图、生视频、启动工作流 7 个工具；可自定义智能体（提示词 / 工具 / 绑定知识库）；可**接入外部智能体**（Dify、Coze、FastGPT 等 OpenAI 兼容端点） |
-| 🔎 智能选品 | 六维评分模型（增长 30% · 销量 20% · 毛利 20% · 竞争 15% · 口碑 10% · 内容潜力 5%），S/A/B/C 分级、趋势图、AI 选品报告、选品池、CSV 导入 |
-| 🎬 脚本工坊 | 6 种风格（痛点种草 PAS / 开箱 / 对比 / 剧情 / 教程 / 口播），多语言口播，RAG 增强；一键生成分镜图并合成视频 |
-| 🖼️ 图片工坊 | 文生图、参考图生图、6 种风格预设、多尺寸，图库管理 |
-| 🎞️ 视频工坊 | 图生视频（异步任务轮询）、6 种运镜模板；本地 Canvas 合成器（Ken Burns 运镜 + 字幕 + 转场），可导出 WebM |
-| 📚 知识库 RAG | PDF / Word / Markdown / TXT / CSV / HTML 解析、智能切片、BM25 中文检索 + 向量混合检索、带引用的问答；内置 5 篇 TikTok 运营文档 |
-| 🔗 开放接口 | `GET /api/tools`、`POST /api/tools/{name}`，供外部 Agent 框架把本平台当作工具使用 |
+| 智能选品 | 页面写明选品思路（找潜力趋势 → 数据工具筛选 → 竞品分析 → 判断能否卖 → 测试方案 → 视频脚本）。导入 FastMoss 导出的 Excel/CSV 或直接粘贴表格，自动识别列；逐项检查「销量在增长、利润够、对标视频足够多、价格带、竞争分布、卖点能拍出来、自己也想买」；填入 1688 采购价和物流即算出单件净利；AI 说明为什么选、目标人群、卖点拍法、竞品切入点、风险、测款方案；附 FastMoss / TikTok / 1688 找货源链接 |
+| 视频脚本 | 从选品库选商品（测款中、推荐测款优先），可贴对标视频文案，生成按「钩子 → 痛点 → 演示 → 证明 → 行动号召」组织的分镜脚本，含 3 个备选钩子用于 A/B 测款 |
+| 知识库 | 上传 Word / PDF / Markdown / 网页，切片检索；飞书文档需先「下载为」Word/PDF 再上传 |
+| 接入配置 | 类似 CC Switch：添加多个模型供应商（智谱 GLM、GLM 编码套餐、GLM Anthropic 协议、DeepSeek、Kimi、通义、豆包、OpenAI、Claude、自定义），一键启用、测试、从上游获取模型列表；FastMoss / 1688 接口凭证预留位 |
+| Agent | 普通 AI 聊天界面，流式输出，可引用知识库并标注来源，显示思考过程，可随时停止 |
 
-## 🚀 Windows 启动
+所有 AI 功能都调用你在「接入配置」里启用的真实模型，没有离线假数据。
 
-1. 安装 [Node.js 18+](https://nodejs.org/zh-cn/download)（安装时保持默认选项）
-2. 下载/克隆本项目
-3. **双击 `start.bat`**：首次运行会自动安装依赖（使用 npmmirror 国内镜像），然后自动打开浏览器 `http://localhost:3800`
+### 智谱 GLM 接入
+- OpenAI 兼容（按量计费）：`https://open.bigmodel.cn/api/paas/v4`
+- GLM 编码套餐（和 Codex 等工具同一套额度）：`https://open.bigmodel.cn/api/coding/paas/v4`
+- Anthropic 协议：`https://open.bigmodel.cn/api/anthropic`（协议选 Anthropic，地址不要再加 /v1）
 
-也可以使用 PowerShell：
+模型名填 `glm-4.6`、`glm-4.5-air` 等，以智谱控制台为准。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start.ps1
-```
+## Windows 启动
 
-修改端口：`set PORT=8080 && start.bat`。macOS / Linux 使用 `./start.sh`。
+安装 [Node.js 18+](https://nodejs.org/zh-cn/download)，双击 `start.bat`，浏览器打开 `http://localhost:3800`。
 
-## ⚙️ 模型接入
-
-进入「系统设置」，点选预设后填写 API Key，平台会**自动调用上游 `/models` 接口拉取可用模型**（按用途排序、可输入筛选），点选即可，也可以手动输入模型名：
-
-| 能力 | 支持的服务商 |
-|---|---|
-| 大语言模型 | DeepSeek、通义千问、豆包（火山方舟）、Kimi、硅基流动、OpenAI 等所有 OpenAI 兼容接口；Anthropic Claude |
-| 向量模型 | OpenAI、硅基流动 bge-m3、通义 Embedding；不配置则使用本地 BM25 |
-| 文生图 | 火山方舟 Seedream、OpenAI gpt-image、硅基流动 Kolors 等 `images/generations` 兼容接口 |
-| 图生视频 | 火山方舟 Seedance；或「自定义异步接口」（可配置创建/查询路径和字段，适配可灵、海螺、Runway 等中转服务） |
-
-配置与全部数据保存在本地 `data/` 目录（JSON 文件 + 媒体文件），无需安装数据库。
-
-## 🧱 项目结构
-
-```
-server/
-  index.js            Express 服务与 REST API
-  db.js / settings.js JSON 文件存储与配置
-  seed.js             演示商品、内置知识库、预设智能体
-  providers/          llm.js（OpenAI 兼容 + Claude）· image.js · video.js
-  services/           products · scripts · rag · agent · workflow
-public/
-  index.html  css/app.css
-  js/app.js  lib.js  player.js  pages/*.js   无构建步骤的原生 ES Modules
-tests/e2e.spec.js     Playwright 无头端到端测试
-start.bat / start.ps1 / start.sh
-```
-
-## 🧪 测试
+## 测试
 
 ```bash
-npm install
-npx playwright install chromium
-npm test            # Playwright 无头模式，使用独立的临时数据目录
+npm install && npx playwright install chromium
+npm test   # Playwright 无头；使用本地模拟大模型上游（tests/fake-upstream.js）验证真实调用链路
 ```
-
-16 个用例覆盖：所有页面、选品筛选/分析/导入、脚本→分镜图→成片、文生图、图片上传与图生视频播放、知识库上传/检索/问答、智能体工具调用与自定义、一键工作流全链路、设置（含用模拟上游测试模型自动获取）、主题与移动端布局、开放工具 API。
-
-## 说明
-
-- 演示商品数据为模拟数据，可通过 CSV 导入 TikTok Shop 后台或第三方数据工具（FastMoss、Kalodata 等）导出的真实数据。
-- API Key 仅保存在本机 `data/settings.json`，前端只显示脱敏值。
 
 ## ☁️ 服务器部署（Cloudflare 隧道）
 
@@ -92,6 +49,3 @@ powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1
 - 在 Cloudflare Zero Trust → Tunnels → Public Hostname 中把域名指向 `http://127.0.0.1:5100`。
 - 数据目录 `/var/lib/tkagent`，日志 `journalctl -u tkagent -f`，重新部署直接再次运行脚本（数据保留）。
 
-## 🎨 界面风格
-
-应用内右上角「风格」可切换 5 套风格；离线对比页见 `design/style-demos/index.html`（双击用浏览器打开）。

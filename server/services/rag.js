@@ -67,7 +67,7 @@ function tokenize(text) {
 
 // ---------- Embedding ----------
 async function embed(texts) {
-  const cfg = settings.get().embedding;
+  const cfg = settings.get().embedding || {}; // 未配置向量模型时使用本地 BM25
   if (cfg.provider !== 'openai' || !cfg.apiKey) return null;
   const { http, trimSlash } = require('../providers/llm');
   const out = [];
@@ -202,4 +202,31 @@ async function ask(question, { kbIds } = {}) {
   return { answer, citations: hits.map((h, i) => ({ n: i + 1, docTitle: h.docTitle, content: h.content, score: Math.round(h.score * 100) / 100 })) };
 }
 
-module.exports = { extractText, chunkText, tokenize, addDocument, removeDocument, removeKb, search, contextFor, ask };
+// ---------- 从网页链接导入 ----------
+async function importUrl(kbId, url) {
+  if (!/^https?:\/\//i.test(url || '')) throw Object.assign(new Error('请输入以 http(s):// 开头的链接'), { status: 400 });
+  const lark = /(larkoffice|larksuite|feishu)\.(com|cn)/i.test(url);
+  let res;
+  try {
+    res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 TikTokOps-KB/1.0', Accept: 'text/html,*/*' } });
+  } catch (e) {
+    throw Object.assign(new Error('无法访问该链接：' + (e.cause?.code || e.message)), { status: 400 });
+  }
+  const loc = res.headers.get('location') || '';
+  if (lark && (res.status >= 300 || /login|accounts/i.test(loc)))
+    throw Object.assign(new Error('飞书/Lark 文档需要登录才能读取，服务器无法直接抓取。请在飞书里打开文档 → 右上角「…」→「下载为」Word 或 PDF，再用上方的上传功能导入。'), { status: 400 });
+  if (res.status >= 300 && res.status < 400) throw Object.assign(new Error('链接发生跳转（可能需要登录），请下载文档后上传'), { status: 400 });
+  if (!res.ok) throw Object.assign(new Error(`读取失败：HTTP ${res.status}`), { status: 400 });
+  const html = await res.text();
+  const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || url).trim().slice(0, 80);
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<\/(p|div|h[1-6]|li|tr|br|section|article)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
+  if (text.length < 200) throw Object.assign(new Error('页面几乎没有可读正文（可能由脚本动态加载或需要登录），请下载文档后上传'), { status: 400 });
+  return addDocument(kbId, { title, text, source: 'url', fileName: url });
+}
+
+module.exports = { extractText, chunkText, tokenize, addDocument, removeDocument, removeKb, search, contextFor, ask, importUrl };

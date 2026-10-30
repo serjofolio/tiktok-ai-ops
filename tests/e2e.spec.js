@@ -1,320 +1,202 @@
-// 端到端测试：Playwright 无头模式，离线演示模式下覆盖全部核心功能
+// 端到端测试（Playwright 无头）：接入配置 → 选品导入与测算 → AI 分析 → 视频脚本 → Agent 流式聊天 → 知识库
+// 大模型使用 tests/fake-upstream.js 提供的本地模拟上游（127.0.0.1:3902），走的是真实调用链路
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
 
+const UP = 'http://127.0.0.1:3902';
 let errors = [];
 test.beforeEach(async ({ page }) => {
   errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && !/favicon|status of 502/.test(m.text()) && errors.push(m.text()));
+  page.on('console', (m) => m.type() === 'error' && !/favicon|status of (400|502)/.test(m.text()) && errors.push(m.text()));
 });
 test.afterEach(async () => {
   expect(errors, `页面存在 JS 错误：\n${errors.join('\n')}`).toEqual([]);
 });
 
-const PAGES = [
-  ['dashboard', '总览'],
-  ['workflows', '一键工作流'],
-  ['agents', 'AI 智能体'],
-  ['products', '智能选品'],
-  ['scripts', '脚本工坊'],
-  ['images', '图片工坊'],
-  ['videos', '视频工坊'],
-  ['knowledge', '知识库'],
-  ['settings', '系统设置'],
-];
+const PAGES = [['dashboard', '总览'], ['products', '智能选品'], ['scripts', '视频脚本'], ['knowledge', '知识库'], ['providers', '接入配置'], ['chat', 'Agent']];
 
-test('所有页面均可正常打开', async ({ page }) => {
+test('导航与所有页面', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.nav a')).toHaveCount(6);
+  // Agent 位于知识库、接入配置下面
+  await expect(page.locator('.nav a').nth(5)).toHaveText('Agent');
+  await expect(page.locator('#style-btn')).toHaveCount(0);
   for (const [p, title] of PAGES) {
     await page.goto(`/#/${p}`);
     await expect(page.locator('#page-title')).toHaveText(title);
-    await expect(page.locator('#view .skeleton').first()).toHaveCount(0, { timeout: 10000 });
+    await expect(page.locator('#view .skeleton')).toHaveCount(0, { timeout: 10000 });
     await expect(page.locator('#view')).not.toContainText('页面加载失败');
   }
 });
 
-test('总览：统计与潜力爆品', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('#headline')).toContainText('今天打造哪款爆品');
-  await expect(page.locator('#stage canvas.webgl')).toHaveCount(1);
-  await expect(page.locator('#stage .orb-label')).toHaveCount(9);
-  expect(await page.locator('#gallery .float').count()).toBeGreaterThanOrEqual(5);
-  await expect(page.locator('.stat-strip > div')).toHaveCount(4);
-  await expect(page.locator('.stat-value').first()).not.toHaveText('0');
-  await expect(page.locator('.mega span').first()).toBeVisible();
-  await expect(page.locator('table tbody tr')).toHaveCount(6);
-  await expect(page.locator('#mode-chip')).toContainText('离线演示模式');
+test('未接入模型时给出明确提示', async ({ page }) => {
+  await page.goto('/#/chat');
+  await expect(page.locator('#inp')).toHaveAttribute('placeholder', /接入配置/);
+  await expect(page.locator('#mode-chip')).toContainText('未接入大模型');
 });
 
-test('智能选品：筛选、排序、详情与 AI 分析、选品池', async ({ page }) => {
+test('接入配置：预设、获取模型、启用、测试、错误提示', async ({ page }) => {
+  await page.goto('/#/providers');
+  await page.click('#add');
+  await expect(page.locator('.preset-card', { hasText: '智谱 GLM 编码套餐' })).toBeVisible();
+  // 智谱预设自动填好地址
+  await page.locator('.preset-card', { hasText: '智谱 GLM（Anthropic 协议）' }).click();
+  await expect(page.locator('#pf [name=baseUrl]')).toHaveValue('https://open.bigmodel.cn/api/anthropic');
+  await page.click('#back');
+  // 自定义：接到本地模拟上游
+  await page.locator('.preset-card', { hasText: '自定义' }).click();
+  await page.fill('#pf [name=name]', '测试 GLM');
+  await page.fill('#pf [name=baseUrl]', `${UP}/v1`);
+  await page.fill('#pf [name=apiKey]', 'sk-test');
+  await page.click('#fetch');
+  await expect(page.locator('#models [data-m]')).toHaveCount(2);
+  await page.locator('#models [data-m=glm-test]').click();
+  await expect(page.locator('#pf [name=model]')).toHaveValue('glm-test');
+  await page.click('#save');
+  await expect(page.locator('.provider-item.on')).toContainText('测试 GLM');
+  await expect(page.locator('#mode-chip')).toContainText('glm-test');
+  await page.locator('.provider-item.on [data-act=test]').click();
+  await expect(page.locator('.provider-item.on [data-result]')).toContainText('连接成功');
+
+  // Anthropic 协议的第二个供应商，地址多写了 /v1 也能用；Key 错误时给出原因
+  await page.click('#add');
+  await page.locator('.preset-card', { hasText: '自定义' }).click();
+  await page.fill('#pf [name=name]', 'Anthropic 兼容');
+  await page.locator('#proto [data-v=anthropic]').click();
+  await page.fill('#pf [name=baseUrl]', `${UP}/anthropic/v1`);
+  await page.fill('#pf [name=apiKey]', 'sk-wrong');
+  await page.fill('#pf [name=model]', 'glm-test');
+  await page.click('#save');
+  const item = page.locator('.provider-item', { hasText: 'Anthropic 兼容' });
+  await item.locator('[data-act=test]').click();
+  await expect(item.locator('[data-result]')).toContainText('401');
+  await item.locator('[data-act=edit]').click();
+  await page.fill('#pf [name=apiKey]', 'sk-test');
+  await page.click('#save');
+  await item.locator('[data-act=test]').click();
+  await expect(item.locator('[data-result]')).toContainText('连接成功');
+  // 切回 OpenAI 兼容的那个
+  await page.locator('.provider-item', { hasText: '测试 GLM' }).locator('[data-act=use]').click();
+  await expect(page.locator('.provider-item.on')).toContainText('测试 GLM');
+});
+
+test('智能选品：粘贴 FastMoss 表格 → 识别列 → 利润测算 → AI 分析 → 生成脚本', async ({ page }) => {
   await page.goto('/#/products');
-  await expect(page.locator('.product').first()).toBeVisible();
-  const total = await page.locator('.product').count();
-  expect(total).toBeGreaterThan(30);
-  await page.selectOption('#cat', '宠物用品');
-  await expect(page.locator('.product')).toHaveCount(4);
-  await page.click('#sort button[data-k=growth]');
-  await page.locator('.product .fav').first().click();
-  await expect(page.locator('.toast').last()).toContainText('已加入选品池');
-  await page.locator('.product').first().click();
-  await expect(page.locator('.modal')).toBeVisible();
-  await page.click('#an');
-  await expect(page.locator('#an-box')).toContainText('核心卖点');
-  await page.keyboard.press('Escape');
-  await page.click('#vmode button[data-v=table]');
-  await expect(page.locator('table tbody tr')).toHaveCount(4);
+  await expect(page.locator('.step')).toHaveCount(6);
+  await expect(page.locator('.criteria')).toContainText('对标视频');
+  await expect(page.locator('.onboard')).toBeVisible();
+  await page.click('#import');
+  const tsv = '商品名称\t商品ID\t售价\t近7天销量\t销量增长率\t带货达人数\t带货视频数\t佣金率\t类目\t店铺\nMini Desk Fan\t1729384756102938475\t$15.99\t1.2万\t86%\t240\t120\t15%\t3C数码\tCoolShop\nOld Phone Case\t1729384756102938476\t$6.99\t800\t-35%\t12\t4\t10%\t3C数码\tCaseShop';
+  await page.fill('#paste', tsv);
+  await page.click('#parse');
+  await expect(page.locator('[data-f=name]')).toHaveValue('0');
+  await expect(page.locator('[data-f=growth]')).toHaveValue('4');
+  await page.click('#commit');
+  await expect(page.locator('.prow')).toHaveCount(2);
+  const fan = page.locator('.prow', { hasText: 'Mini Desk Fan' });
+  await expect(fan).toContainText('+86%');
+  await expect(fan.locator('a[href*="fastmoss.com/zh/e-commerce/detail/1729384756102938475"]')).toHaveCount(1);
+  await expect(page.locator('.prow', { hasText: 'Old Phone Case' })).toContainText('建议放弃');
+
+  await fan.click();
+  await expect(page.locator('.ck', { hasText: '销量在增长' })).toHaveClass(/pass/);
+  await page.fill('#cost', '3');
+  await page.fill('#ship', '2.5');
+  await expect(page.locator('.profit-table')).toContainText('27.6%');
+  await page.locator('[data-j=visual] [data-v=true]').click();
+  await page.locator('[data-j=wantBuy] [data-v=true]').click();
+  await expect(page.locator('#pd .verdict').first()).toHaveText('推荐测款');
+  await page.click('#ai');
+  await expect(page.locator('.analysis')).toContainText('为什么选');
+  await expect(page.locator('.analysis')).toContainText('止损线');
+  await page.locator('[data-st=testing]').click();
+  await page.locator('#pf a', { hasText: '生成视频脚本' }).click();
+
+  await expect(page).toHaveURL(/#\/scripts\/new\//);
+  await expect(page.locator('#pid option:checked')).toContainText('Mini Desk Fan');
+  await page.fill('#bench', 'POV: your desk is a sauna...');
+  await page.click('#gen');
+  await expect(page.locator('.scene2')).toHaveCount(3);
+  await expect(page.locator('.hook-box')).toContainText('Stop sweating');
+  await expect(page.locator('#hist .list-item')).toHaveCount(1);
 });
 
-test('智能选品：CSV 导入', async ({ page }) => {
+test('智能选品：上传 CSV 文件与利润参数', async ({ page }) => {
+  const csv = path.join(__dirname, '..', 'test-results', 'fastmoss.csv');
+  fs.mkdirSync(path.dirname(csv), { recursive: true });
+  fs.writeFileSync(csv, '﻿Product Name,Price,7d Sales,Growth,Creators,Videos,Category\nLED Strip,$12.50,5000,40%,300,90,Home\n');
   await page.goto('/#/products');
   await page.click('#import');
-  await page.fill('#csv', 'name,nameCn,category,price,cost,commissionRate,sales7d,salesGrowth,competition,rating\nTest Desk Fan,测试桌面风扇,3C数码,15.99,4.5,15,5200,86,38,4.6');
-  await page.click('#go');
-  await expect(page.locator('.toast').last()).toContainText('成功导入 1 个商品');
-  await page.fill('#q', '测试桌面风扇');
-  await expect(page.locator('.product')).toHaveCount(1);
+  await page.setInputFiles('#file', csv);
+  await expect(page.locator('[data-f=price]')).toHaveValue('1');
+  await page.click('#commit');
+  await expect(page.locator('.prow', { hasText: 'LED Strip' })).toBeVisible();
+  await page.click('#assume');
+  await page.fill('#af [name=targetMargin]', '30');
+  await page.click('.modal #ok');
+  await expect(page.locator('.toast').last()).toContainText('重新测算');
 });
 
-test('脚本工坊：生成分镜脚本 → 分镜图 → 合成视频', async ({ page }) => {
-  await page.goto('/#/scripts');
-  await page.click('#styles .preset[data-k=unboxing]');
-  await page.selectOption('#dur', '15');
-  await page.click('#gen');
-  await expect(page.locator('#viewer .scene')).toHaveCount(4);
-  await expect(page.locator('#viewer')).toContainText('黄金 3 秒钩子');
-  await page.click('#toimg');
-  await expect(page).toHaveURL(/#\/videos\/vi_/, { timeout: 20000 });
-  await expect(page.locator('.modal canvas')).toBeVisible();
+test('Agent：流式回答、引用知识库、会话列表', async ({ page }) => {
+  await page.goto('/#/chat');
+  await expect(page.locator('.suggest')).toHaveCount(4);
+  await page.fill('#inp', '视频前3秒怎么写钩子');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.msg.user')).toContainText('视频前3秒');
+  await expect(page.locator('.msg.ai .md').last()).toContainText('前 3 秒要用痛点', { timeout: 15000 });
+  await expect(page.locator('.msg.ai .cites details').first()).toBeVisible();
+  await expect(page.locator('.msg.ai .think').last()).toContainText('思考过程');
+  await expect(page.locator('#list .list-item')).toHaveCount(1);
+  await expect(page.locator('#ctitle')).toContainText('视频前3秒');
+  await page.click('#new');
+  await expect(page.locator('.chat-empty')).toBeVisible();
 });
 
-test('图片工坊：文生图与图库', async ({ page }) => {
-  await page.goto('/#/images');
-  await page.selectOption('#pp', { index: 1 });
-  await expect(page.locator('#prompt')).not.toHaveValue('');
-  await page.click('#st .preset[data-i="1"]');
-  await page.selectOption('#count', '2');
-  const before = await page.locator('#gal .media').count();
-  await page.click('#gen');
-  await expect(page.locator('#gal .media')).toHaveCount(before + 2);
-  const src = await page.locator('#gal .media img').first().getAttribute('src');
-  const res = await page.request.get(src);
-  expect(res.ok()).toBeTruthy();
-});
-
-test('图片上传 + 视频工坊：图生视频与播放', async ({ page }) => {
-  const png = path.join(__dirname, '..', 'test-results', 'pixel.png');
-  fs.mkdirSync(path.dirname(png), { recursive: true });
-  fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
-  await page.goto('/#/images');
-  await page.setInputFiles('#file', png);
-  await expect(page.locator('.toast').last()).toContainText('上传成功');
-  await page.goto('/#/videos');
-  await page.click('#mo .preset[data-i="2"]');
-  await page.fill('#cap', 'Stop scrolling!');
-  await page.click('#gen');
-  await expect(page.locator('.toast').last()).toContainText('视频任务已提交');
-  await expect(page.locator('#list .media').first()).toContainText('Stop scrolling!');
-  await expect(page.locator('#list .media').first().locator('.badge')).toHaveText('完成', { timeout: 10000 });
-  await page.locator('#list .media').first().click();
-  await expect(page.locator('.modal canvas')).toBeVisible();
-  await expect(page.locator('.modal .player-time')).not.toHaveText('0.0s / 0.0s');
-});
-
-test('知识库：上传文档、检索与问答', async ({ page }) => {
+test('知识库：上传文档、检索、飞书链接给出导出指引', async ({ page }) => {
   const doc = path.join(__dirname, '..', 'test-results', '售后话术.md');
-  fs.writeFileSync(doc, '# 售后话术\n\n## 退款处理\n买家申请退款时，先安抚情绪，48 小时内给出解决方案，优先补发或部分退款，避免差评。\n\n## 物流延迟\n主动告知物流单号并赠送优惠券。');
+  fs.mkdirSync(path.dirname(doc), { recursive: true });
+  fs.writeFileSync(doc, '# 售后话术\n\n## 退款处理\n买家申请退款时，先安抚情绪，48 小时内给出解决方案，优先补发或部分退款，避免差评。');
   await page.goto('/#/knowledge');
-  await expect(page.locator('#kbs .list-item')).toHaveCount(1);
-  await expect(page.locator('#pane table tbody tr')).toHaveCount(5);
+  await expect(page.locator('.lark-guide')).toContainText('下载为');
+  await page.locator('#kbs .list-item', { hasText: 'TikTok 官方文档' }).click();
   await page.setInputFiles('#file', doc);
-  await expect(page.locator('#pane table tbody tr')).toHaveCount(6, { timeout: 10000 });
+  await expect(page.locator('#pane table tbody tr')).toHaveCount(1, { timeout: 10000 });
+  await page.fill('#url', 'https://bytedance.sg.larkoffice.com/docx/P8EPd6xnMovSF9xKyuvlRDM2gWb');
+  await page.click('#urlgo');
+  await expect(page.locator('.toast').last()).toContainText(/飞书|无法访问/);
   await page.click('#tabs button[data-t=search]');
   await page.fill('#q', '退款 差评');
   await page.click('#s');
   await expect(page.locator('#hits .hit').first()).toContainText('售后话术');
-  await page.click('#tabs button[data-t=ask]');
-  await page.fill('#q', '视频前3秒怎么写钩子');
-  await page.click('#ask');
-  await expect(page.locator('#ans')).toContainText('引用来源');
-  await expect(page.locator('#ans')).toContainText('爆款短视频脚本公式');
 });
 
-test('知识库：新建知识库并粘贴文本', async ({ page }) => {
-  await page.goto('/#/knowledge');
-  await page.click('#new-kb');
-  await page.fill('.modal #n', '产品资料库');
-  await page.click('.modal #ok');
-  await expect(page.locator('#kbs .list-item')).toHaveCount(2);
-  await page.click('#paste');
-  await page.fill('.modal #t', '迷你风扇参数');
-  await page.fill('.modal #c', '风扇续航 12 小时，三档风速，USB-C 充电。');
-  await page.click('.modal #ok');
-  await expect(page.locator('#pane table tbody tr')).toHaveCount(1);
-});
-
-test('智能体：对话触发工具调用', async ({ page }) => {
-  await page.goto('/#/agents');
-  await expect(page.locator('#agents .agent-item')).toHaveCount(3);
-  await page.locator('#sug .chip').first().click();
-  await expect(page.locator('.tool-call').first()).toContainText('搜索商品库', { timeout: 15000 });
-  await expect(page.locator('.msg.ai .bubble table')).toBeVisible();
-  await page.fill('#inp', '给厨房类爆品写一个开箱脚本');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#msgs')).toContainText('脚本：', { timeout: 15000 });
-  await expect(page.locator('#sessions .list-item')).toHaveCount(1);
-});
-
-test('智能体：新建自定义智能体', async ({ page }) => {
-  await page.goto('/#/agents');
-  await page.click('#new-agent');
-  await page.fill('.modal [name=name]', '直播运营 Mia');
-  await page.click('.modal #save');
-  await expect(page.locator('#agents .agent-item')).toHaveCount(4);
-  await expect(page.locator('#chat-head')).toContainText('直播运营 Mia');
-  await page.click('#api-doc');
-  await expect(page.locator('.modal #tl')).toContainText('search_products');
-});
-
-test('一键工作流：选品 → 脚本 → 生图 → 视频 → 素材包', async ({ page }) => {
-  await page.goto('/#/workflows');
-  await page.selectOption('#cat', '美妆个护');
-  await page.selectOption('#ic', '3');
-  await page.click('#go');
-  await expect(page.locator('#detail .pipe-node.done')).toHaveCount(5, { timeout: 30000 });
-  await expect(page.locator('#detail')).toContainText('发布素材包');
-  await expect(page.locator('#detail .scene img')).toHaveCount(3);
-  await expect(page.locator('#wf-player canvas')).toBeVisible();
-  await expect(page.locator('#hist .list-item').first()).toContainText('完成');
-});
-
-test('系统设置：预设切换与保存', async ({ page }) => {
-  await page.goto('/#/settings');
-  const card = page.locator('[data-sec=store]');
-  await card.locator('[name=name]').fill('Feng 的美妆小店');
-  await card.locator('[data-save]').click();
-  await expect(page.locator('.toast').last()).toContainText('配置已保存');
-  const llm = page.locator('[data-sec=llm]');
-  await llm.locator('[data-preset="1"]').click();
-  await expect(llm.locator('[name=baseUrl]')).toHaveValue('https://api.deepseek.com/v1');
-  await expect(llm.locator('[name=apiKey]')).toBeVisible();
+test('总览：3D 主视觉、拖动旋转、统计', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#headline')).toContainText('Feng 的美妆小店');
-});
-
-test('主题切换与移动端布局', async ({ page }) => {
-  await page.goto('/');
-  // 暗场/终端风格恒为深色，主题按钮隐藏；切到纸墨风格测试明暗切换
-  await expect(page.locator('#theme-btn')).toBeHidden();
-  await page.evaluate(() => localStorage.setItem('style', 'paper'));
-  await page.reload();
-  await page.click('#theme-btn');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.click('#theme-btn');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.click('#menu-btn');
-  await expect(page.locator('#app')).toHaveClass(/nav-open/);
-  await page.click('.nav a[data-path=products]');
-  await expect(page.locator('#page-title')).toHaveText('智能选品');
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-  expect(overflow).toBeFalsy();
-});
-
-test('开放工具 API', async ({ request }) => {
-  const r = await request.get('/api/tools');
-  const { tools } = await r.json();
-  expect(tools.map((t) => t.name)).toContain('write_script');
-  const s = await request.post('/api/tools/search_products', { data: { category: '3C数码', limit: 3 } });
-  const { result } = await s.json();
-  expect(result).toHaveLength(3);
-});
-
-test('系统设置：从上游自动获取模型列表', async ({ page }) => {
-  // 启动一个模拟的 OpenAI 兼容上游
-  const http = require('http');
-  const upstream = http.createServer((req, res) => {
-    if (req.url === '/v1/models' && req.headers.authorization === 'Bearer sk-test') {
-      res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify({ data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }, { id: 'text-embedding-v3' }, { id: 'doubao-seedream-4-0' }] }));
-    }
-    res.statusCode = 401;
-    res.end(JSON.stringify({ error: { message: 'invalid key' } }));
-  });
-  await new Promise((r) => upstream.listen(3901, r));
-  try {
-    await page.goto('/#/settings');
-    const llm = page.locator('[data-sec=llm]');
-    await llm.locator('[data-preset="1"]').click();
-    await llm.locator('[name=baseUrl]').fill('http://localhost:3901/v1');
-    await llm.locator('[name=apiKey]').fill('sk-wrong');
-    await llm.locator('[data-fetch]').click();
-    await expect(llm.locator('[data-mcount]')).toContainText('获取失败');
-    await llm.locator('[name=apiKey]').fill('sk-test');
-    await llm.locator('[data-fetch]').click();
-    await expect(llm.locator('[data-mcount]')).toContainText('4 个模型');
-    await expect(llm.locator('.model-menu button')).toHaveCount(4);
-    await expect(llm.locator('.model-menu button').first()).toContainText('deepseek-chat');
-    await llm.locator('.model-menu button', { hasText: 'deepseek-reasoner' }).click();
-    await expect(llm.locator('[name=model]')).toHaveValue('deepseek-reasoner');
-    await llm.locator('[data-save]').click();
-    // 已保存 key 后再次进入页面会自动拉取
-    await page.goto('/#/dashboard');
-    await page.goto('/#/settings');
-    await expect(page.locator('[data-sec=llm] [data-mcount]')).toContainText('4 个模型');
-    const emb = page.locator('[data-sec=embedding]');
-    await emb.locator('[data-preset="1"]').click();
-    await emb.locator('[name=baseUrl]').fill('http://localhost:3901/v1');
-    await emb.locator('[name=apiKey]').fill('sk-test');
-    await emb.locator('[data-fetch]').click();
-    await expect(emb.locator('.model-menu button').first()).toContainText('text-embedding-v3');
-    // 恢复离线模式，避免影响其他用例
-    await page.locator('[data-sec=llm] [data-preset="0"]').click();
-    await page.locator('[data-sec=llm] [data-save]').click();
-    await expect(page.locator('#mode-chip')).toContainText('离线演示模式');
-  } finally {
-    upstream.close();
-  }
-});
-
-test('界面风格：顶栏切换、设置页预览与持久化', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('html')).toHaveAttribute('data-style', 'cinema');
-  await page.click('#style-btn');
-  await expect(page.locator('.style-pop .style-opt')).toHaveCount(6);
-  for (const key of ['brutal', 'editorial', 'terminal', 'soft', 'paper', 'cinema']) {
-    await page.click(`.style-pop [data-k=${key}]`);
-    await expect(page.locator('html')).toHaveAttribute('data-style', key);
-    await expect(page.locator('.style-pop .style-opt.on')).toHaveAttribute('data-k', key);
-  }
-  await page.mouse.click(700, 500);
-  await expect(page.locator('.style-pop')).toHaveCount(0);
-  await page.goto('/#/settings');
-  await expect(page.locator('#styles .style-card')).toHaveCount(6);
-  await page.click('#styles .style-card[data-k=editorial]');
-  await expect(page.locator('#styles .style-card.on')).toHaveAttribute('data-k', 'editorial');
-  await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-style', 'editorial');
-  // 每种风格下主要页面都能正常渲染
-  for (const key of ['brutal', 'terminal', 'soft']) {
-    await page.evaluate((k) => localStorage.setItem('style', k), key);
-    for (const p of ['dashboard', 'products', 'workflows']) {
-      await page.goto(`/#/${p}`);
-      await page.reload();
-      await expect(page.locator('#view .skeleton')).toHaveCount(0);
-      await expect(page.locator('#view')).not.toContainText('页面加载失败');
-    }
-  }
-  await page.evaluate(() => localStorage.setItem('style', 'cinema'));
-});
-
-test('3D 动效：选品页市场地形与悬停提示', async ({ page }) => {
-  await page.goto('/#/products');
-  await expect(page.locator('#terrain canvas.webgl')).toHaveCount(1);
-  await expect(page.locator('.product').first()).toBeVisible();
-  // 静态资源与幕布不应阻挡交互
-  await page.click('.nav a[data-path=dashboard]');
-  await expect(page.locator('#headline')).toBeVisible();
+  await expect(page.locator('#headline')).toContainText('今天选出能卖的品');
+  await expect(page.locator('#stage canvas.webgl')).toHaveCount(1);
+  await expect(page.locator('.stat-strip > a')).toHaveCount(4);
+  await expect(page.locator('.stat-value').first()).not.toHaveText('0');
+  const box = await page.locator('#stage').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.45, { steps: 8 });
+  await expect(page.locator('#stage')).toHaveClass(/grabbing/);
+  await page.mouse.up();
+  await expect(page.locator('#stage')).not.toHaveClass(/grabbing/);
   const res = await page.request.get('/vendor/three/three.module.min.js');
   expect(res.ok()).toBeTruthy();
+});
+
+test('移动端布局不横向溢出', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const p of ['dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat']) {
+    await page.goto(`/#/${p}`);
+    await expect(page.locator('#view .skeleton')).toHaveCount(0);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    expect(overflow, p).toBeFalsy();
+  }
+  await page.click('#menu-btn');
+  await expect(page.locator('#app')).toHaveClass(/nav-open/);
 });

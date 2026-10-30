@@ -6,22 +6,20 @@
   <title>TikTok 运营台</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23111110'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='%23d2ff1f' font-family='Arial' font-weight='800'>T</text></svg>" />
   <link rel="stylesheet" href="/css/app.css" />
-  <link rel="stylesheet" href="/css/styles.css" />
   <link rel="stylesheet" href="/css/fx.css" />
   <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
-  <script>
-    try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; document.documentElement.dataset.style = localStorage.getItem('style') || 'cinema'; } catch (e) { document.documentElement.dataset.theme = 'light'; }
-  </script>
+  <script>document.documentElement.dataset.style = "cinema"; document.documentElement.dataset.theme = "dark";</script>
 </head>
 <body>
   <canvas id="stars" aria-hidden="true"></canvas>
   <div class="cursor-dot" aria-hidden="true"></div><div class="cursor-ring" aria-hidden="true"></div>
   <div class="curtain" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
   <div class="app" id="app">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-logo">T</div>
-        <div><b>TikTok 运营台</b><small>跨境电商 AI 工作室</small></div>
+        <div><b>TikTok 运营台</b><small>跨境电商 · 选品到内容</small></div>
       </div>
       <nav class="nav" id="nav"></nav>
       <div class="side-foot"><div class="mode-chip" id="mode-chip"><i class="dot"></i><span>加载中…</span></div></div>
@@ -32,8 +30,6 @@
         <div><h1 id="page-title">总览</h1></div>
         <span class="sub" id="page-sub"></span>
         <div class="spacer"></div>
-        <button class="btn sm ghost" id="style-btn" title="切换界面风格"></button>
-        <button class="icon-btn" id="theme-btn" aria-label="切换主题" title="切换明暗主题"></button>
       </header>
       <section class="content" id="view"></section>
     </main>

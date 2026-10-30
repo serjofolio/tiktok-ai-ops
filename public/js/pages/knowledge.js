@@ -5,7 +5,15 @@ export async function render(view, [kbId]) {
   let kb = kbs.find((k) => k.id === kbId) || kbs[0];
   let tab = 'docs';
 
-  view.innerHTML = `<div class="split" style="grid-template-columns:300px minmax(0,1fr)">
+  view.innerHTML = `<section class="page-hero">
+    <div class="kicker">知识库 · Agent 回答的依据</div>
+    <h2>把 TikTok <em>官方文档</em>喂给 Agent</h2>
+    <p>上传的文档会被切片并建立检索索引。Agent 打开「引用知识库」后，会先检索这里的内容再回答，并标注引用来源。</p>
+  </section>
+  <div class="card card-pad mb lark-guide"><b>飞书 / Lark 文档怎么导入？</b>
+    <ol><li>在飞书里打开文档（需要你有查看权限）；</li><li>右上角「…」→「下载为」→ 选 <b>Word</b> 或 <b>PDF</b>；</li><li>选中左侧「TikTok 官方文档」知识库，把下载的文件拖进上传区。</li></ol>
+    <p class="small muted" style="margin:0">飞书文档需要登录才能访问，服务器无法直接按链接抓取；公开网页可以用「从链接导入」。</p></div>
+  <div class="split kb-split">
     <div class="card sticky"><div class="card-head"><h3>${icon('book')}知识库</h3><div class="spacer"></div><button class="btn sm" id="new-kb">${icon('plus', 14)}新建</button></div><div id="kbs" style="padding:8px"></div>
       <div class="card-pad small muted" style="border-top:1px solid var(--line)">支持 PDF、Word（docx）、Markdown、TXT、CSV、HTML、JSON。文档自动切片并建立 BM25 中文索引；配置 Embedding 模型后启用向量 + 关键词混合检索。</div></div>
     <div class="col"><div class="seg" id="tabs" style="align-self:flex-start"><button data-t="docs" class="on">文档管理</button><button data-t="ask">知识问答</button><button data-t="search">检索测试</button></div><div id="pane"></div></div>
@@ -36,10 +44,19 @@ export async function render(view, [kbId]) {
   async function docsPane(pane) {
     const { items: docs } = await api(`/kbs/${kb.id}/docs`);
     pane.innerHTML = `<div class="card"><div class="card-head">${monogram(kb.name)}<div><h3>${esc(kb.name)}</h3><div class="muted small">${esc(kb.description || '')}</div></div><div class="spacer"></div><button class="btn sm ghost" id="paste">${icon('file', 14)}粘贴文本</button><button class="icon-btn danger" id="rm-kb" title="删除知识库">${icon('trash', 15)}</button></div>
-      <div class="card-pad col"><div class="dropzone" id="dz">${icon('upload', 30)}<p style="margin:6px 0 0">点击或拖拽文件到这里上传（可多选）</p><input type="file" id="file" multiple hidden accept=".pdf,.docx,.md,.txt,.csv,.html,.htm,.json"></div>
+      <div class="card-pad col"><div class="dropzone" id="dz">${icon('upload', 30)}<p style="margin:6px 0 0">点击或拖拽文件到这里上传（可多选，支持 Word / PDF / Markdown / TXT / HTML）</p><input type="file" id="file" multiple hidden accept=".pdf,.docx,.md,.txt,.csv,.html,.htm,.json"></div>
       ${docs.length ? `<div class="table-wrap"><table><thead><tr><th>文档</th><th>来源</th><th>字数</th><th>切片</th><th>索引</th><th>状态</th><th>时间</th><th></th></tr></thead><tbody>
       ${docs.map((d) => `<tr><td><a href="javascript:;" data-view="${d.id}"><b>${icon('file', 14)} ${esc(d.title)}</b></a></td><td><span class="chip">${{ builtin: '内置', upload: '上传', manual: '手动' }[d.source] || d.source}</span></td><td>${fmtNum(d.chars)}</td><td>${d.chunkCount || 0}</td><td>${d.embedded ? '<span class="badge badge-run">向量+BM25</span>' : '<span class="badge badge-muted">BM25</span>'}</td><td>${statusBadge(d.status)}</td><td class="muted small">${timeAgo(d.createdAt)}</td><td><button class="icon-btn danger" data-del="${d.id}">${icon('trash', 14)}</button></td></tr>`).join('')}</tbody></table></div>` : empty('知识库还没有文档')}
       </div></div>`;
+    $('#dz', pane).insertAdjacentHTML('afterend', `<div class="row" style="flex-wrap:nowrap"><input class="input" id="url" placeholder="从公开网页链接导入，例如 TikTok Shop 学习中心的文章链接"><button class="btn ghost" id="urlgo" data-loading="读取中…">${icon('link', 15)}从链接导入</button></div>`);
+    $('#urlgo', pane).onclick = (e) => withLoading(e.currentTarget, async () => {
+      const url = $('#url', pane).value.trim();
+      if (!url) throw new Error('请粘贴链接');
+      await api(`/kbs/${kb.id}/url`, { method: 'POST', body: { url } });
+      toast('已导入', 'success');
+      await refreshKbs();
+      docsPane(pane);
+    });
     const dz = $('#dz', pane), file = $('#file', pane);
     const upload = async (files) => {
       if (!files?.length) return;

@@ -188,3 +188,19 @@ export function mountGallery(section, cards) {
   update();
   return () => { dead = true; removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); };
 }
+
+// ---------- 卡片光边：光标靠近时点亮边框 ----------
+export function initSpotlight() {
+  if (!finePointer() || reduce()) return;
+  let lit = null;
+  document.addEventListener('pointermove', (e) => {
+    const el = e.target.closest('.card, .product, .pipe-node, .step, .provider-item, .stat-strip > div');
+    if (lit && lit !== el) lit.classList.remove('lit');
+    lit = el;
+    if (!el) return;
+    el.classList.add('spot', 'lit');
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  }, { passive: true });
+}

@@ -1,6 +1,8 @@
 // 总览主视觉：呼吸的粒子球 + 线框环 + 品类 GMV 立柱（立柱高度 = 真实 7 日 GMV）
 import { THREE, createStage, cssColor } from './stage.js';
 
+// 按住拖动旋转，松手后带惯性继续转动
+
 const POINT_VERT = `
   uniform float uTime; uniform float uSize; uniform float uPixel;
   attribute float aSeed;
@@ -130,16 +132,49 @@ export function mountOrb(host, { bars = [] } = {}) {
 
   const tmp = new THREE.Vector3();
   const center = new THREE.Vector3();
+  // ---------- 拖动旋转 ----------
+  const drag = { on: false, x: 0, y: 0, yaw: 0, pitch: 0, vy: 0, vp: 0 };
+  const down = (e) => {
+    if (e.button !== 0 || e.target.closest('a, button, input, .copy p')) return;
+    drag.on = true;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    host.classList.add('grabbing');
+    host.setPointerCapture?.(e.pointerId);
+  };
+  const move = (e) => {
+    if (!drag.on) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    drag.vy = dx * 0.006;
+    drag.vp = dy * 0.004;
+    drag.yaw += drag.vy;
+    drag.pitch = Math.max(-0.6, Math.min(0.6, drag.pitch + drag.vp));
+    st.kick();
+  };
+  const up = () => { drag.on = false; host.classList.remove('grabbing'); };
+  host.addEventListener('pointerdown', down);
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+
   let t0 = 0;
   st.onFrame((dt, now) => {
     if (!t0) t0 = now;
-    const t = now - t0;
+    // 减少动效模式：直接显示最终状态
+    const t = st.still ? 99 : now - t0;
+    if (!drag.on) {
+      drag.yaw += drag.vy;
+      drag.vy *= 0.94;
+      drag.pitch *= 0.97;
+    }
     uniforms.uTime.value = now;
     // 桌面端把球体放在右侧，给左侧标题留空间
     world.position.x = size.w > 900 ? 2.6 : 0;
     world.scale.setScalar(size.w > 900 ? 0.86 : 0.8);
     world.position.y = size.w > 900 ? 0 : 0.9;
-    world.rotation.y += dt * 0.12;
+    world.rotation.y = t * 0.12 + drag.yaw;
+    world.rotation.x = drag.pitch;
     sphere.rotation.y += dt * 0.08;
     sphere.rotation.x = Math.sin(now * 0.2) * 0.08;
     dustPts.rotation.y -= dt * 0.02;
@@ -165,6 +200,9 @@ export function mountOrb(host, { bars = [] } = {}) {
   });
 
   return () => {
+    host.removeEventListener('pointerdown', down);
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
     labels.forEach(({ el }) => el.remove());
     st.dispose();
   };

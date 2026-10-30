@@ -16,6 +16,7 @@
     "mammoth": "^1.13.0",
     "multer": "^2.5.0",
     "pdf-parse": "^1.1.1",
+    "read-excel-file": "^9.3.14",
     "three": "^0.170.0"
   },
   "devDependencies": {

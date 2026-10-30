@@ -1,106 +1,100 @@
-import { api, icon, esc, fmtNum, timeAgo, statusBadge, sparkline, empty, monogram } from '../lib.js';
-import { splitText, armReveal, mountGallery } from '../fx/ambient.js';
+// 总览：3D 主视觉 + 选品到脚本的进度 + 快捷入口
+import { api, icon, esc, fmtNum, timeAgo, empty } from '../lib.js';
+import { splitText, mountGallery } from '../fx/ambient.js';
+
+const VC = { 推荐测款: 'v-go', 再观察: 'v-watch', 建议放弃: 'v-drop', 数据不足: 'v-na' };
 
 export async function render(view) {
-  const [d, imgs] = await Promise.all([api('/dashboard'), api('/images').catch(() => ({ items: [] }))]);
+  const d = await api('/dashboard');
   const s = d.stats;
-  const cats = [...d.categoryStats].sort((a, b) => b.gmv - a.gmv);
-  const maxGmv = Math.max(...cats.map((c) => c.gmv), 1);
+  const cats = d.categoryStats;
+  const maxSales = Math.max(...cats.map((c) => c.sales || c.count), 1);
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
   const stats = [
-    ['商品库', s.products, `其中 ${s.hotProducts} 个 A 级以上潜力款`],
-    ['视频脚本', s.scripts, 'AI 分镜脚本'],
-    ['AI 图片', s.images, '文生图素材'],
-    ['视频', s.videos, `已运行 ${s.runs} 次工作流`],
+    ['选品库', s.products, `${s.recommended} 个推荐测款`, '#/products'],
+    ['测款中', s.testing, '正在验证的商品', '#/products'],
+    ['视频脚本', s.scripts, '可直接开拍', '#/scripts'],
+    ['知识文档', s.docs, `${s.chats} 个 Agent 对话`, '#/knowledge'],
   ];
-  const steps = [
-    ['target', '智能选品', '六维评分 + AI 分析'],
-    ['script', 'AI 脚本', '知识库增强的爆款脚本'],
-    ['image', '分镜生图', '每个镜头文生图'],
-    ['video', '图生视频', '片段生成与合成'],
-    ['zap', '素材包', '标题、文案与话题'],
+  const flow = [
+    ['upload', '导入 FastMoss 数据', '榜单 / 搜索结果导出，或直接粘贴', '#/products'],
+    ['target', '硬指标 + 利润测算', '销量增长、利润、对标视频、价格带', '#/products'],
+    ['sparkles', 'AI 选品分析', '为什么选、怎么拍、测款方案', '#/products'],
+    ['script', '一键生成视频脚本', '钩子 → 痛点 → 演示 → 证明 → CTA', '#/scripts'],
   ];
-  // 素材长廊：优先用已生成的图片，不足时用潜力商品补位
-  const pics = imgs.items.slice(0, 9).map((i) => ({ src: i.url, title: i.title, href: '#/images' }));
-  const cards = pics.length >= 5 ? pics : pics.concat(d.topProducts.slice(0, 9 - pics.length).map((p) => ({ title: p.nameCn, sub: `${p.category} · 评分 ${p.score}`, href: `#/products/${p.id}` })));
+  const cards = d.topProducts.slice(0, 9).map((p) => ({ title: p.name, sub: `${p.evaluation.verdict} · ${p.growth != null ? (p.growth > 0 ? '+' : '') + p.growth + '%' : '—'}`, href: `#/products/${p.id}` }));
 
   view.innerHTML = `
   <section class="stage3d" id="stage">
     <div class="copy">
       <div class="eyebrow">${today} · ${esc(d.store.market)} 站</div>
-      <h2 id="headline">${esc(d.store.name)}，<br>今天打造<em>哪款爆品</em>？</h2>
-      <p>选品、脚本、分镜图到成片一条龙完成。AI 智能体会参考你的内部知识库，让内容既专业又合规。</p>
+      <h2 id="headline">${esc(d.store.name)}，<br>今天选出<em>能卖的品</em></h2>
+      <p>从 FastMoss 真实数据出发：按硬指标筛、算清利润、AI 说明为什么选，再一键生成带货脚本。</p>
       <div class="row">
-        <a class="btn lg" href="#/workflows">${icon('zap')}启动一键工作流</a>
-        <a class="btn ghost lg" href="#/agents">${icon('bot')}问问运营总监</a>
-        ${d.providers.llm === 'mock' ? `<a class="btn ghost lg" href="#/settings">${icon('settings')}接入大模型</a>` : ''}
+        <a class="btn lg primary-glow" href="#/products">${icon('target')}开始选品</a>
+        <a class="btn ghost lg" href="#/chat">${icon('bot')}问 Agent</a>
+        ${d.provider ? '' : `<a class="btn ghost lg" href="#/providers">${icon('link')}接入大模型</a>`}
       </div>
     </div>
-    <div class="side"><b>运营台</b>选品 · 脚本 · 生图 · 视频<br>一条流水线完成</div>
-    <div class="legend">立柱高度 = 品类近 7 日 GMV</div>
+    <div class="side"><b>当前模型</b>${d.provider ? `${esc(d.provider.name)}<br><span class="money">${esc(d.provider.model)}</span>` : '未接入'}<br><span class="muted">按住拖动可旋转</span></div>
+    <div class="legend">${cats.length ? '立柱高度 = 各类目近 7 天销量' : '导入商品后，立柱显示各类目销量'}</div>
     <div class="scroll-hint"><i></i>向下滚动</div>
   </section>
 
   <div class="stat-strip">
-    ${stats.map(([t, v, sub]) => `<div><div class="stat-label">${t}</div><div class="stat-value" data-count="${v}">0</div><div class="stat-detail">${sub}</div></div>`).join('')}
+    ${stats.map(([t, v, sub, href]) => `<a href="${href}"><div class="stat-label">${t}</div><div class="stat-value" data-count="${v}">0</div><div class="stat-detail">${sub}</div></a>`).join('')}
   </div>
 
-  <div class="mega" aria-hidden="true"><div class="mega-track">${cats.concat(cats).map((c) => `<span>${esc(c.category)}</span>`).join('')}</div></div>
+  ${cats.length ? `<div class="mega" aria-hidden="true"><div class="mega-track">${cats.concat(cats).map((c) => `<span>${esc(c.category)}</span>`).join('')}</div></div>` : ''}
 
-  <div data-reveal>
-    <div class="section-title"><h3>选品 → 图片 → 视频</h3><span class="muted small">一键工作流的五个步骤</span><div class="spacer"></div><a class="btn sm ghost" href="#/workflows">查看工作流 ${icon('arrow', 14)}</a></div>
+  <section data-reveal>
+    <div class="section-title"><h3>从选品到脚本</h3><span class="muted small">点击任一步直接进入</span></div>
     <div class="pipeline">
-      ${steps.map(([ic, t, sub], i) => `<div class="pipe-step"><div class="pipe-node done"><div class="n">${icon(ic, 15)}</div><b><span class="muted num">0${i + 1}</span> ${t}</b><small>${sub}</small></div>${i < steps.length - 1 ? '<div class="pipe-arrow"></div>' : ''}</div>`).join('')}
+      ${flow.map(([ic, t, sub, href], i) => `<div class="pipe-step"><a class="pipe-node done" href="${href}"><div class="n">${icon(ic, 15)}</div><b>${t}</b><small>${sub}</small></a>${i < flow.length - 1 ? '<div class="pipe-arrow"></div>' : ''}</div>`).join('')}
     </div>
-  </div>
-
-  <div class="grid mt" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)" data-reveal>
-    <div class="card">
-      <div class="card-head"><h3>今日潜力爆品</h3><div class="spacer"></div><a class="btn sm ghost" href="#/products">全部商品 ${icon('arrow', 14)}</a></div>
-      <div style="overflow-x:auto"><table>
-        <thead><tr><th>商品</th><th>品类</th><th class="r">价格</th><th class="r">7日销量</th><th class="r">环比</th><th>14日趋势</th><th class="r">评分</th></tr></thead>
-        <tbody>${d.topProducts.map((p) => `<tr style="cursor:pointer" onclick="location.hash='#/products/${p.id}'">
-          <td><div class="row" style="flex-wrap:nowrap">${monogram(p.name, 'sm')}<div><b>${esc(p.nameCn)}</b><div class="p-sub">${esc(p.name)}</div></div></div></td>
-          <td><span class="chip">${esc(p.category)}</span></td><td class="r">$${p.price}</td><td class="r">${fmtNum(p.sales7d)}</td>
-          <td class="r ${p.salesGrowth >= 0 ? 'up' : 'down'}">${p.salesGrowth >= 0 ? '+' : ''}${p.salesGrowth}%</td>
-          <td>${sparkline(p.trend, { w: 90, h: 28 })}</td>
-          <td class="r"><div class="row" style="flex-wrap:nowrap;justify-content:flex-end"><b>${p.score}</b><span class="grade grade-${p.grade}">${p.grade}</span></div></td></tr>`).join('')}</tbody>
-      </table></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h3>品类 7 日 GMV</h3></div>
-      <div class="card-pad bars">
-        ${cats.map((c) => `<div class="bar-row"><span>${esc(c.category)}</span><div class="track"><i style="width:${(c.gmv / maxGmv) * 100}%"></i></div><b>$${fmtNum(c.gmv)}</b></div>`).join('')}
-      </div>
-    </div>
-  </div>
-
-  <section class="gallery3d mt" id="gallery">
-    <div class="viewport"><div class="title"><h3>素材，正在生成</h3><div>${s.images} 张图片 // ${s.videos} 条视频 // 滚动浏览</div></div></div>
   </section>
 
-  <div class="grid g2" data-reveal>
+  <div class="grid mt g-2-1" data-reveal>
     <div class="card">
-      <div class="card-head"><h3>最近工作流</h3></div>
-      <div class="card-pad col" style="padding:8px">
-        ${d.recentRuns.length ? d.recentRuns.map((r) => `<a class="list-item" href="#/workflows/${r.id}"><div style="flex:1;min-width:0"><b>${esc(r.productName || r.name)}</b><div class="muted small">${timeAgo(r.createdAt)} · ${r.steps.filter((x) => x === 'done').length}/${r.steps.length} 步</div></div>${statusBadge(r.status)}</a>`).join('') : empty('还没有运行过工作流', 'flow', '<a class="btn sm" href="#/workflows">立即启动</a>')}
+      <div class="card-head"><h3>选品库</h3><div class="spacer"></div><a class="btn sm ghost" href="#/products">全部 ${icon('arrow', 14)}</a></div>
+      ${d.topProducts.length ? `<div style="overflow-x:auto"><table>
+        <thead><tr><th>商品</th><th class="r">售价</th><th class="r">7 天销量</th><th class="r">环比</th><th>结论</th></tr></thead>
+        <tbody>${d.topProducts.map((p) => `<tr style="cursor:pointer" onclick="location.hash='#/products/${p.id}'">
+          <td><b>${esc(p.name)}</b><div class="p-sub">${esc(p.category || '')}</div></td><td class="r money">${p.price != null ? '$' + p.price : '—'}</td>
+          <td class="r">${p.sales7d != null ? fmtNum(p.sales7d) : '—'}</td><td class="r ${p.growth >= 0 ? 'up' : 'down'}">${p.growth != null ? (p.growth > 0 ? '+' : '') + p.growth + '%' : '—'}</td>
+          <td><span class="verdict ${VC[p.evaluation.verdict] || 'v-na'}">${esc(p.evaluation.verdict)}</span></td></tr>`).join('')}</tbody></table></div>`
+        : empty('选品库是空的：从 FastMoss 导出商品数据后导入', 'target', '<a class="btn sm" href="#/products">去导入</a>')}
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>类目销量</h3></div>
+      <div class="card-pad bars">
+        ${cats.length ? cats.map((c) => `<div class="bar-row"><span>${esc(c.category)}</span><div class="track"><i style="width:${((c.sales || c.count) / maxSales) * 100}%"></i></div><b>${fmtNum(c.sales || c.count)}</b></div>`).join('') : '<p class="muted small">导入商品后显示</p>'}
       </div>
+    </div>
+  </div>
+
+  ${cards.length >= 3 ? `<section class="gallery3d mt" id="gallery"><div class="viewport"><div class="title"><h3>候选商品，正在浮现</h3><div>${s.products} 个商品 // ${s.recommended} 个推荐测款 // 滚动浏览</div></div></div></section>` : ''}
+
+  <div class="grid g2 mt" data-reveal>
+    <div class="card">
+      <div class="card-head"><h3>最近脚本</h3><div class="spacer"></div><a class="btn sm ghost" href="#/scripts">全部 ${icon('arrow', 14)}</a></div>
+      <div class="card-pad col" style="padding:8px">${d.recentScripts.length ? d.recentScripts.map((r) => `<a class="list-item" href="#/scripts/${r.id}"><div style="flex:1;min-width:0"><b>${esc(r.title)}</b><div class="muted small">${esc(r.productName || '')} · ${timeAgo(r.createdAt)}</div></div>${icon('arrow', 14)}</a>`).join('') : empty('还没有生成脚本', 'script')}</div>
     </div>
     <div class="card">
       <div class="card-head"><h3>动态</h3></div>
-      <div class="card-pad col">
-        ${d.activity.length ? d.activity.map((a) => `<div class="row" style="flex-wrap:nowrap"><span class="chip">${{ workflow: '工作流', script: '脚本', image: '图片', video: '视频' }[a.type] || a.type}</span><span style="flex:1">${esc(a.text)}</span><span class="muted small">${timeAgo(a.createdAt)}</span></div>`).join('') : empty('暂无动态')}
-      </div>
+      <div class="card-pad col">${d.activity.length ? d.activity.map((a) => `<div class="row" style="flex-wrap:nowrap"><span class="chip">${{ product: '选品', script: '脚本' }[a.type] || '记录'}</span><span style="flex:1">${esc(a.text)}</span><span class="muted small">${timeAgo(a.createdAt)}</span></div>`).join('') : empty('暂无动态')}</div>
     </div>
   </div>`;
 
   splitText(view.querySelector('#headline'));
-  const cleanups = [armReveal(view), mountGallery(view.querySelector('#gallery'), cards)];
-  // 3D 场景按需加载，加载失败（如浏览器禁用 WebGL）时页面其余部分照常可用
+  const cleanups = [];
+  const gal = view.querySelector('#gallery');
+  if (gal) cleanups.push(mountGallery(gal, cards));
+  // 3D 场景按需加载，失败（如浏览器禁用 WebGL）时页面其余部分照常可用
   import('../fx/orb.js')
     .then(({ mountOrb }) => {
       if (!view.isConnected) return;
-      cleanups.push(mountOrb(view.querySelector('#stage'), { bars: cats.map((c) => ({ label: c.category, value: c.gmv, text: `$${fmtNum(c.gmv)}` })) }));
+      cleanups.push(mountOrb(view.querySelector('#stage'), { bars: cats.map((c) => ({ label: c.category, value: c.sales || c.count, text: c.sales ? `${fmtNum(c.sales)} 件` : `${c.count} 个商品` })) }));
     })
     .catch((e) => console.warn('[fx] 3D 主视觉未加载：', e.message));
   return () => cleanups.forEach((fn) => fn && fn());

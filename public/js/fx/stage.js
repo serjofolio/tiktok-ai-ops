@@ -88,6 +88,9 @@ export function createStage(host, { fov = 45, near = 0.1, far = 100 } = {}) {
   return {
     scene, camera, renderer, canvas, mouse, size,
     onFrame: (fn) => frames.push(fn),
+    still,
+    // 减少动效模式下不持续渲染，交互时手动请求一帧
+    kick: () => loop(),
     dispose() {
       dead = true;
       cancelAnimationFrame(raf);

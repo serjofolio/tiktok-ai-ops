@@ -5,7 +5,7 @@ const path = require('path');
 const PORT = 3899;
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 60000,
+  timeout: 45000,
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],

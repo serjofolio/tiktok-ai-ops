@@ -1,201 +1,283 @@
-import { api, icon, esc, fmtNum, sparkline, modal, toast, withLoading, $, $$, empty, confirmBox, monogram } from '../lib.js';
+// 智能选品：选品思路 → 导入 FastMoss 数据 → 硬指标 + 利润测算 → AI 选品分析 → 测款 → 生成视频脚本
+import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox } from '../lib.js';
 
-const state = { q: '', category: '', sort: 'score', favorite: false, view: 'grid' };
-const SORTS = [['score', '综合评分'], ['growth', '增长最快'], ['sales', '销量最高'], ['margin', '毛利最高'], ['competition', '竞争最低']];
+const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
+const VERDICT_CLS = { 推荐测款: 'v-go', 再观察: 'v-watch', 建议放弃: 'v-drop', 数据不足: 'v-na' };
+const verdict = (v) => `<span class="verdict ${VERDICT_CLS[v] || 'v-na'}">${esc(v || '未评估')}</span>`;
+const pct = (v) => (v == null ? '<span class="muted">—</span>' : `<span class="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v}%</span>`);
+const num = (v) => (v == null ? '<span class="muted">—</span>' : fmtNum(v));
+const money = (v) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
+
+const STEPS = [
+  ['找潜力趋势', '定一个站点、一个细分类目和价格带。看近 7/28 天销量是否在涨、排名是否上升，持续增长比一次性爆发更可信。', '趋'],
+  ['数据工具筛选', '在 FastMoss 按国家、类目、价格、时间筛出 10–20 个候选：近期有销量、多个达人在带、不止一家店在卖、近期有带货视频。', '筛'],
+  ['竞品分析', '看销量是否集中在一家店或一个达人；对比价格、主图、套装、评价；读差评找改进点，找到差异化切入点。', '竞'],
+  ['判断能否卖', '扣除采购、物流、平台佣金、达人佣金、广告、退货后净利率 ≥ 20%；需求下滑、差评集中、物流难、政策风险高的直接淘汰。', '判'],
+  ['生成测试方案', '少量备货，寄样一批相关达人，同时自营多条不同角度视频；上线前定好预算、成功标准和止损线，每次只测 1–2 个品。', '测'],
+  ['带货视频脚本', '拆对标视频的钩子 → 痛点 → 演示 → 证明 → 行动号召，前 3 秒决定完播；一键生成后直接开拍。', '拍'],
+];
+const CRITERIA = [['销量', '在增长'], ['利润', '要够'], ['卖点', '能拍出来'], ['对标视频', '足够多'], ['自己', '也想买']];
 
 export async function render(view, [openId]) {
+  const state = { q: '', status: '', sort: 'growth' };
   view.innerHTML = `
-  <section class="terrain" id="terrain"><div class="copy"><h2>市场地形</h2><p>每个亮色方块是一个商品，高度代表综合评分，骨白色为 S 级。悬停查看，点击打开详情。</p></div></section>
-  <div class="toolbar">
-    <div class="input-icon">${icon('search', 16)}<input class="input" id="q" placeholder="搜索商品名称 / 品类…" value="${esc(state.q)}"></div>
-    <select class="input" id="cat" style="width:150px"><option value="">全部品类</option></select>
-    <div class="seg" id="sort">${SORTS.map(([k, t]) => `<button data-k="${k}" class="${state.sort === k ? 'on' : ''}">${t}</button>`).join('')}</div>
-    <button class="btn sm ghost ${state.favorite ? 'on' : ''}" id="fav">${icon('star', 15)}<span>${state.favorite ? '仅看选品池' : '选品池'}</span></button>
-    <div class="spacer"></div>
-    <div class="seg" id="vmode"><button data-v="grid" class="${state.view === 'grid' ? 'on' : ''}">卡片</button><button data-v="table" class="${state.view === 'table' ? 'on' : ''}">表格</button></div>
-    <button class="btn sm ghost" id="import">${icon('upload', 15)}导入 CSV</button>
-    <button class="btn sm" id="add">${icon('plus', 15)}添加商品</button>
-  </div>
-  <div class="muted small mb" id="summary"></div>
-  <div id="list"></div>`;
+  <section class="page-hero">
+    <div class="kicker">智能选品 · FastMoss 数据驱动</div>
+    <h2>选<em>能卖</em>的品，<br>不选看起来火的品</h2>
+    <p>导入 FastMoss 的真实数据，系统按硬指标逐项检查、算清每件利润，再由 AI 解释为什么选、怎么测款。选定的品一键生成带货视频脚本。</p>
+    <div class="actions">
+      <button class="btn lg primary-glow" id="import">${icon('upload')}导入 FastMoss 数据</button>
+      <button class="btn ghost lg" id="add">${icon('plus')}手动添加</button>
+      <a class="btn ghost lg" href="https://www.fastmoss.com/zh/e-commerce/search" target="_blank" rel="noopener">${icon('link')}打开 FastMoss</a>
+    </div>
+  </section>
 
-  let categories = [];
+  <section data-reveal>
+    <div class="section-title" style="margin-top:0"><h3>选品思路</h3><span class="muted small">每个商品都按这套流程检查，结论会写在商品详情里</span></div>
+    <div class="steps">${STEPS.map(([t, d, b]) => `<div class="step"><b>${t}</b><p>${d}</p><span class="big">${b}</span></div>`).join('')}</div>
+    <div class="criteria">${CRITERIA.map(([a, b]) => `<span><b>${a}</b>${b}</span>`).join('')}<span><b>饱和信号</b>同款泛滥、价格战、所有视频同一个钩子、头部垄断</span></div>
+  </section>
+
+  <section class="terrain terrain-card" id="terrain"><div class="copy"><h2>市场地形</h2><p>亮色方块是选品库里的商品，高度代表通过的硬指标数量，骨白色为推荐测款。点击方块查看详情。</p></div></section>
+
+  <section data-reveal>
+    <div class="section-title"><h3>选品库</h3><span class="muted small" id="summary"></span><div class="spacer"></div><button class="btn sm ghost" id="assume">${icon('settings', 14)}利润测算参数</button></div>
+    <div class="toolbar">
+      <div class="input-icon">${icon('search', 16)}<input class="input" id="q" placeholder="搜索商品、类目、店铺"></div>
+      <div class="seg" id="tabs"><button data-s="" class="on">全部</button><button data-s="go">推荐测款</button><button data-s="candidate">候选</button><button data-s="testing">测款中</button><button data-s="dropped">已放弃</button></div>
+      <select class="input" id="sort" style="width:150px"><option value="growth">销量增长最快</option><option value="sales">销量最高</option><option value="margin">净利率最高</option><option value="videos">对标视频最多</option><option value="pass">指标通过最多</option><option value="recent">最近导入</option></select>
+    </div>
+    <div id="list"></div>
+  </section>`;
+
+  let all = [];
+  let assumptions = {};
   async function load() {
-    const qs = new URLSearchParams({ q: state.q, category: state.category, sort: state.sort, favorite: state.favorite });
-    const d = await api(`/products?${qs}`);
-    categories = d.categories;
-    const cat = $('#cat', view);
-    if (cat.options.length <= 1) cat.innerHTML += categories.map((c) => `<option ${c === state.category ? 'selected' : ''}>${esc(c)}</option>`).join('');
-    $('#summary', view).innerHTML = `共 <b>${d.items.length}</b> 个商品 · S 级 ${d.items.filter((p) => p.grade === 'S').length} · A 级 ${d.items.filter((p) => p.grade === 'A').length} · 评分模型：增长 30% + 销量 20% + 毛利 20% + 竞争 15% + 口碑 10% + 内容潜力 5%`;
-    const list = $('#list', view);
-    if (!d.items.length) return (list.innerHTML = empty('没有找到符合条件的商品', 'search'));
-    list.innerHTML = state.view === 'grid' ? grid(d.items) : table(d.items);
-    $$('[data-id]', list).forEach((el) =>
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.fav')) return;
-        openDetail(el.dataset.id, load);
-      }),
-    );
-    $$('.fav', list).forEach((b) =>
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const on = !b.classList.contains('on');
-        await api(`/products/${b.dataset.fav}`, { method: 'PATCH', body: { favorite: on } });
-        b.classList.toggle('on', on);
-        toast(on ? '已加入选品池' : '已移出选品池', 'success');
-      }),
-    );
+    const d = await api(`/products?${new URLSearchParams({ q: state.q, sort: state.sort, status: ['candidate', 'testing', 'dropped'].includes(state.status) ? state.status : '' })}`);
+    assumptions = d.assumptions;
+    all = d.items;
+    const items = state.status === 'go' ? all.filter((p) => p.evaluation.verdict === '推荐测款') : all;
+    $('#summary', view).textContent = `${all.length} 个商品 · 推荐测款 ${all.filter((p) => p.evaluation.verdict === '推荐测款').length} · 测款中 ${all.filter((p) => p.status === 'testing').length}`;
+    const box = $('#list', view);
+    if (!all.length && !state.q && !state.status) return (box.innerHTML = onboarding());
+    if (!items.length) return (box.innerHTML = `<div class="card">${empty('没有符合条件的商品', 'search')}</div>`);
+    box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>商品</th><th class="r">售价</th><th class="r">7 天销量</th><th class="r">环比</th><th class="r">视频 / 达人</th><th class="r">净利率</th><th>硬指标</th><th>结论</th><th></th></tr></thead><tbody>
+      ${items.map((p) => `<tr class="prow" data-id="${p.id}">
+        <td><b>${esc(p.name)}</b><div class="p-sub">${esc([p.category, p.shop, p.status && p.status !== 'candidate' ? STATUS[p.status] : ''].filter(Boolean).join(' · ') || '—')}</div></td>
+        <td class="r money">${money(p.price)}</td><td class="r">${num(p.sales7d ?? p.salesTotal)}</td><td class="r">${pct(p.growth)}</td>
+        <td class="r">${num(p.videoCount)} / ${num(p.creatorCount)}</td>
+        <td class="r">${p.evaluation.profit ? `<span class="${p.evaluation.profit.margin >= assumptions.targetMargin ? 'up' : 'down'}">${p.evaluation.profit.margin}%</span>` : '<span class="muted small">待填成本</span>'}</td>
+        <td><span class="dots">${p.evaluation.checks.map((c) => `<i class="${c.status}" title="${esc(c.title)}"></i>`).join('')}</span></td>
+        <td>${verdict(p.evaluation.verdict)}</td>
+        <td><a class="icon-btn" href="${esc(p.fastmossLink)}" target="_blank" rel="noopener" title="在 FastMoss 查看" data-stop>${icon('link', 14)}</a></td></tr>`).join('')}</tbody></table></div>`;
+    $$('.prow', box).forEach((tr) => tr.addEventListener('click', (e) => !e.target.closest('[data-stop]') && openDetail(tr.dataset.id)));
+  }
+
+  function onboarding() {
+    return `<div class="card card-pad onboard">
+      <h3>从 FastMoss 导入第一批候选品</h3>
+      <ol>
+        <li>在 Chrome 里打开 FastMoss → <b>商品搜索</b>或<b>商品榜单</b>，按国家、类目、价格带、近 7 天筛选；</li>
+        <li>点击列表右上角的<b>导出</b>，得到 Excel 文件（或直接选中表格内容 Ctrl+C 复制）；</li>
+        <li>点「导入 FastMoss 数据」，拖入文件或粘贴，确认列对应关系即可。</li>
+      </ol>
+      <p class="muted small">建议导出时带上：商品名称、商品 ID/链接、售价、近 7 天销量、销量增长率、带货达人数、带货视频数、佣金率、类目、店铺。FastMoss 接口审批通过后，可在「接入配置」填写，改为自动拉取。</p>
+      <button class="btn" id="import2">${icon('upload', 15)}导入 FastMoss 数据</button></div>`;
+  }
+
+  // ---------- 导入 ----------
+  function importDialog() {
+    const m = modal({
+      title: '导入 FastMoss 数据', wide: true,
+      body: `<div id="imp"><div class="grid g2">
+        <div class="dropzone" id="dz">${icon('upload', 30)}<p><b>拖入 FastMoss 导出的 Excel / CSV</b><br><span class="small">支持 .xlsx .csv，点击选择文件</span></p><input type="file" id="file" accept=".xlsx,.csv,text/csv" hidden></div>
+        <div class="field">或者粘贴表格（在 FastMoss 页面选中表格 → Ctrl+C）<textarea class="input" id="paste" rows="7" placeholder="商品名称	售价	近7天销量	销量增长率	带货达人数	带货视频数 …"></textarea><button class="btn sm ghost" id="parse" data-loading="识别中…" style="align-self:flex-start">识别粘贴内容</button></div>
+      </div></div>`,
+      onMount(el) {
+        const dz = $('#dz', el), file = $('#file', el);
+        const go = (form, body) => withLoading($('#parse', el), async () => showMapping(await api('/products/import/preview', form ? { method: 'POST', form } : { method: 'POST', body })));
+        const sendFile = (f) => { if (!f) return; const form = new FormData(); form.append('file', f); dz.innerHTML = `<span class="spinner"></span><p>正在读取 ${esc(f.name)}…</p>`; go(form); };
+        dz.onclick = () => file.click();
+        file.onchange = () => sendFile(file.files[0]);
+        dz.ondragover = (e) => (e.preventDefault(), dz.classList.add('drag'));
+        dz.ondragleave = () => dz.classList.remove('drag');
+        dz.ondrop = (e) => { e.preventDefault(); sendFile(e.dataTransfer.files[0]); };
+        $('#parse', el).onclick = () => { const t = $('#paste', el).value; if (!t.trim()) return toast('请先粘贴表格内容', 'error'); go(null, { text: t }); };
+        function showMapping(pv) {
+          const opts = (sel) => `<option value="">— 不导入 —</option>${pv.headers.map((h, i) => `<option value="${i}" ${String(sel) === String(i) ? 'selected' : ''}>${esc(h || `第 ${i + 1} 列`)}</option>`).join('')}`;
+          $('#imp', el).innerHTML = `<p style="margin-top:0">读到 <b>${pv.total}</b> 行。系统已自动识别列，请确认对应关系（<b>商品名称</b>必选，其余缺失的指标在详情里会提示补充）。</p>
+            <div class="map-grid">${Object.entries(pv.fields).map(([k, label]) => `<label class="field">${esc(label)}${k === 'name' ? ' *' : ''}<select class="input" data-f="${k}">${opts(pv.mapping[k])}</select></label>`).join('')}</div>
+            <div class="section-title"><h3 style="font-size:14px">前 ${pv.sample.length} 行预览</h3></div>
+            <div class="table-wrap"><table><thead><tr>${pv.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${pv.sample.map((r) => `<tr>${pv.headers.map((_, i) => `<td>${esc(r[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+            <div class="row mt" style="justify-content:flex-end"><button class="btn lg primary-glow" id="commit" data-loading="导入中…">${icon('check')}确认导入 ${pv.total} 个商品</button></div>`;
+          $('#commit', el).onclick = (e) => withLoading(e.currentTarget, async () => {
+            const mapping = Object.fromEntries($$('[data-f]', el).map((s) => [s.dataset.f, s.value === '' ? '' : Number(s.value)]));
+            const r = await api('/products/import/commit', { method: 'POST', body: { token: pv.token, mapping } });
+            toast(`新增 ${r.created} 个，更新 ${r.updated} 个`, 'success');
+            m.close();
+            await load();
+            remountTerrain();
+          });
+        }
+      },
+    });
+  }
+
+  // ---------- 手动添加 ----------
+  function addDialog() {
+    const f = (k, l, ph = '', type = 'text') => `<label class="field">${l}<input class="input" name="${k}" type="${type}" step="any" placeholder="${ph}"></label>`;
+    modal({
+      title: '手动添加商品', wide: true,
+      body: `<form class="grid g3" id="mf">${f('name', '商品名称 *', 'Mini Desk Fan')}${f('fastmossUrl', 'FastMoss 链接', 'https://www.fastmoss.com/...')}${f('tiktokUrl', 'TikTok 商品链接')}
+        ${f('category', '类目')}${f('price', '售价 $', '15.99', 'number')}${f('sales7d', '近 7 天销量', '', 'number')}${f('growth', '销量环比 %', '', 'number')}${f('videoCount', '带货视频数', '', 'number')}${f('creatorCount', '带货达人数', '', 'number')}${f('commissionRate', '佣金率 %', '', 'number')}${f('shop', '店铺')}${f('rating', '评分', '', 'number')}</form>`,
+      footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="ok" data-loading="保存中…">保存</button>`,
+      onMount(el, close) {
+        $('#ok', el).onclick = (e) => withLoading(e.currentTarget, async () => {
+          const body = Object.fromEntries(new FormData($('#mf', el)));
+          if (!body.name.trim()) throw new Error('请填写商品名称');
+          const p = await api('/products', { method: 'POST', body });
+          close();
+          await load();
+          remountTerrain();
+          openDetail(p.id);
+        });
+      },
+    });
+  }
+
+  // ---------- 利润参数 ----------
+  function assumeDialog() {
+    const a = assumptions;
+    const f = (k, l, tip) => `<label class="field">${l}<input class="input" name="${k}" type="number" step="0.5" value="${a[k]}"><span class="small muted">${tip}</span></label>`;
+    modal({
+      title: '利润测算参数',
+      body: `<form class="grid g2" id="af">${f('platformFeeRate', '平台佣金 %', 'TikTok Shop 按类目收取')}${f('creatorRate', '默认达人佣金 %', '商品数据有佣金率时以商品为准')}${f('returnRate', '退货/售后预留 %', '')}${f('adRate', '广告/样品预留 %', '')}${f('targetMargin', '净利率达标线 %', '低于这个值利润检查不通过')}</form>`,
+      footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="ok">保存并重算</button>`,
+      onMount(el, close) {
+        $('#ok', el).onclick = (e) => withLoading(e.currentTarget, async () => {
+          await api('/selection', { method: 'PUT', body: Object.fromEntries(new FormData($('#af', el))) });
+          close();
+          load();
+          toast('已按新参数重新测算', 'success');
+        });
+      },
+    });
+  }
+
+  // ---------- 商品详情 ----------
+  async function openDetail(id) {
+    let p = await api(`/products/${id}`);
+    const kw = () => p.analysis?.sourcing?.match(/[「“"]([^」”"]{2,30})[」”"]/)?.[1] || p.name;
+    const m = modal({ title: esc(p.name), wide: true, body: '<div id="pd"></div>', footer: '<div id="pf" class="row" style="width:100%"></div>' });
+    const root = $('#pd', m.el), foot = $('#pf', m.el);
+
+    const draw = () => {
+      const ev = p.evaluation, pr = ev.profit, a = p.analysis, j = p.judgement || {};
+      root.innerHTML = `
+        <div class="row" style="margin-bottom:14px">${verdict(ev.verdict)}<span class="muted small">通过 ${ev.score.pass}/${ev.score.total} 项${ev.score.unknown ? `，${ev.score.unknown} 项待补充` : ''}</span><div class="spacer"></div>
+          <div class="ext-links"><a href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">${icon('link', 13)}FastMoss</a>${p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener">${icon('link', 13)}TikTok 商品</a>` : ''}<a href="https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw())}" target="_blank" rel="noopener">${icon('search', 13)}1688 找货源</a></div></div>
+        <div class="drawer-grid">
+          <div class="col">
+            <div class="hit"><dl class="kv">
+              <dt>类目</dt><dd>${esc(p.category || '—')}</dd><dt>店铺</dt><dd>${esc(p.shop || '—')}${p.shopCount != null ? ` · ${p.shopCount} 家在售` : ''}</dd>
+              <dt>售价</dt><dd class="money">${money(p.price)}</dd><dt>近 7 天销量</dt><dd>${num(p.sales7d)}（环比 ${pct(p.growth)}）</dd>
+              <dt>近 28 天</dt><dd>${num(p.sales28d)}</dd><dt>销售额</dt><dd>${p.gmv != null ? '$' + fmtNum(p.gmv) : '—'}</dd>
+              <dt>视频/达人</dt><dd>${num(p.videoCount)} 条 / ${num(p.creatorCount)} 位${p.liveCount != null ? ` / 直播 ${num(p.liveCount)}` : ''}</dd>
+              <dt>佣金率</dt><dd>${p.commissionRate != null ? p.commissionRate + '%' : '—'}</dd><dt>评分</dt><dd>${p.rating ?? '—'}${p.reviews != null ? `（${fmtNum(p.reviews)} 评价）` : ''}</dd>
+              <dt>数据时间</dt><dd class="small muted">${esc((p.dataAt || p.createdAt || '').slice(0, 10))} · ${p.source === 'fastmoss' ? 'FastMoss 导入' : '手动录入'}</dd></dl></div>
+            <div class="hit"><b>利润测算</b><div class="grid g2" style="margin-top:10px">
+              <label class="field">采购价 $（1688）<input class="input" id="cost" type="number" step="0.01" value="${p.cost ?? ''}" placeholder="例如 3.20"></label>
+              <label class="field">物流 $（头程+尾程/件）<input class="input" id="ship" type="number" step="0.01" value="${p.shipping ?? ''}" placeholder="例如 2.50"></label></div>
+              ${pr ? `<table class="profit-table"><tbody>
+                <tr><td>售价</td><td class="r money">$${pr.price.toFixed(2)}</td></tr>
+                <tr><td class="muted">− 平台佣金 ${ev.assumptions.platformFeeRate}%</td><td class="r money">$${pr.platformFee.toFixed(2)}</td></tr>
+                <tr><td class="muted">− 达人佣金 ${pr.commission}%</td><td class="r money">$${pr.creatorFee.toFixed(2)}</td></tr>
+                <tr><td class="muted">− 退货预留 ${ev.assumptions.returnRate}% / 广告预留 ${ev.assumptions.adRate}%</td><td class="r money">$${(pr.returnReserve + pr.adReserve).toFixed(2)}</td></tr>
+                <tr><td class="muted">− 采购 + 物流</td><td class="r money">$${(pr.cost + pr.shipping).toFixed(2)}</td></tr>
+                <tr class="total"><td>单件净利 · 净利率</td><td class="r money ${pr.margin >= ev.assumptions.targetMargin ? 'up' : 'down'}">$${pr.unitProfit.toFixed(2)} · ${pr.margin}%</td></tr></tbody></table>` : '<p class="small muted" style="margin:10px 0 0">填入采购价和物流成本后自动计算净利。</p>'}
+            </div>
+            <div class="hit"><b>人工判断</b>
+              <div class="judge"><span>卖点能在 3 秒内拍出来？</span><div class="seg" data-j="visual"><button data-v="true" class="${j.visual === true ? 'on' : ''}">能</button><button data-v="false" class="${j.visual === false ? 'on' : ''}">不能</button></div></div>
+              <div class="judge"><span>自己看到也想买？</span><div class="seg" data-j="wantBuy"><button data-v="true" class="${j.wantBuy === true ? 'on' : ''}">想</button><button data-v="false" class="${j.wantBuy === false ? 'on' : ''}">不想</button></div></div>
+              <textarea class="input" id="notes" rows="2" placeholder="备注：看了对标视频的感受、差评要点、供应商信息…">${esc(j.notes || '')}</textarea></div>
+          </div>
+          <div class="col">
+            <div class="check-list">${ev.checks.map((c) => `<div class="ck ${c.status}"><i>${{ pass: '✓', warn: '!', fail: '✕', unknown: '?' }[c.status]}</i><div><b>${esc(c.title)}</b><span>${esc(c.detail)}</span></div></div>`).join('')}</div>
+            <div class="hit"><div class="row"><b>AI 选品分析</b><span class="muted small">${p.analyzedAt ? '更新于 ' + esc(p.analyzedAt.slice(0, 10)) : ''}</span><div class="spacer"></div><button class="btn sm" id="ai" data-loading="分析中…">${icon('sparkles', 14)}${a ? '重新分析' : '生成分析'}</button></div>
+              ${a ? analysisHTML(a) : '<p class="small muted" style="margin:8px 0 0">AI 会结合上面的数据和知识库里的选品方法，说明为什么选这个品、目标人群、卖点怎么拍、竞品切入点、风险，以及具体的测款方案。</p>'}</div>
+          </div>
+        </div>`;
+      foot.innerHTML = `<button class="btn ghost danger" id="del">${icon('trash', 14)}删除</button><div class="spacer"></div>
+        ${p.status !== 'dropped' ? '<button class="btn ghost" data-st="dropped">放弃</button>' : '<button class="btn ghost" data-st="candidate">恢复为候选</button>'}
+        ${p.status !== 'testing' ? `<button class="btn ghost" data-st="testing">${icon('flow', 14)}标记测款中</button>` : ''}
+        <a class="btn primary-glow" href="#/scripts/new/${p.id}" data-close>${icon('script', 15)}生成视频脚本</a>`;
+      bind();
+    };
+
+    const save = async (body) => {
+      p = await api(`/products/${p.id}`, { method: 'PATCH', body });
+      load();
+    };
+    let tmr;
+    function bind() {
+      const deb = () => { clearTimeout(tmr); tmr = setTimeout(async () => { await save({ cost: $('#cost', root).value, shipping: $('#ship', root).value }); draw(); }, 600); };
+      $('#cost', root).oninput = deb;
+      $('#ship', root).oninput = deb;
+      $$('[data-j]', root).forEach((seg) => seg.querySelectorAll('button').forEach((b) => (b.onclick = async () => { await save({ judgement: { [seg.dataset.j]: b.dataset.v === 'true' } }); draw(); })));
+      $('#notes', root).onchange = (e) => save({ judgement: { notes: e.target.value } });
+      $('#ai', root).onclick = (e) => withLoading(e.currentTarget, async () => {
+        await api(`/products/${p.id}/analyze`, { method: 'POST' });
+        p = await api(`/products/${p.id}`);
+        draw();
+        toast('分析完成', 'success');
+      });
+      $$('[data-st]', foot).forEach((b) => (b.onclick = async () => { await save({ status: b.dataset.st }); draw(); toast(`已标记为「${STATUS[b.dataset.st]}」`, 'success'); }));
+      $('#del', foot).onclick = async () => {
+        if (!(await confirmBox(`删除「${p.name}」？`))) return;
+        await api(`/products/${p.id}`, { method: 'DELETE' });
+        m.close();
+        await load();
+        remountTerrain();
+      };
+    }
+    draw();
+  }
+
+  // 地形：WebGL 不可用时自动跳过
+  let disposeTerrain = null;
+  function remountTerrain() {
+    disposeTerrain?.();
+    const items = all.map((p) => ({ id: p.id, nameCn: p.name, score: Math.round((p.evaluation.score.pass / p.evaluation.score.total) * 100), grade: p.evaluation.verdict === '推荐测款' ? 'S' : p.evaluation.score.pass >= 3 ? 'A' : 'B', category: p.category || '' }));
+    import('../fx/terrain.js').then(({ mountTerrain }) => { if (view.isConnected) disposeTerrain = mountTerrain(view.querySelector('#terrain'), { items, onPick: openDetail }); }).catch((e) => console.warn('[fx] 市场地形未加载：', e.message));
   }
 
   let t;
-  $('#q', view).oninput = (e) => {
-    clearTimeout(t);
-    t = setTimeout(() => ((state.q = e.target.value), load()), 250);
-  };
-  $('#cat', view).onchange = (e) => ((state.category = e.target.value), load());
-  $$('#sort button', view).forEach((b) => (b.onclick = () => { state.sort = b.dataset.k; $$('#sort button', view).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
-  $$('#vmode button', view).forEach((b) => (b.onclick = () => { state.view = b.dataset.v; $$('#vmode button', view).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
-  $('#fav', view).onclick = (e) => {
-    state.favorite = !state.favorite;
-    e.currentTarget.classList.toggle('on', state.favorite);
-    e.currentTarget.querySelector('span').textContent = state.favorite ? '仅看选品池' : '选品池';
-    load();
-  };
-  $('#import', view).onclick = () => importDialog(load);
-  $('#add', view).onclick = () => addDialog(categories, load);
+  $('#q', view).oninput = (e) => { clearTimeout(t); t = setTimeout(() => ((state.q = e.target.value), load()), 250); };
+  $$('#tabs button', view).forEach((b) => (b.onclick = () => { state.status = b.dataset.s; $$('#tabs button', view).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
+  $('#sort', view).onchange = (e) => ((state.sort = e.target.value), load());
+  $('#import', view).onclick = importDialog;
+  $('#add', view).onclick = addDialog;
+  $('#assume', view).onclick = assumeDialog;
+  view.addEventListener('click', (e) => e.target.closest('#import2') && importDialog());
+
   await load();
-  if (openId) openDetail(openId, load);
-  // 地形使用完整商品库（不受筛选影响），WebGL 不可用时自动跳过
-  let disposeTerrain = null;
-  api('/products')
-    .then(({ items }) => import('../fx/terrain.js').then(({ mountTerrain }) => {
-      if (view.isConnected) disposeTerrain = mountTerrain(view.querySelector('#terrain'), { items, onPick: (id) => openDetail(id, load) });
-    }))
-    .catch((e) => console.warn('[fx] 市场地形未加载：', e.message));
+  remountTerrain();
+  if (openId) openDetail(openId);
   return () => disposeTerrain?.();
 }
 
-function growth(p) {
-  return `<span class="${p.salesGrowth >= 0 ? 'up' : 'down'}">${p.salesGrowth >= 0 ? '▲' : '▼'}${Math.abs(p.salesGrowth)}%</span>`;
-}
-
-function grid(items) {
-  return `<div class="product-grid">${items.map((p) => `
-    <div class="product" data-id="${p.id}">
-      <button class="icon-btn fav ${p.favorite ? 'on' : ''}" data-fav="${p.id}" title="加入选品池">${icon('star', 16)}</button>
-      <div class="product-top">${monogram(p.name)}<div style="min-width:0;padding-right:30px"><div class="p-name">${esc(p.nameCn)}</div><div class="p-sub">${esc(p.name)}</div><div class="row" style="margin-top:6px;gap:6px"><span class="chip">${esc(p.category)}</span><span class="chip">${p.market}</span></div></div></div>
-      <div class="p-metrics"><div><small>售价</small><b>$${p.price}</b></div><div><small>7日销量</small><b>${fmtNum(p.sales7d)}</b></div><div><small>环比</small><b>${growth(p)}</b></div><div><small>毛利率</small><b>${p.margin}%</b></div><div><small>竞争度</small><b>${p.competition}</b></div><div><small>评分</small><b>${p.rating}</b></div></div>
-      ${sparkline(p.trend, { w: 240, h: 34 })}
-      <div class="row" style="flex-wrap:nowrap"><span class="grade grade-${p.grade}">${p.grade}</span><div class="score-bar" style="flex:1"><i style="width:${p.score}%"></i></div><b>${p.score}</b></div>
-    </div>`).join('')}</div>`;
-}
-
-function table(items) {
-  return `<div class="card table-wrap"><table><thead><tr><th></th><th>商品</th><th>品类</th><th>售价</th><th>成本</th><th>毛利率</th><th>7日销量</th><th>增长</th><th>视频数</th><th>达人数</th><th>竞争度</th><th>评分</th></tr></thead><tbody>
-  ${items.map((p) => `<tr data-id="${p.id}" style="cursor:pointer"><td><button class="icon-btn fav ${p.favorite ? 'on' : ''}" data-fav="${p.id}" style="position:static">${icon('star', 15)}</button></td>
-  <td><div class="row" style="flex-wrap:nowrap">${monogram(p.name, 'sm')}<div><b>${esc(p.nameCn)}</b><div class="p-sub">${esc(p.name)}</div></div></div></td><td>${esc(p.category)}</td><td>$${p.price}</td><td>$${p.cost}</td><td>${p.margin}%</td><td>${fmtNum(p.sales7d)}</td><td>${growth(p)}</td><td>${fmtNum(p.videoCount)}</td><td>${fmtNum(p.creatorCount)}</td><td>${p.competition}</td>
-  <td><div class="row" style="flex-wrap:nowrap"><span class="grade grade-${p.grade}">${p.grade}</span><b>${p.score}</b></div></td></tr>`).join('')}</tbody></table></div>`;
-}
-
 function analysisHTML(a) {
-  if (!a) return `<div class="empty" style="padding:24px">${icon('sparkles', 32)}<p>点击「AI 选品分析」获取卖点、人群、内容角度与风险评估</p></div>`;
-  const list = (arr) => `<ul style="margin:4px 0;padding-left:18px">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
-  return `<div class="col">
-    <div class="row"><span class="badge ${a.verdict === '强烈推荐' ? 'badge-ok' : a.verdict === '推荐测款' ? 'badge-run' : 'badge-muted'}" style="font-size:13px;padding:4px 12px">${esc(a.verdict)}</span></div>
-    <p style="margin:0">${esc(a.summary)}</p>
-    <div class="grid g2"><div class="hit"><b>核心卖点</b>${list(a.sellingPoints)}</div><div class="hit"><b>内容角度</b>${list(a.contentAngles)}</div>
-    <div class="hit"><b>风险提示</b>${list(a.risks)}</div><div class="hit"><b>行动建议</b>${list(a.actions)}</div></div>
-    <div class="hit"><b>目标人群：</b>${esc(a.audience)}<br><b>定价建议：</b>${esc(a.pricing)}</div></div>`;
-}
-
-async function openDetail(id, reload) {
-  const p = await api(`/products/${id}`);
-  const parts = [['增长趋势', p.scoreParts.growth, 30], ['销量基础', p.scoreParts.sales, 20], ['利润空间', p.scoreParts.margin, 20], ['竞争程度', p.scoreParts.competition, 15], ['用户口碑', p.scoreParts.rating, 10], ['内容潜力', p.scoreParts.content, 5]];
-  modal({
-    title: esc(p.nameCn),
-    wide: true,
-    body: `<div class="grid" style="grid-template-columns:300px minmax(0,1fr)">
-      <div class="col">
-        <div class="hit"><div class="muted small">${esc(p.name)}</div><div class="row mt" style="margin-top:10px"><span class="grade grade-${p.grade}" style="width:44px;height:44px;font-size:20px">${p.grade}</span><div><b style="font-size:28px">${p.score}</b><span class="muted"> / 100 综合评分</span></div></div></div>
-        <div class="hit bars">${parts.map(([t, v, w]) => `<div class="bar-row"><span>${t}</span><div class="track"><i style="width:${v * 100}%"></i></div><span class="muted">${Math.round(v * w)}/${w}</span></div>`).join('')}</div>
-        <dl class="kv hit"><dt>售价</dt><dd>$${p.price}</dd><dt>成本</dt><dd>$${p.cost}（含头程）</dd><dt>佣金</dt><dd>${p.commissionRate}%</dd><dt>毛利率</dt><dd>${p.margin}%</dd><dt>7日销量</dt><dd>${fmtNum(p.sales7d)}（${p.salesGrowth}%）</dd><dt>7日GMV</dt><dd>$${fmtNum(p.gmv7d)}</dd><dt>视频/达人</dt><dd>${fmtNum(p.videoCount)} / ${fmtNum(p.creatorCount)}</dd><dt>评分</dt><dd>${p.rating}（${fmtNum(p.reviews)} 评价）</dd></dl>
-        <div class="hit">${sparkline(p.trend, { w: 260, h: 60 })}<div class="muted small">近 14 日销量趋势</div></div>
-      </div>
-      <div class="col"><div class="row"><h3 style="font-size:15px">AI 选品分析</h3><div class="spacer"></div><button class="btn sm cyan" id="an" data-loading="分析中…">${icon('sparkles', 15)}${p.analysis ? '重新分析' : 'AI 选品分析'}</button></div><div id="an-box">${analysisHTML(p.analysis)}</div></div>
-    </div>`,
-    footer: `${p.source !== 'demo' ? `<button class="btn ghost danger" id="del">${icon('trash', 15)}删除</button><div class="spacer"></div>` : ''}<a class="btn ghost" href="#/scripts/new/${p.id}" data-close>${icon('script', 15)}写脚本</a><button class="btn grad" id="wf" data-loading="启动中…">${icon('zap', 15)}一键生成视频</button>`,
-    onMount(el, close) {
-      $('#an', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const a = await api(`/products/${p.id}/analyze`, { method: 'POST' });
-        $('#an-box', el).innerHTML = analysisHTML(a);
-        toast('分析完成', 'success');
-      });
-      $('#wf', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const r = await api('/workflows', { method: 'POST', body: { productId: p.id } });
-        close();
-        location.hash = `#/workflows/${r.id}`;
-      });
-      const del = $('#del', el);
-      if (del) del.onclick = async () => {
-        if (!(await confirmBox(`确定删除商品「${p.nameCn}」？`))) return;
-        await api(`/products/${p.id}`, { method: 'DELETE' });
-        close();
-        reload();
-      };
-    },
-  });
-}
-
-function importDialog(reload) {
-  const sample = 'name,nameCn,category,price,cost,commissionRate,sales7d,salesGrowth,videoCount,creatorCount,rating,reviews,competition,market\nMini Desk Fan,迷你桌面风扇,3C数码,15.99,4.5,15,5200,86,1200,240,4.6,3100,38,US';
-  modal({
-    title: '导入商品数据（CSV）',
-    body: `<div class="col"><p class="muted small" style="margin:0">支持从 TikTok Shop 后台、FastMoss、Kalodata 等数据工具导出后整理为以下表头：</p>
-      <div class="code">${esc(sample)}</div>
-      <div class="dropzone" id="dz">${icon('upload', 28)}<p>点击或拖拽 CSV 文件到这里</p><input type="file" accept=".csv,text/csv" hidden id="file"></div>
-      <label class="field">或直接粘贴 CSV 内容<textarea class="input" id="csv" rows="5" placeholder="${esc(sample.split('\n')[0])}"></textarea></label></div>`,
-    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="go" data-loading="导入中…">导入</button>`,
-    onMount(el, close) {
-      const dz = $('#dz', el), file = $('#file', el);
-      dz.onclick = () => file.click();
-      dz.ondragover = (e) => (e.preventDefault(), dz.classList.add('drag'));
-      dz.ondragleave = () => dz.classList.remove('drag');
-      dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('drag'); readFile(e.dataTransfer.files[0]); };
-      file.onchange = () => readFile(file.files[0]);
-      function readFile(f) {
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => { $('#csv', el).value = r.result; dz.querySelector('p').textContent = `已读取：${f.name}`; };
-        r.readAsText(f);
-      }
-      $('#go', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const r = await api('/products/import', { method: 'POST', body: { csv: $('#csv', el).value } });
-        toast(`成功导入 ${r.imported} 个商品`, 'success');
-        close();
-        reload();
-      });
-    },
-  });
-}
-
-function addDialog(categories, reload) {
-  const f = (k, label, type = 'text', ph = '') => `<label class="field">${label}<input class="input" name="${k}" type="${type}" step="any" placeholder="${ph}"></label>`;
-  modal({
-    title: '添加商品',
-    body: `<form class="grid g2" id="pf">${f('name', '英文名称 *', 'text', 'Mini Desk Fan')}${f('nameCn', '中文名称', 'text', '迷你桌面风扇')}
-      <label class="field">品类<select class="input" name="category">${categories.map((c) => `<option>${esc(c)}</option>`).join('')}<option>其他</option></select></label>
-      ${f('price', '售价 $', 'number')}${f('cost', '成本 $（含物流）', 'number')}${f('commissionRate', '达人佣金 %', 'number')}${f('sales7d', '7 日销量', 'number')}
-      ${f('salesGrowth', '销量环比 %', 'number')}${f('competition', '竞争度 0-100', 'number')}${f('rating', '评分', 'number', '4.6')}${f('reviews', '评价数', 'number')}</form>`,
-    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="save">保存</button>`,
-    onMount(el, close) {
-      $('#save', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const body = Object.fromEntries(new FormData($('#pf', el)));
-        if (!body.nameCn) body.nameCn = body.name;
-        await api('/products', { method: 'POST', body });
-        toast('商品已添加', 'success');
-        close();
-        reload();
-      });
-    },
-  });
+  const list = (arr) => `<ul>${(arr || []).map((x) => `<li>${esc(typeof x === 'string' ? x : JSON.stringify(x))}</li>`).join('')}</ul>`;
+  const tp = a.testPlan || {};
+  return `<div class="analysis">
+    <div class="row">${verdict(a.verdict)}</div>
+    <h4>为什么选</h4>${list(a.why)}
+    <h4>目标人群</h4><p>${esc(a.audience || '—')}</p>
+    <h4>卖点与拍法</h4><ul>${(a.sellingPoints || []).map((s) => `<li><b>${esc(s.point)}</b> — ${esc(s.howToShow)}</li>`).join('')}</ul>
+    <h4>竞品与切入点</h4><p>${esc(a.competitors || '—')}</p>
+    <h4>风险</h4>${list(a.risks)}
+    <h4>1688 找货</h4><p>${esc(a.sourcing || '—')}</p>
+    <h4>测款方案</h4><dl class="kv"><dt>备货</dt><dd>${esc(tp.inventory || '—')}</dd><dt>达人</dt><dd>${esc(tp.creators || '—')}</dd><dt>自营视频</dt><dd>${esc(tp.videos || '—')}</dd><dt>预算</dt><dd>${esc(tp.budget || '—')}</dd><dt>成功标准</dt><dd>${esc(tp.successMetrics || '—')}</dd><dt>止损线</dt><dd>${esc(tp.stopLoss || '—')}</dd></dl>
+    <h4>对标视频角度</h4>${list(a.benchmarkAngles)}
+  </div>`;
 }
