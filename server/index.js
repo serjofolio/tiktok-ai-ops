@@ -77,7 +77,7 @@ app.post('/api/auth/register', h(async (req, res) => {
 }));
 app.post('/api/auth/login', h(async (req, res) => signIn(req, res, await auth.login(req.body || {}, auth.clientIp(req)))));
 app.post('/api/auth/logout', h(async (req, res) => {
-  if (req.user) auth.endSessions(req.user.id, null);
+  auth.endSession(req.token); // 只退出当前设备
   auth.setCookie(req, res, '');
   res.json({ ok: true });
 }));

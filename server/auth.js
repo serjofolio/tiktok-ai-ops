@@ -111,6 +111,10 @@ function userFromToken(token) {
   return u && !u.disabled ? u : null;
 }
 
+function endSession(token) {
+  if (token) sessions.remove(sha(token));
+}
+
 function endSessions(userId, exceptToken) {
   const keep = exceptToken ? sha(exceptToken) : null;
   sessions.replaceAll(sessions.all().filter((s) => s.userId !== userId || s.id === keep));
@@ -188,6 +192,6 @@ async function upsertAdmin(username, password) {
 const hasUsers = () => users.count() > 0;
 
 module.exports = {
-  register, login, createSession, userFromToken, endSessions, changePassword, readToken, setCookie, clientIp, publicUser,
+  register, login, createSession, userFromToken, endSession, endSessions, changePassword, readToken, setCookie, clientIp, publicUser,
   listUsers, adminUpdate, adminResetPassword, adminDelete, upsertAdmin, hasUsers, initUserData,
 };

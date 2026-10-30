@@ -55,6 +55,13 @@ mkdir -p "$APP_DIR" "$DATA_DIR"
 # ---------- 3. 部署代码（保留 data 目录，代码整体替换）----------
 log "解压应用到 $APP_DIR"
 systemctl stop tkagent 2>/dev/null || true
+# 升级前备份数据目录（保留最近 10 份）
+if [ -n "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
+  mkdir -p /var/backups/tkagent
+  tar -czf "/var/backups/tkagent/data-$(date +%Y%m%d-%H%M%S).tar.gz" -C "$DATA_DIR" .
+  ls -1t /var/backups/tkagent/data-*.tar.gz | tail -n +11 | xargs -r rm -f
+  log "数据已备份到 /var/backups/tkagent"
+fi
 find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} +
 tar -xzf "$BUNDLE" -C "$APP_DIR"
 cd "$APP_DIR"
@@ -62,6 +69,12 @@ log "安装生产依赖"
 npm ci --omit=dev --no-audit --no-fund --loglevel=error || npm install --omit=dev --no-audit --no-fund --loglevel=error
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR" "$DATA_DIR"
 chmod 750 "$DATA_DIR"
+# 还没有任何账号时，在服务启动前先创建管理员，避免别人抢先注册成为管理员
+# ADMIN_USER / ADMIN_PASSWORD 可放在 deploy.env；不填密码则随机生成并打印
+if [ -n "${ADMIN_USER:-}" ] && ! grep -q '"username"' "$DATA_DIR/users.json" 2>/dev/null; then
+  log "创建管理员账号 $ADMIN_USER"
+  runuser -u "$SVC_USER" -- env DATA_DIR="$DATA_DIR" "$NODE_BIN" server/cli.js admin "$ADMIN_USER" ${ADMIN_PASSWORD:-}
+fi
 
 # ---------- 4. systemd 服务 ----------
 log "写入 systemd 服务 tkagent.service"
@@ -141,7 +154,7 @@ fi
 # ---------- 7. 自检 ----------
 log "等待服务启动"
 for i in $(seq 1 30); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/dashboard" || true)
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/auth/me" || true)
   [ "$code" = 200 ] && break
   sleep 1
 done
