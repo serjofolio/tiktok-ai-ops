@@ -36,10 +36,13 @@ test('所有页面均可正常打开', async ({ page }) => {
 
 test('总览：统计与潜力爆品', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.hero h2')).toContainText('今天打造哪款爆品');
+  await expect(page.locator('#headline')).toContainText('今天打造哪款爆品');
+  await expect(page.locator('#stage canvas.webgl')).toHaveCount(1);
+  await expect(page.locator('#stage .orb-label')).toHaveCount(9);
+  expect(await page.locator('#gallery .float').count()).toBeGreaterThanOrEqual(5);
   await expect(page.locator('.stat-strip > div')).toHaveCount(4);
   await expect(page.locator('.stat-value').first()).not.toHaveText('0');
-  await expect(page.locator('.ticker-item').first()).toBeVisible();
+  await expect(page.locator('.mega span').first()).toBeVisible();
   await expect(page.locator('table tbody tr')).toHaveCount(6);
   await expect(page.locator('#mode-chip')).toContainText('离线演示模式');
 });
@@ -196,11 +199,15 @@ test('系统设置：预设切换与保存', async ({ page }) => {
   await expect(llm.locator('[name=baseUrl]')).toHaveValue('https://api.deepseek.com/v1');
   await expect(llm.locator('[name=apiKey]')).toBeVisible();
   await page.goto('/');
-  await expect(page.locator('.hero h2')).toContainText('Feng 的美妆小店');
+  await expect(page.locator('#headline')).toContainText('Feng 的美妆小店');
 });
 
 test('主题切换与移动端布局', async ({ page }) => {
   await page.goto('/');
+  // 暗场/终端风格恒为深色，主题按钮隐藏；切到纸墨风格测试明暗切换
+  await expect(page.locator('#theme-btn')).toBeHidden();
+  await page.evaluate(() => localStorage.setItem('style', 'paper'));
+  await page.reload();
   await page.click('#theme-btn');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.click('#theme-btn');
@@ -272,9 +279,10 @@ test('系统设置：从上游自动获取模型列表', async ({ page }) => {
 
 test('界面风格：顶栏切换、设置页预览与持久化', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('html')).toHaveAttribute('data-style', 'paper');
+  await expect(page.locator('html')).toHaveAttribute('data-style', 'cinema');
   await page.click('#style-btn');
-  for (const key of ['brutal', 'editorial', 'terminal', 'soft', 'paper']) {
+  await expect(page.locator('.style-pop .style-opt')).toHaveCount(6);
+  for (const key of ['brutal', 'editorial', 'terminal', 'soft', 'paper', 'cinema']) {
     await page.click(`.style-pop [data-k=${key}]`);
     await expect(page.locator('html')).toHaveAttribute('data-style', key);
     await expect(page.locator('.style-pop .style-opt.on')).toHaveAttribute('data-k', key);
@@ -282,7 +290,7 @@ test('界面风格：顶栏切换、设置页预览与持久化', async ({ page 
   await page.mouse.click(700, 500);
   await expect(page.locator('.style-pop')).toHaveCount(0);
   await page.goto('/#/settings');
-  await expect(page.locator('#styles .style-card')).toHaveCount(5);
+  await expect(page.locator('#styles .style-card')).toHaveCount(6);
   await page.click('#styles .style-card[data-k=editorial]');
   await expect(page.locator('#styles .style-card.on')).toHaveAttribute('data-k', 'editorial');
   await page.reload();
@@ -297,5 +305,16 @@ test('界面风格：顶栏切换、设置页预览与持久化', async ({ page 
       await expect(page.locator('#view')).not.toContainText('页面加载失败');
     }
   }
-  await page.evaluate(() => localStorage.setItem('style', 'paper'));
+  await page.evaluate(() => localStorage.setItem('style', 'cinema'));
+});
+
+test('3D 动效：选品页市场地形与悬停提示', async ({ page }) => {
+  await page.goto('/#/products');
+  await expect(page.locator('#terrain canvas.webgl')).toHaveCount(1);
+  await expect(page.locator('.product').first()).toBeVisible();
+  // 静态资源与幕布不应阻挡交互
+  await page.click('.nav a[data-path=dashboard]');
+  await expect(page.locator('#headline')).toBeVisible();
+  const res = await page.request.get('/vendor/three/three.module.min.js');
+  expect(res.ok()).toBeTruthy();
 });

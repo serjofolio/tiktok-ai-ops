@@ -1,0 +1,141 @@
+/* ==========  暗场风格 + 全站动效组件
+   参考：影院式纯黑底、单色骨白粒子、超大细字标题、鼠标视差、滚动驱动的 3D 漂浮卡片  ========== */
+
+/* ---------- 暗场（cinema）风格令牌：恒为深色 ---------- */
+[data-style='cinema'],
+[data-style='cinema'][data-theme='dark'] {
+  --bg: #060606; --bg-2: #0d0d0d; --panel: rgba(18, 18, 17, 0.72); --panel-solid: #111110; --panel-2: #161615;
+  --line: #1e1e1c; --line-2: #2e2e2b; --text: #edede9; --text-2: #a4a39c; --text-3: #6c6b65;
+  --ink: #edede9; --on-ink: #060606; --lime: #e8dcc4; --lime-ink: #060606; --lime-soft: #1e1b15;
+  --ok: #86d6a2; --err: #ff6b5a; --coral: #ff6b5a; --warn: #e0b45a;
+  --radius: 14px; --radius-sm: 9px; --btn-radius: 999px;
+  --edge: var(--line); --shadow: none; --shadow-hover: 0 30px 60px -30px rgba(0, 0, 0, 0.9);
+  --display-weight: 500;
+  color-scheme: dark;
+}
+[data-style='cinema'] body { background: var(--bg); }
+[data-style='cinema'] .sidebar { background: rgba(6, 6, 6, 0.6); backdrop-filter: blur(14px); }
+[data-style='cinema'] .topbar { background: rgba(6, 6, 6, 0.55); }
+[data-style='cinema'] .card, [data-style='cinema'] .product, [data-style='cinema'] .pipe-node, [data-style='cinema'] .table-wrap { background: var(--panel); backdrop-filter: blur(10px); }
+[data-style='cinema'] .brand-logo { background: var(--ink); color: var(--on-ink); border-radius: 50%; }
+[data-style='cinema'] .nav-indicator { background: rgba(237, 237, 233, 0.08); border: 1px solid var(--line-2); }
+[data-style='cinema'] .nav a.active { color: var(--text); }
+[data-style='cinema'] .nav a.active .ico { color: var(--lime); }
+[data-style='cinema'] .btn::before { background: var(--lime); }
+[data-style='cinema'] .btn.ghost { border-color: var(--line-2); }
+[data-style='cinema'] .btn.cyan, [data-style='cinema'] .btn.grad { background: var(--lime); border-color: var(--lime); }
+[data-style='cinema'] .btn.cyan::before, [data-style='cinema'] .btn.grad::before { background: #fff; }
+[data-style='cinema'] .btn.cyan:hover, [data-style='cinema'] .btn.grad:hover { color: #060606 !important; }
+[data-style='cinema'] .mark, [data-style='cinema'] .gradient-text { background: none !important; color: var(--lime); font-style: normal; animation: none; padding: 0; }
+[data-style='cinema'] .grade-S { background: var(--lime); color: #060606; border-color: var(--lime); }
+[data-style='cinema'] .grade-A { background: var(--ink); color: #060606; }
+[data-style='cinema'] .bar-row .track i { background: #5d5c57; }
+[data-style='cinema'] .bar-row:first-child .track i { background: var(--lime); box-shadow: none; }
+[data-style='cinema'] .chip, [data-style='cinema'] .seg, [data-style='cinema'] .seg button { border-radius: 999px; }
+[data-style='cinema'] .ticker { display: none; }
+[data-style='cinema'] #theme-btn, [data-style='terminal'] #theme-btn { display: none; }
+
+/* ---------- 星尘背景（仅暗场显示） ---------- */
+#stars { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; display: none; }
+[data-style='cinema'] #stars { display: block; }
+.app { position: relative; z-index: 1; }
+
+/* ---------- 跟随光标：小点 + 延迟跟随的圆环，悬停可交互元素时放大 ---------- */
+.cursor-dot, .cursor-ring { position: fixed; left: 0; top: 0; z-index: 400; pointer-events: none; border-radius: 50%; opacity: 0; transition: opacity 0.3s, width 0.3s var(--ease), height 0.3s var(--ease), background 0.3s, border-color 0.3s; }
+.cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--text); }
+.cursor-ring { width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1px solid var(--text-2); }
+.has-cursor .cursor-dot, .has-cursor .cursor-ring { opacity: 1; }
+.cursor-ring.hover { width: 62px; height: 62px; margin: -31px 0 0 -31px; border-color: var(--lime); background: color-mix(in srgb, var(--lime) 10%, transparent); }
+.cursor-ring.down { width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+@media (hover: none), (pointer: coarse) { .cursor-dot, .cursor-ring { display: none; } }
+
+/* ---------- 路由切换幕布 ---------- */
+.curtain { position: fixed; inset: 0; z-index: 350; pointer-events: none; background: var(--panel-solid); box-shadow: inset 0 1px 0 var(--lime), inset 0 -1px 0 var(--lime); transform: scaleY(0); transform-origin: bottom; }
+.curtain.go { animation: curtain 0.7s cubic-bezier(0.76, 0, 0.24, 1); }
+@keyframes curtain { 0% { transform: scaleY(0); transform-origin: bottom; } 45% { transform: scaleY(1); transform-origin: bottom; } 55% { transform: scaleY(1); transform-origin: top; } 100% { transform: scaleY(0); transform-origin: top; } }
+
+/* ---------- 卡片 3D 倾斜 + 高光 ---------- */
+.tilt { position: relative; transform-style: preserve-3d; will-change: transform; }
+.tilt.tilting { transition: transform 0.08s linear !important; transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-4px); }
+.tilt::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background: radial-gradient(420px circle at var(--gx, 50%) var(--gy, 50%), color-mix(in srgb, var(--text) 9%, transparent), transparent 45%); }
+.tilt.tilting::after { opacity: 1; }
+
+/* ---------- 逐字浮现 ---------- */
+.chars .ch { display: inline-block; opacity: 0; transform: translateY(0.6em) rotate(4deg); filter: blur(6px); animation: chIn 0.9s var(--ease) forwards; animation-delay: calc(var(--i) * 28ms + 120ms); }
+.chars .w { display: inline-block; white-space: nowrap; }
+.chars .sp { display: inline; }
+@keyframes chIn { to { opacity: 1; transform: none; filter: blur(0); } }
+
+/* ---------- 滚动浮现 ---------- */
+.reveal-armed [data-reveal] { opacity: 0; transform: translateY(40px); transition: opacity 0.9s var(--ease), transform 0.9s var(--ease); }
+.reveal-armed [data-reveal].in { opacity: 1; transform: none; }
+
+/* ---------- 总览主视觉：3D 粒子球 ---------- */
+.stage3d { position: relative; margin: -28px -32px 0; min-height: min(78vh, 760px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: center; overflow: hidden; border-bottom: 1px solid var(--line); }
+.stage3d canvas.webgl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage3d::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, transparent) 30%, transparent 58%); }
+.stage3d .copy { position: relative; z-index: 2; padding: 48px 32px; display: flex; flex-direction: column; gap: 18px; pointer-events: none; }
+.stage3d .copy a, .stage3d .copy button { pointer-events: auto; }
+.stage3d .eyebrow { font-family: var(--mono); font-size: 12px; color: var(--text-3); letter-spacing: 0.08em; display: flex; align-items: center; gap: 10px; }
+.stage3d .eyebrow::before { content: ''; width: 28px; height: 1px; background: var(--text-3); }
+.stage3d h2 { font-size: clamp(38px, 5.2vw, 76px); line-height: 1.04; letter-spacing: -0.035em; font-weight: 300; max-width: 11em; text-wrap: balance; }
+.stage3d h2 em { font-style: normal; color: var(--lime); }
+.stage3d p { color: var(--text-2); max-width: 30em; margin: 0; font-size: 15px; }
+.stage3d .side { position: absolute; right: 32px; top: 36px; z-index: 2; text-align: right; font-size: 12.5px; color: var(--text-2); line-height: 1.7; max-width: 220px; }
+.stage3d .side b { display: block; color: var(--text); font-weight: 500; letter-spacing: 0.06em; margin-bottom: 4px; font-size: 11.5px; }
+.stage3d .legend { position: absolute; right: 32px; bottom: 28px; z-index: 2; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.orb-label { position: absolute; z-index: 2; left: 0; top: 0; font-family: var(--mono); font-size: 11px; color: var(--text-2); white-space: nowrap; pointer-events: none; transition: opacity 0.2s; }
+.orb-label b { color: var(--text); font-weight: 500; }
+.orb-label::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--lime); margin-right: 6px; vertical-align: middle; }
+.scroll-hint { position: absolute; left: 32px; bottom: 26px; z-index: 2; display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-3); font-family: var(--mono); }
+.scroll-hint i { width: 1px; height: 34px; background: linear-gradient(var(--text-3), transparent); animation: drip 1.8s ease-in-out infinite; transform-origin: top; }
+@keyframes drip { 0% { transform: scaleY(0); } 50% { transform: scaleY(1); } 100% { transform: scaleY(1); opacity: 0; } }
+
+/* ---------- 选品页：市场地形 ---------- */
+.terrain { position: relative; height: 340px; margin: -28px -32px 22px; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--bg); }
+.terrain canvas.webgl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.terrain .copy { position: absolute; left: 32px; bottom: 26px; z-index: 2; pointer-events: none; }
+.terrain h2 { font-size: clamp(30px, 3.6vw, 52px); font-weight: 300; letter-spacing: -0.03em; line-height: 1.05; }
+.terrain .copy p { margin: 8px 0 0; color: var(--text-2); font-size: 13px; }
+.terrain .tip { position: absolute; z-index: 3; pointer-events: none; padding: 8px 12px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--line-2); font-size: 12.5px; white-space: nowrap; opacity: 0; transform: translate(-50%, -120%); transition: opacity 0.15s; }
+.terrain .tip.on { opacity: 1; }
+.terrain .tip small { display: block; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+.terrain::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, var(--bg) 0%, transparent 35%), linear-gradient(0deg, var(--bg) 0%, transparent 40%); }
+
+/* ---------- 大字跑马灯 ---------- */
+.mega { overflow: hidden; padding: 30px 0; border-bottom: 1px solid var(--line); margin: 0 -32px; }
+.mega-track { display: flex; gap: 56px; width: max-content; animation: ticker 60s linear infinite; }
+.mega:hover .mega-track { animation-play-state: paused; }
+.mega span { font-family: var(--display); font-size: clamp(34px, 5vw, 72px); font-weight: 600; letter-spacing: -0.03em; color: transparent; -webkit-text-stroke: 1px var(--text-3); white-space: nowrap; transition: color 0.3s, -webkit-text-stroke-color 0.3s; cursor: default; }
+.mega span:hover { color: var(--text); -webkit-text-stroke-color: var(--text); }
+.mega span::after { content: '✦'; -webkit-text-stroke: 0; color: var(--lime); font-size: 0.35em; margin-left: 56px; vertical-align: middle; }
+
+/* ---------- 素材长廊：滚动驱动的 3D 漂浮卡片 ---------- */
+.gallery3d { position: relative; height: 230vh; margin: 0 -32px; }
+.gallery3d .viewport { position: sticky; top: 60px; height: calc(100vh - 60px); overflow: hidden; perspective: 1100px; display: grid; place-items: center; }
+.gallery3d .title { position: relative; z-index: 5; text-align: center; pointer-events: none; }
+.gallery3d .title h3 { font-size: clamp(34px, 5vw, 68px); font-weight: 300; letter-spacing: -0.035em; }
+.gallery3d .title div { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.gallery3d .float { position: absolute; left: 50%; top: 50%; width: 170px; aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); background: var(--panel-2); transform-style: preserve-3d; will-change: transform; box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.8); cursor: pointer; }
+.gallery3d .float img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery3d .float:hover { border-color: var(--lime); }
+
+/* ---------- 响应式与减少动效 ---------- */
+@media (max-width: 900px) {
+  .stage3d { grid-template-columns: 1fr; margin: -20px -16px 0; min-height: 640px; align-items: end; }
+  .stage3d .copy { padding: 28px 16px; }
+  .stage3d .side, .stage3d .legend { display: none; }
+  .terrain, .mega, .gallery3d { margin-left: -16px; margin-right: -16px; }
+  .orb-label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chars .ch { opacity: 1; transform: none; filter: none; animation: none; }
+  .reveal-armed [data-reveal] { opacity: 1; transform: none; }
+  .curtain { display: none; }
+  .gallery3d { height: auto; }
+  .gallery3d .viewport { position: relative; height: 70vh; }
+}
+.gallery3d .float.text { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; padding: 16px; background: linear-gradient(160deg, var(--panel-2), var(--bg)); }
+.gallery3d .float.text b { font-family: var(--display); font-size: 22px; font-weight: 500; line-height: 1.2; }
+.gallery3d .float.text small { font-family: var(--mono); font-size: 11px; color: var(--text-3); }

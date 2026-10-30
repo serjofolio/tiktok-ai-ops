@@ -1,6 +1,10 @@
 // 应用外壳：导航、路由、主题
 import { icon, api, $, countUp, esc } from './lib.js';
 import { STYLES, currentStyle, applyStyle, swatch } from './styles.js';
+import { initStars, initPointerFx } from './fx/ambient.js';
+
+initStars();
+initPointerFx();
 
 const ROUTES = [
   { group: '工作台' },
@@ -109,7 +113,16 @@ progress.className = 'topbar-progress';
 $('.topbar').appendChild(progress);
 
 let cleanup = null;
+let firstRoute = true;
+const curtain = document.querySelector('.curtain');
 async function route() {
+  // 页面切换幕布：首次进入不播放
+  if (!firstRoute && curtain) {
+    curtain.classList.remove('go');
+    void curtain.offsetWidth;
+    curtain.classList.add('go');
+  }
+  firstRoute = false;
   const [, path = 'dashboard', ...rest] = location.hash.split('/');
   const r = ROUTES.find((x) => x.path === path) || ROUTES[1];
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.path === r.path));

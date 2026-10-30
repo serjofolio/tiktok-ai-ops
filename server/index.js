@@ -266,6 +266,8 @@ app.post('/api/settings/test/:kind', h(async (req, res) => {
 
 // ---------- 静态资源 ----------
 app.use('/media', express.static(db.MEDIA_DIR, { maxAge: '7d' }));
+// 前端 3D 依赖从本地 node_modules 提供，不依赖外部 CDN
+app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build'), { maxAge: '30d' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.get(/^\/(?!api|media).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));

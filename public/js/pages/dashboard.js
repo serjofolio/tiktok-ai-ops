@@ -1,9 +1,11 @@
 import { api, icon, esc, fmtNum, timeAgo, statusBadge, sparkline, empty, monogram } from '../lib.js';
+import { splitText, armReveal, mountGallery } from '../fx/ambient.js';
 
 export async function render(view) {
-  const d = await api('/dashboard');
+  const [d, imgs] = await Promise.all([api('/dashboard'), api('/images').catch(() => ({ items: [] }))]);
   const s = d.stats;
-  const maxGmv = Math.max(...d.categoryStats.map((c) => c.gmv), 1);
+  const cats = [...d.categoryStats].sort((a, b) => b.gmv - a.gmv);
+  const maxGmv = Math.max(...cats.map((c) => c.gmv), 1);
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
   const stats = [
     ['商品库', s.products, `其中 ${s.hotProducts} 个 A 级以上潜力款`],
@@ -18,33 +20,41 @@ export async function render(view) {
     ['video', '图生视频', '片段生成与合成'],
     ['zap', '素材包', '标题、文案与话题'],
   ];
-  const tick = d.topProducts.concat(d.topProducts);
-  view.innerHTML = `
-  <section class="hero">
-    <div class="eyebrow">${today} · ${esc(d.store.market)} 站</div>
-    <h2>${esc(d.store.name)}，今天<span class="mark">打造哪款爆品</span>？</h2>
-    <p>选品、脚本、分镜图到成片一条龙完成。AI 智能体会参考你的内部知识库，让内容既专业又合规。</p>
-    <div class="row">
-      <a class="btn lg" href="#/workflows">${icon('zap')}启动一键工作流</a>
-      <a class="btn ghost lg" href="#/agents">${icon('bot')}问问运营总监</a>
-      ${d.providers.llm === 'mock' ? `<a class="btn ghost lg" href="#/settings">${icon('settings')}接入大模型</a>` : ''}
-    </div>
-  </section>
+  // 素材长廊：优先用已生成的图片，不足时用潜力商品补位
+  const pics = imgs.items.slice(0, 9).map((i) => ({ src: i.url, title: i.title, href: '#/images' }));
+  const cards = pics.length >= 5 ? pics : pics.concat(d.topProducts.slice(0, 9 - pics.length).map((p) => ({ title: p.nameCn, sub: `${p.category} · 评分 ${p.score}`, href: `#/products/${p.id}` })));
 
-  <div class="ticker" aria-label="潜力商品滚动">
-    <div class="ticker-track">${tick.map((p) => `<a class="ticker-item" href="#/products/${p.id}"><b>${esc(p.nameCn)}</b><span class="p">$${p.price}</span><span class="${p.salesGrowth >= 0 ? 'up' : 'down'}">${p.salesGrowth >= 0 ? '↑' : '↓'}${Math.abs(p.salesGrowth)}%</span><span class="p">评分 ${p.score}</span></a>`).join('')}</div>
-  </div>
+  view.innerHTML = `
+  <section class="stage3d" id="stage">
+    <div class="copy">
+      <div class="eyebrow">${today} · ${esc(d.store.market)} 站</div>
+      <h2 id="headline">${esc(d.store.name)}，<br>今天打造<em>哪款爆品</em>？</h2>
+      <p>选品、脚本、分镜图到成片一条龙完成。AI 智能体会参考你的内部知识库，让内容既专业又合规。</p>
+      <div class="row">
+        <a class="btn lg" href="#/workflows">${icon('zap')}启动一键工作流</a>
+        <a class="btn ghost lg" href="#/agents">${icon('bot')}问问运营总监</a>
+        ${d.providers.llm === 'mock' ? `<a class="btn ghost lg" href="#/settings">${icon('settings')}接入大模型</a>` : ''}
+      </div>
+    </div>
+    <div class="side"><b>运营台</b>选品 · 脚本 · 生图 · 视频<br>一条流水线完成</div>
+    <div class="legend">立柱高度 = 品类近 7 日 GMV</div>
+    <div class="scroll-hint"><i></i>向下滚动</div>
+  </section>
 
   <div class="stat-strip">
     ${stats.map(([t, v, sub]) => `<div><div class="stat-label">${t}</div><div class="stat-value" data-count="${v}">0</div><div class="stat-detail">${sub}</div></div>`).join('')}
   </div>
 
-  <div class="section-title"><h3>选品 → 图片 → 视频</h3><span class="muted small">一键工作流的五个步骤</span><div class="spacer"></div><a class="btn sm ghost" href="#/workflows">查看工作流 ${icon('arrow', 14)}</a></div>
-  <div class="pipeline">
-    ${steps.map(([ic, t, sub], i) => `<div class="pipe-step"><div class="pipe-node done"><div class="n">${icon(ic, 15)}</div><b><span class="muted num">0${i + 1}</span> ${t}</b><small>${sub}</small></div>${i < steps.length - 1 ? '<div class="pipe-arrow"></div>' : ''}</div>`).join('')}
+  <div class="mega" aria-hidden="true"><div class="mega-track">${cats.concat(cats).map((c) => `<span>${esc(c.category)}</span>`).join('')}</div></div>
+
+  <div data-reveal>
+    <div class="section-title"><h3>选品 → 图片 → 视频</h3><span class="muted small">一键工作流的五个步骤</span><div class="spacer"></div><a class="btn sm ghost" href="#/workflows">查看工作流 ${icon('arrow', 14)}</a></div>
+    <div class="pipeline">
+      ${steps.map(([ic, t, sub], i) => `<div class="pipe-step"><div class="pipe-node done"><div class="n">${icon(ic, 15)}</div><b><span class="muted num">0${i + 1}</span> ${t}</b><small>${sub}</small></div>${i < steps.length - 1 ? '<div class="pipe-arrow"></div>' : ''}</div>`).join('')}
+    </div>
   </div>
 
-  <div class="grid mt" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)">
+  <div class="grid mt" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)" data-reveal>
     <div class="card">
       <div class="card-head"><h3>今日潜力爆品</h3><div class="spacer"></div><a class="btn sm ghost" href="#/products">全部商品 ${icon('arrow', 14)}</a></div>
       <div style="overflow-x:auto"><table>
@@ -60,12 +70,16 @@ export async function render(view) {
     <div class="card">
       <div class="card-head"><h3>品类 7 日 GMV</h3></div>
       <div class="card-pad bars">
-        ${d.categoryStats.sort((a, b) => b.gmv - a.gmv).map((c) => `<div class="bar-row"><span>${esc(c.category)}</span><div class="track"><i style="width:${(c.gmv / maxGmv) * 100}%"></i></div><b>$${fmtNum(c.gmv)}</b></div>`).join('')}
+        ${cats.map((c) => `<div class="bar-row"><span>${esc(c.category)}</span><div class="track"><i style="width:${(c.gmv / maxGmv) * 100}%"></i></div><b>$${fmtNum(c.gmv)}</b></div>`).join('')}
       </div>
     </div>
   </div>
 
-  <div class="grid g2 mt">
+  <section class="gallery3d mt" id="gallery">
+    <div class="viewport"><div class="title"><h3>素材，正在生成</h3><div>${s.images} 张图片 // ${s.videos} 条视频 // 滚动浏览</div></div></div>
+  </section>
+
+  <div class="grid g2" data-reveal>
     <div class="card">
       <div class="card-head"><h3>最近工作流</h3></div>
       <div class="card-pad col" style="padding:8px">
@@ -79,4 +93,15 @@ export async function render(view) {
       </div>
     </div>
   </div>`;
+
+  splitText(view.querySelector('#headline'));
+  const cleanups = [armReveal(view), mountGallery(view.querySelector('#gallery'), cards)];
+  // 3D 场景按需加载，加载失败（如浏览器禁用 WebGL）时页面其余部分照常可用
+  import('../fx/orb.js')
+    .then(({ mountOrb }) => {
+      if (!view.isConnected) return;
+      cleanups.push(mountOrb(view.querySelector('#stage'), { bars: cats.map((c) => ({ label: c.category, value: c.gmv, text: `$${fmtNum(c.gmv)}` })) }));
+    })
+    .catch((e) => console.warn('[fx] 3D 主视觉未加载：', e.message));
+  return () => cleanups.forEach((fn) => fn && fn());
 }

@@ -5,6 +5,7 @@ const SORTS = [['score', '综合评分'], ['growth', '增长最快'], ['sales', 
 
 export async function render(view, [openId]) {
   view.innerHTML = `
+  <section class="terrain" id="terrain"><div class="copy"><h2>市场地形</h2><p>每个亮色方块是一个商品，高度代表综合评分，骨白色为 S 级。悬停查看，点击打开详情。</p></div></section>
   <div class="toolbar">
     <div class="input-icon">${icon('search', 16)}<input class="input" id="q" placeholder="搜索商品名称 / 品类…" value="${esc(state.q)}"></div>
     <select class="input" id="cat" style="width:150px"><option value="">全部品类</option></select>
@@ -64,6 +65,14 @@ export async function render(view, [openId]) {
   $('#add', view).onclick = () => addDialog(categories, load);
   await load();
   if (openId) openDetail(openId, load);
+  // 地形使用完整商品库（不受筛选影响），WebGL 不可用时自动跳过
+  let disposeTerrain = null;
+  api('/products')
+    .then(({ items }) => import('../fx/terrain.js').then(({ mountTerrain }) => {
+      if (view.isConnected) disposeTerrain = mountTerrain(view.querySelector('#terrain'), { items, onPick: (id) => openDetail(id, load) });
+    }))
+    .catch((e) => console.warn('[fx] 市场地形未加载：', e.message));
+  return () => disposeTerrain?.();
 }
 
 function growth(p) {
