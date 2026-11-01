@@ -228,7 +228,7 @@ export async function render(view) {
     box.innerHTML = `<div class="grid g2" style="align-items:start">
       <div><b>运营台助手（Chrome / Edge 插件）</b>
         <ol class="small" style="padding-left:18px;line-height:1.9;margin:8px 0">
-          <li><a href="/extension.zip" download style="color:var(--lime)">下载插件压缩包</a>，右键「全部解压缩」，得到 <code>tiktok-ops-helper</code> 文件夹（打开能直接看到 manifest.json）；</li>
+          <li><a href="/extension.zip?v=${Date.now()}" download="tiktok-ops-helper.zip" style="color:var(--lime)">下载插件压缩包</a>，右键「全部解压缩」，得到 <code>tiktok-ops-helper</code> 文件夹（打开能直接看到 manifest.json）；</li>
           <li>浏览器打开 <code>chrome://extensions</code>（Edge 是 <code>edge://extensions</code>），打开右上角「开发者模式」，点左上角<b>「加载未打包的扩展程序」</b>（不是「打包扩展程序」），选这个文件夹；</li>
           <li>点插件图标，填运营台地址 <code>${esc(location.origin)}</code> 和下面生成的令牌；</li>
           <li>在 1688 搜索结果 / 以图搜结果 / 商品详情页，右下角会出现「发送到运营台」，选择要找货的商品即可。</li></ol></div>

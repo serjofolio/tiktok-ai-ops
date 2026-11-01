@@ -376,6 +376,8 @@ app.get('/extension.zip', async (req, res) => {
     const origin = `${String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0]}://${req.headers.host}`;
     folder.file('config.js', `self.DEFAULT_SERVER = ${JSON.stringify(origin)};\n`);
     res.setHeader('Content-Disposition', 'attachment; filename="tiktok-ops-helper.zip"');
+    // 不让浏览器和 Cloudflare 缓存：.zip 默认会被 CDN 缓存 4 小时，更新插件后用户会下到旧版
+    res.setHeader('Cache-Control', 'no-store');
     res.type('application/zip').send(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
   } catch (e) {
     res.status(500).type('text/plain').send('插件打包失败：' + e.message);
