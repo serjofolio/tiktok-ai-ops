@@ -131,7 +131,7 @@ test('智能选品：商品详情 → 六维证据 → 人民币利润测算 →
   await expect(page.locator('.dim', { hasText: '增长趋势' })).toContainText('2.41 倍');
   await expect(page.locator('.dim', { hasText: '达人带货验证' })).toContainText('出单率 100%');
   await expect(page.locator('.ai-box')).toContainText('¥18–25');
-  await expect(page.locator('.ext-links a', { hasText: '1688' })).toHaveAttribute('href', /keywords=%E7%9D%A1%E7%9C%A0/);
+  await expect(page.locator('.ext-links a', { hasText: '1688' })).toHaveAttribute('href', /keywords=%E7%9D%A1%E7%9C%A0.*&charset=utf8/); // 不带 charset 1688 会按 GBK 解码成乱码
   await expect(page.locator('.profit-table')).toContainText('采购 + 物流最多');
   // 1688 采购价 ¥20 + 物流 ¥5：RM34.57 扣平台 14% + 每单 RM0.54、佣金 8%、退货 5%、广告 10% → 净利率 17.6%
   await page.fill('#cost', '20');

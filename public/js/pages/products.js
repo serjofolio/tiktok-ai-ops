@@ -12,6 +12,8 @@ const cur = (p) => p.evaluation?.metrics?.currency || '';
 const money = (c, v) => (v == null ? '—' : `${c}${v >= 1e4 ? fmtNum(Math.round(v)) : Number(v).toFixed(2)}`);
 const scoreCls = (s) => (s == null ? 'na' : s >= 65 ? 'hi' : s >= 45 ? 'mid' : 'lo');
 const trendBadge = (m, stage) => (m == null ? '<span class="muted">—</span>' : `<span class="trend ${m >= 1.15 ? 'up' : m >= 0.9 ? 'flat' : 'down'}">${m >= 1.15 ? '▲' : m >= 0.9 ? '▶' : '▼'} ${m}×</span><div class="p-sub">${esc(stage || '')}</div>`);
+// 1688 搜索链接必须带 charset=utf8，否则 1688 按 GBK 解码，中文关键词变乱码
+const search1688 = (kw) => `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw)}&charset=utf8`;
 const kw1688 = (p) => p.ai?.kw1688 || p.analysis?.sourcing?.match(/[「“"]([^」”"]{2,30})[」”"]/)?.[1] || p.evaluation.metrics.type;
 
 const DIMS_EXPLAIN = [
@@ -155,7 +157,7 @@ export async function render(view, [openId, openTab]) {
       ${ov.summary ? `<p class="rp-summary">${esc(ov.summary)}</p>` : ''}
       ${ov.opportunities?.length ? `<h4 class="rp-h">${icon('target', 16)}机会方向</h4><div class="opps">${ov.opportunities.map((o, k) => `<div class="opp" style="--d:${k * 0.08}s"><div class="opp-n">0${k + 1}</div><b>${esc(o.title)}</b><p class="what">${esc(o.what || '')}</p><p class="small">${esc(o.why || '')}</p>
           <dl class="kv small"><dt>建议售价</dt><dd>${esc(o.entryPrice || '—')}</dd><dt>差异化</dt><dd>${esc(o.differentiation || '—')}</dd></dl>
-          <div class="row" style="gap:8px;flex-wrap:wrap">${o.sourcing ? `<a class="chip click" target="_blank" rel="noopener" href="https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(o.sourcing)}">${icon('search', 12)}1688：${esc(o.sourcing)}</a>` : ''}${(o.refs || []).slice(0, 3).map(refName).join('')}</div></div>`).join('')}</div>` : ''}
+          <div class="row" style="gap:8px;flex-wrap:wrap">${o.sourcing ? `<a class="chip click" target="_blank" rel="noopener" href="${search1688(o.sourcing)}">${icon('search', 12)}1688：${esc(o.sourcing)}</a>` : ''}${(o.refs || []).slice(0, 3).map(refName).join('')}</div></div>`).join('')}</div>` : ''}
       <div class="rp-grid">
         <div><h4 class="rp-h">${icon('layers', 16)}品型地图</h4><div class="table-wrap"><table class="seg-table"><thead><tr><th>品型</th><th class="r">商品</th><th class="r">销售额占比</th><th class="r">趋势</th><th class="r">均价</th><th>AI 判断</th></tr></thead><tbody>
           ${types.map((t) => `<tr><td><b>${esc(t.type)}</b></td><td class="r">${t.count}</td><td class="r"><span class="share" style="--w:${Math.min(100, t.gmvShare)}%">${t.gmvShare}%</span></td><td class="r">${t.medianMomentum != null ? `<span class="trend ${t.medianMomentum >= 1.15 ? 'up' : t.medianMomentum >= 0.9 ? 'flat' : 'down'}">${t.medianMomentum}×</span>` : '—'}</td><td class="r">${esc(st.currency)}${t.medianAsp ?? '—'}</td>
@@ -319,7 +321,7 @@ export async function render(view, [openId, openTab]) {
               ${ev.aiOverruled ? `<span class="muted small">AI 判「${esc(ai.verdict)}」，但有硬伤（${esc(ev.flags.find((f) => f.level === 'block').title)}），按「不建议上」处理</span>` : ai && ai.verdict !== ev.ruleVerdict ? `<span class="muted small">规则结论：${esc(ev.ruleVerdict)}（${ev.score} 分）</span>` : ''}</div>
             <p class="pd-headline">${esc(ai?.headline || ev.headline)}</p>
             <div class="pd-facts"><span>${esc(mt.type)}</span><span>${esc(p.shop || '—')}</span><span>${esc(mt.market)} 站</span>${mt.ageDays != null ? `<span>上架 ${mt.ageDays} 天</span>` : ''}${p.commissionRate != null ? `<span>佣金 ${p.commissionRate}%</span>` : ''}</div>
-            <div class="ext-links"><a href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">${icon('link', 13)}FastMoss 详情</a>${p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener">${icon('link', 13)}TikTok 商品页</a>` : ''}${p.shopUrl ? `<a href="${esc(p.shopUrl)}" target="_blank" rel="noopener">${icon('link', 13)}店铺分析</a>` : ''}<a href="https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw1688(p))}" target="_blank" rel="noopener">${icon('search', 13)}1688 找同款</a></div>
+            <div class="ext-links"><a href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">${icon('link', 13)}FastMoss 详情</a>${p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener" data-tt title="TikTok 只对当地网络开放：国内网络打开会显示 403 Forbidden，需要马来西亚网络（店铺环境 / 马来西亚节点）">${icon('link', 13)}TikTok 商品页</a>` : ''}${p.shopUrl ? `<a href="${esc(p.shopUrl)}" target="_blank" rel="noopener">${icon('link', 13)}店铺分析</a>` : ''}<a href="${search1688(kw1688(p))}" target="_blank" rel="noopener">${icon('search', 13)}1688 找同款</a></div>
           </div></div>
         <div class="seg pd-tabs" id="pdtabs">${[['analysis', '分析'], ['source', `1688 找货${p.sourcing?.offers?.length ? ` · ${p.sourcing.offers.length}` : ''}`], ['listing', `上架包${p.listing ? ` · ${LISTING_STATUS[p.listing.status] || ''}` : ''}`]].map(([k, t]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>
         ${tab === 'source' ? sourceHTML(p) : tab === 'listing' ? listingHTML(p) : `
@@ -368,6 +370,11 @@ export async function render(view, [openId, openTab]) {
     };
     let tmr;
     function bind() {
+      const tt = $('[data-tt]', root);
+      if (tt) tt.onclick = () => {
+        navigator.clipboard?.writeText(tt.href).catch(() => {});
+        toast('如果打开是「403 Forbidden」：TikTok 只对当地网络开放，请换马来西亚网络（店铺环境 / 马来西亚节点）。链接已复制，可以粘贴到店铺环境的浏览器里打开', 'info');
+      };
       $$('#pdtabs button', root).forEach((b) => (b.onclick = async () => {
         tab = b.dataset.tab;
         if (tab === 'source' && !links) links = await api(`/products/${p.id}/sourcing/links`).catch(() => ({}));

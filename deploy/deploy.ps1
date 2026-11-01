@@ -1,8 +1,9 @@
 ﻿# 在你自己的 Windows 电脑上运行：打包当前代码 → 上传到服务器 → 远程执行安装
 # 用法（PowerShell）：  powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1
 # 过程中会提示两次输入服务器密码（上传一次、执行一次）
+# 服务器地址不写进仓库：不传 -Server 时读 deploy\deploy.env 里的 DEPLOY_SERVER=root@服务器IP（该文件已被 git 忽略）
 param(
-  [string]$Server = "root@你的服务器IP",
+  [string]$Server = "",
   [int]$SshPort = 22,
   [int]$AppPort = 5100,
   [string]$Domain = "tkagent.hyff.cc.cd"
@@ -10,6 +11,12 @@ param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $root = Split-Path $PSScriptRoot -Parent
+$envFile = Join-Path $root 'deploy\deploy.env'
+if (-not $Server -and (Test-Path $envFile)) {
+  $line = Get-Content $envFile | Where-Object { $_ -match '^DEPLOY_SERVER=' } | Select-Object -Last 1
+  if ($line) { $Server = ($line -replace '^DEPLOY_SERVER=', '').Trim() }
+}
+if (-not $Server) { throw "请指定服务器：-Server root@服务器IP，或在 deploy\deploy.env 里写一行 DEPLOY_SERVER=root@服务器IP" }
 $bundle = Join-Path $env:TEMP 'tkagent.tar.gz'
 
 foreach ($cmd in 'tar', 'scp', 'ssh') {

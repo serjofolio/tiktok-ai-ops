@@ -267,6 +267,17 @@ app.get('/api/ext/products/:id/task', h(async (req, res) => {
   if (!p) throw notFound('商品');
   res.json({ id: p.id, name: p.name, image: p.image || '', kw: await sourcing.keywordFor(p) });
 }));
+// 插件识别不到货源时上报页面结构（去掉脚本、样式、图片），用来调整识别规则；只保留最近 30 份
+app.post('/api/ext/debug', h(async (req, res) => {
+  const b = req.body || {};
+  const dir = path.join(db.DATA_DIR, 'ext-debug');
+  fs.mkdirSync(dir, { recursive: true });
+  const s = (v, n) => String(v ?? '').slice(0, n);
+  fs.writeFileSync(path.join(dir, `${Date.now()}-${req.user.id}.json`), JSON.stringify({ at: new Date().toISOString(), user: req.user.username, reason: s(b.reason, 60), url: s(b.url, 2000), title: s(b.title, 300), version: s(b.version, 20), ua: s(b.ua, 300), html: s(b.html, 1000000), scripts: (Array.isArray(b.scripts) ? b.scripts : []).slice(0, 3).map((x) => s(x, 300000)) }));
+  const files = fs.readdirSync(dir).sort();
+  for (const f of files.slice(0, Math.max(0, files.length - 30))) fs.rmSync(path.join(dir, f), { force: true });
+  res.json({ ok: true });
+}));
 app.post('/api/ext/offers', h(async (req, res) => {
   const s = await sourcing.addOffers(req.body?.productId, req.body?.offers || [], '浏览器插件');
   // 排名靠前、还没补详情的同款货源：插件接着打开详情页补阶梯价 / 库存 / 重量 / 发货地

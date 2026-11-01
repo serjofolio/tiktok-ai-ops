@@ -17,3 +17,5 @@
 .tkops-chk { flex-direction: row !important; align-items: center; gap: 6px !important; font-size: 12px; }
 .tkops-status { padding: 9px 10px; border-radius: 10px; background: rgba(255, 179, 92, 0.1); border: 1px solid rgba(255, 179, 92, 0.35); color: #ffd7a6; font-size: 12.5px; }
 .tkops-status.done { background: rgba(134, 214, 162, 0.1); border-color: rgba(134, 214, 162, 0.35); color: #b9ecc9; }
+.tkops-report { color: #a4a39c; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; }
+.tkops-report:hover { color: #ffd7a6; }

@@ -1,6 +1,9 @@
 // 代替页面请求运营台接口（带 API 令牌），避免跨域限制；调度自动找货任务（打开 1688 搜索 / 以图搜 / 详情页）
 const cfg = () => chrome.storage.sync.get({ server: '', token: '' });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 操作节奏倍数：正常为 1；自动化测试里调小
+const pace = async () => Number((await chrome.storage.local.get({ pace: 1 })).pace) || 1;
+const sleep = async (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = async (a, b = a) => sleep((a + Math.random() * (b - a)) * (await pace()));
 
 async function call(path, { method = 'GET', body } = {}) {
   const { server, token } = await cfg();
@@ -26,6 +29,13 @@ async function setTask(tabId, t) {
   await chrome.storage.session.set({ tasks: all });
 }
 
+// ---------- 防风控：1688 弹过验证后一段时间内不自动打开详情页；两次找货至少间隔 15 秒 ----------
+const COOLDOWN = 20 * 60 * 1000;
+async function cooldownLeft() {
+  const { captchaAt = 0 } = await chrome.storage.local.get('captchaAt');
+  return Math.max(0, captchaAt + COOLDOWN - Date.now());
+}
+
 const SEARCH_URL = (kw) => `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw)}&charset=utf8`;
 
 // 生成一个找货任务：关键词 → 打开 1688 搜索结果页；以图搜 → 打开 1688 首页上传主图
@@ -45,9 +55,15 @@ async function openWithTask(url, task, active) {
 
 async function hunt(opts) {
   const modes = opts.mode === 'both' ? ['keyword', 'image'] : [opts.mode];
-  for (const mode of modes) {
-    const task = await makeTask({ ...opts, mode });
-    await openWithTask(mode === 'image' ? 'https://www.1688.com/' : SEARCH_URL(task.kw), task, true);
+  const prepared = [];
+  for (const mode of modes) prepared.push(await makeTask({ ...opts, mode }));
+  for (const [i, task] of prepared.entries()) {
+    const { lastHuntAt = 0 } = await chrome.storage.session.get('lastHuntAt');
+    const gap = lastHuntAt + 15000 - Date.now();
+    if (gap > 0) await sleep(gap * (await pace()));
+    else if (i) await wait(6000, 10000);
+    await chrome.storage.session.set({ lastHuntAt: Date.now() });
+    await openWithTask(task.mode === 'image' ? 'https://www.1688.com/' : SEARCH_URL(task.kw), task, true);
   }
 }
 
@@ -72,25 +88,40 @@ async function imageData(url) {
   return { b64: btoa(s), type: blob.type || 'image/jpeg' };
 }
 
-// ---------- 补详情：依次在后台标签打开排名靠前的详情页，采集完关掉 ----------
+// ---------- 补详情：像人一样隔十几秒在后台打开 1 个详情页，看一会儿、采集完关掉 ----------
 const waiting = new Map(); // tabId → resolve
 async function details(fromTab, productId, urls) {
   const say = (text, done) => chrome.tabs.sendMessage(fromTab, { type: 'progress', text, done }).catch(() => {});
+  // 后台脚本空闲 30 秒会被浏览器回收：补详情期间定时调用一下扩展接口保持运行
+  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+  try {
+    await openDetails(say, productId, urls);
+  } finally {
+    clearInterval(keepAlive);
+  }
+}
+async function openDetails(say, productId, urls) {
   let ok = 0;
   for (const [i, url] of urls.entries()) {
-    say(`正在打开第 ${i + 1}/${urls.length} 个详情页补全阶梯价、库存、重量、发货地…`);
+    const left = await cooldownLeft();
+    if (left) {
+      say(`1688 刚弹过验证，${Math.ceil(left / 60000)} 分钟内插件不自动打开详情页（避免账号被风控）。已补 ${ok} 个；需要的话手动打开详情页，点「运营台找货 → 发送本页货源」。`, true);
+      return;
+    }
+    await wait(8000, 15000);
+    say(`正在后台打开第 ${i + 1}/${urls.length} 个详情页补全阶梯价、库存、重量、发货地…`);
     const tab = await openWithTask(url, { productId, stage: 'detail', at: Date.now() }, false);
-    const r = await Promise.race([new Promise((res) => waiting.set(tab.id, res)), sleep(45000).then(() => ({ ok: false, error: '超时' }))]);
+    const r = await Promise.race([new Promise((res) => waiting.set(tab.id, res)), sleep(60000).then(() => ({ ok: false, error: '超时' }))]);
     waiting.delete(tab.id);
     await setTask(tab.id, null);
     if (r.ok) ok++;
     else if (r.captcha) {
-      // 1688 要验证：留着标签让用户处理，剩下的不再打开
-      say(`第 ${i + 1} 个详情页触发了 1688 验证，已停止补详情（已补 ${ok} 个）。完成验证后可在详情页手动点「发送到运营台」。`, true);
+      // 1688 要验证：留着这个标签让你处理，剩下的不再打开
+      say(`第 ${i + 1} 个详情页弹出了 1688 验证，已停止补详情（已补 ${ok} 个）。完成验证后可以在详情页点「运营台找货 → 发送本页货源」。`, true);
       return;
     }
+    await wait(1000, 2500);
     chrome.tabs.remove(tab.id).catch(() => {});
-    await sleep(1500 + Math.random() * 2000);
   }
   say(`完成：补全了 ${ok}/${urls.length} 个详情。回到运营台「1688 找货」看比价结果。`, true);
 }
@@ -119,11 +150,21 @@ const handlers = {
     await setTask(tab.id, t);
     return t;
   },
+  // 以图搜结果页没带上任务（新标签不是由上传页直接打开的）：认领 3 分钟内上传过主图的任务
+  claim: async (msg, tab) => {
+    const all = await tasks();
+    const hit = Object.entries(all).find(([id, t]) => Number(id) !== tab.id && t.mode === 'image' && t.stage === 'collect' && Date.now() - (t.uploadedAt || 0) < 180000);
+    if (!hit) return null;
+    await setTask(Number(hit[0]), null);
+    await setTask(tab.id, hit[1]);
+    return hit[1];
+  },
   update: async (msg, tab) => {
     const t = (await tasks())[tab.id];
     if (t) await setTask(tab.id, { ...t, ...msg.patch });
   },
   done: async (msg, tab) => setTask(tab.id, null),
+  captcha: async () => chrome.storage.local.set({ captchaAt: Date.now() }),
   image: (msg) => imageData(msg.url),
   details: async (msg, tab) => {
     details(tab.id, msg.productId, msg.urls.slice(0, 5));
