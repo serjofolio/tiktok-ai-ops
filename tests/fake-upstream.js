@@ -42,10 +42,26 @@ function judge(text) {
   }) };
 }
 
+// 上架包：故意带两个违禁词（Best、100%），测试合规检查
+const PACK = {
+  titleLocal: 'Fon Telinga Tidur Mini Wireless Bluetooth, Selesa Tidur Mengiring', titleEn: 'Best Mini Sleep Earbuds Wireless, 100% Comfortable for Side Sleepers',
+  sellingPoints: ['Tidak sakit telinga bila tidur mengiring', 'Bateri tahan 8 jam'], description: 'Masalah: susah tidur.\nPenyelesaian: fon telinga tidur mini.', keywords: ['sleep earbuds', 'fon telinga tidur'],
+  skus: [{ name: 'Black', spec: '黑色' }, { name: 'White', spec: '白色' }], categoryHint: '手机与数码 > 耳机', attributes: { 材质: 'ABS' }, packageList: '耳机 ×2，充电仓 ×1', notes: '需要 SIRIM 认证',
+};
+// 同款判断：按标题打分（真实模型也是看标题和规格）
+const match = (text) => ({ items: [...text.matchAll(/"i":(\d+),"标题":"([^"]*)"/g)].map((m) => {
+  const t = m[2];
+  const score = /侧睡/.test(t) ? 96 : /睡眠/.test(t) ? 85 : /钢化膜/.test(t) ? 90 : 40;
+  return { i: Number(m[1]), match: score, note: score >= 90 ? '外观和规格一致' : score >= 70 ? '同类可替代' : '不是同一类商品' };
+}) });
+
 function answerFor(text) {
   if (/带货短视频脚本/.test(text)) return JSON.stringify(SCRIPT);
   if (/逐个研判下面/.test(text)) return JSON.stringify(judge(text));
   if (/做市场研判/.test(text)) return JSON.stringify(OVERVIEW);
+  if (/提炼成 1688 中文搜索关键词/.test(text)) return JSON.stringify({ kw: '睡眠耳机 无线 隐形' });
+  if (/是不是这个 TikTok 商品的同款/.test(text)) return JSON.stringify(match(text));
+  if (/生成一份可以直接上架的商品资料/.test(text)) return JSON.stringify(PACK);
   if (/单品深度分析|选品分析/.test(text)) return JSON.stringify(ANALYSIS);
   if (/连接成功/.test(text)) return '连接成功';
   return '根据知识库资料 [1]，前 3 秒要用痛点或结果前置做钩子。';
@@ -59,8 +75,42 @@ function readBody(req) {
   });
 }
 
+// 第三方 1688 数据接口（万邦格式）与 Webhook 接收端
+const OFFERS = [
+  { num_iid: '880000001', title: '睡眠耳机无线蓝牙隐形侧睡不压耳 迷你入耳式', price: '18.50', pic_url: '', sales: 3200, nick: '深圳声悦电子', location: '广东 深圳' },
+  { num_iid: '880000002', title: '隐形睡眠蓝牙耳机 超小 降噪', price: '16.00', pic_url: '', sales: 900, nick: '东莞小耳朵', location: '广东 东莞' },
+  { num_iid: '880000003', title: '运动蓝牙耳机 挂耳式', price: '12.00', pic_url: '', sales: 15000, nick: '义乌耳机厂', location: '浙江 金华' },
+  { num_iid: '880000004', title: '头戴式蓝牙耳机 折叠', price: '45.00', pic_url: '', sales: 300, nick: '惠州音频', location: '四川 成都' },
+];
+const DETAIL = { 880000001: { priceRange: [[2, '19.50'], [50, '18.50'], [500, '17.20']], num: 26000, weight: '0.045', skus: { sku: [{}, {}, {}] } }, 880000002: { priceRange: [[2, '16.00']], num: 800, weight: '0.06', skus: { sku: [{}] } } };
+const hooks = [];
+function fake1688(req, res, url) {
+  const q = url.searchParams;
+  res.writeHead(q.get('key') === 'k1688' && q.get('secret') === 's1688' ? 200 : 403, { 'Content-Type': 'application/json' });
+  if (q.get('key') !== 'k1688') return res.end(JSON.stringify({ error: 'key 错误', error_code: '4013' }));
+  if (url.pathname.startsWith('/1688/item_search_img')) return res.end(JSON.stringify({ items: { item: OFFERS.slice(0, 2) }, error: '', error_code: '0000' }));
+  if (url.pathname.startsWith('/1688/item_search')) return res.end(JSON.stringify({ items: { item: OFFERS }, error: '', error_code: '0000' }));
+  if (url.pathname.startsWith('/1688/item_get')) {
+    const id = q.get('num_iid');
+    const base = OFFERS.find((o) => o.num_iid === id) || {};
+    return res.end(JSON.stringify({ item: { ...base, ...(DETAIL[id] || {}) }, error: '', error_code: '0000' }));
+  }
+  res.end('{}');
+}
+
 function start(port = 3902) {
   const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    if (url.pathname.startsWith('/1688/')) return fake1688(req, res, url);
+    if (url.pathname === '/webhook' && req.method === 'POST') {
+      hooks.unshift({ body: await readBody(req), signature: req.headers['x-tk-signature'] || '' });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, message: '已收到', id: 'job-' + hooks.length }));
+    }
+    if (url.pathname === '/webhook/last') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ count: hooks.length, last: hooks[0] || null }));
+    }
     const auth = req.headers.authorization === 'Bearer sk-test' || req.headers['x-api-key'] === 'sk-test';
     if (!auth) {
       res.writeHead(401, { 'Content-Type': 'application/json' });

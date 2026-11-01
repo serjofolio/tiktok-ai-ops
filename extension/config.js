@@ -1,0 +1,1 @@
+self.DEFAULT_SERVER = "";

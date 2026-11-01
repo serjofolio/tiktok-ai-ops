@@ -16,6 +16,10 @@ const rag = require('./services/rag');
 const chat = require('./services/chat');
 const report = require('./services/report');
 const selection = require('./services/selection');
+const connectors = require('./connectors');
+const sourcing = require('./services/sourcing');
+const listing = require('./services/listing');
+const pipeline = require('./services/pipeline');
 const seed = require('./seed');
 
 const app = express();
@@ -49,7 +53,8 @@ const fileName = (f) => Buffer.from(f.originalname, 'latin1').toString('utf8');
 // ---------- 账号 ----------
 // 跨站提交拦截：带 Origin 的写请求必须来自本站
 app.use('/api', (req, res, next) => {
-  if (req.method === 'GET' || !req.headers.origin) return next();
+  // 带 API 令牌的请求不依赖 Cookie，没有跨站伪造风险（浏览器插件的 Origin 是 chrome-extension://）
+  if (req.method === 'GET' || !req.headers.origin || /^Bearer\s+tk_/.test(req.headers.authorization || '')) return next();
   let host = '';
   try {
     host = new URL(req.headers.origin).host;
@@ -59,7 +64,7 @@ app.use('/api', (req, res, next) => {
 });
 app.use((req, res, next) => {
   req.token = auth.readToken(req);
-  req.user = auth.userFromToken(req.token);
+  req.user = auth.userFromToken(req.token) || auth.userFromApiToken(req.headers.authorization);
   next();
 });
 const signIn = (req, res, user) => {
@@ -131,7 +136,9 @@ app.get('/api/dashboard', h(async (req, res) => {
 }));
 
 // ---------- 智能选品 ----------
-app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query), categories: products.categories(), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
+// 列表只带货源和上架包的摘要，详情接口才返回完整数据
+const light = ({ sourcing: s, listing: l, reviewsText, analysis, ...p }) => ({ ...p, analyzed: !!analysis, sourcing: s ? { count: s.offers?.length || 0, chosen: s.chosen || null, keyword: s.keyword } : null, listing: l ? { status: l.status } : null });
+app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query).map(light), categories: products.categories(), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
 // AI 选品报告：后台生成，前端轮询
 app.post('/api/reports', h(async (req, res) => res.json(report.start({ ids: req.body?.ids }))));
 app.get('/api/reports/latest', h(async (req, res) => res.json(report.latest() || {})));
@@ -181,6 +188,82 @@ app.put('/api/selection', h(async (req, res) => {
     }
   }
   res.json(settings.update({ selection: a }).selection);
+}));
+
+// ---------- 数据源与 ERP 连接器 ----------
+app.get('/api/connectors', h(async (req, res) => res.json({ catalog: connectors.catalog(), items: connectors.publicList() })));
+app.post('/api/connectors', h(async (req, res) => res.json(connectors.save(req.body || {}))));
+app.put('/api/connectors/:id', h(async (req, res) => {
+  const c = connectors.get(req.params.id);
+  if (!c) throw notFound('连接器');
+  res.json(connectors.save({ ...req.body, id: c.id, vendor: c.vendor }));
+}));
+app.delete('/api/connectors/:id', h(async (req, res) => {
+  connectors.remove(req.params.id);
+  res.json({ ok: true });
+}));
+app.post('/api/connectors/:id/test', h(async (req, res) => res.json(await connectors.test(req.params.id))));
+// API 令牌（浏览器插件 / n8n / 影刀）
+app.get('/api/tokens', h(async (req, res) => res.json({ items: auth.listApiTokens(req.user) })));
+app.post('/api/tokens', h(async (req, res) => res.json(auth.createApiToken(req.user, req.body?.name))));
+app.delete('/api/tokens/:id', h(async (req, res) => {
+  auth.revokeApiToken(req.user, req.params.id);
+  res.json({ ok: true });
+}));
+
+// ---------- 1688 找货 ----------
+app.post('/api/products/:id/sourcing/search', h(async (req, res) => res.json(await sourcing.search(req.params.id, { keyword: req.body?.keyword }))));
+app.post('/api/products/:id/sourcing/offers', h(async (req, res) => res.json(await sourcing.addOffers(req.params.id, req.body?.offers || [], req.body?.source || '手动添加'))));
+app.post('/api/products/:id/sourcing/choose', h(async (req, res) => res.json(sourcing.choose(req.params.id, req.body?.offerId))));
+app.get('/api/products/:id/sourcing/links', h(async (req, res) => {
+  const p = products.get(req.params.id);
+  if (!p) throw notFound('商品');
+  const kw = await sourcing.keywordFor(p);
+  res.json({ keyword: kw, ...sourcing.links(p, kw), hasApi: connectors.active('sourcing').length > 0 });
+}));
+
+// ---------- 上架包与上品 ----------
+app.post('/api/products/:id/listing', h(async (req, res) => res.json(await listing.build(req.params.id))));
+app.patch('/api/products/:id/listing', h(async (req, res) => res.json(listing.update(req.params.id, req.body || {}))));
+app.post('/api/products/:id/listing/push', h(async (req, res) => res.json(await listing.push(req.params.id, req.body?.connectorId))));
+app.get('/api/listings/export', h(async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').filter(Boolean);
+  res.setHeader('Content-Disposition', `attachment; filename="listings-${Date.now()}.csv"`);
+  res.type('text/csv; charset=utf-8').send(listing.exportCsv(ids.length ? ids : products.list().filter((p) => p.listing).map((p) => p.id)));
+}));
+
+// ---------- 自动上品流水线 ----------
+// 流水线各环节是否就绪
+app.get('/api/pipeline/readiness', h(async (req, res) => {
+  const all = db.products.all();
+  const last = all.filter((p) => p.batchId).sort((a, b) => String(b.dataAt).localeCompare(String(a.dataAt)))[0];
+  const llmP = settings.activeProvider();
+  const names = (kind) => connectors.active(kind).map((c) => c.name);
+  res.json({
+    llm: llmP ? `${llmP.name} · ${llmP.model}` : null,
+    products: { count: all.length, lastImport: last?.dataAt || null, batchSize: last ? all.filter((p) => p.batchId === last.batchId).length : 0 },
+    fastmoss: names('product'),
+    sourcing: names('sourcing'),
+    plugin: auth.listApiTokens(req.user).length > 0,
+    erp: names('erp'),
+  });
+}));
+app.post('/api/pipeline/runs', h(async (req, res) => res.json(pipeline.start(req.body || {}))));
+app.get('/api/pipeline/latest', h(async (req, res) => res.json(pipeline.latest() || {})));
+app.get('/api/pipeline/runs/:id', h(async (req, res) => {
+  const r = pipeline.get(req.params.id);
+  if (!r) throw notFound('流水线');
+  res.json(r);
+}));
+app.post('/api/pipeline/runs/:id/resume', h(async (req, res) => res.json(pipeline.resume(req.params.id))));
+
+// ---------- 浏览器插件 ----------
+app.get('/api/ext/me', h(async (req, res) => res.json({ user: auth.publicUser(req.user), hasSourcingApi: connectors.active('sourcing').length > 0 })));
+// 待找货的商品：可以上 / 谨慎测试，按评分排序
+app.get('/api/ext/products', h(async (req, res) => res.json({ items: products.list({ sort: 'score' }).filter((p) => ['可以上', '谨慎测试'].includes(p.evaluation.verdict) && p.status !== 'dropped').slice(0, 60).map((p) => ({ id: p.id, name: p.name, image: p.image || '', verdict: p.evaluation.verdict, kw: p.kw1688 || p.ai?.kw1688 || '', ceilingCny: p.evaluation.profit?.ceilingCny ?? null, offers: p.sourcing?.offers?.length || 0 })) })));
+app.post('/api/ext/offers', h(async (req, res) => {
+  const s = await sourcing.addOffers(req.body?.productId, req.body?.offers || [], '浏览器插件');
+  res.json({ ok: true, count: s.offers.length });
 }));
 
 // ---------- 视频脚本 ----------
@@ -281,6 +364,23 @@ app.post('/api/chats/:id/stream', async (req, res) => {
   res.end();
 });
 
+// ---------- 浏览器插件下载：打包 extension/ 目录，并预填当前运营台地址 ----------
+app.get('/extension.zip', async (req, res) => {
+  try {
+    const JSZip = require('jszip');
+    const dir = path.join(__dirname, '..', 'extension');
+    const zip = new JSZip();
+    const folder = zip.folder('tiktok-ops-helper');
+    for (const f of fs.readdirSync(dir)) folder.file(f, fs.readFileSync(path.join(dir, f)));
+    const origin = `${String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0]}://${req.headers.host}`;
+    folder.file('config.js', `self.DEFAULT_SERVER = ${JSON.stringify(origin)};\n`);
+    res.setHeader('Content-Disposition', 'attachment; filename="tiktok-ops-helper.zip"');
+    res.type('application/zip').send(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
+  } catch (e) {
+    res.status(500).type('text/plain').send('插件打包失败：' + e.message);
+  }
+});
+
 // ---------- 静态资源 ----------
 // 前端 3D 依赖从本地 node_modules 提供，不依赖外部 CDN
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build'), { maxAge: '30d' }));
@@ -291,7 +391,7 @@ app.use('/v/:build', express.static(PUBLIC, { maxAge: '365d', immutable: true })
 app.use(express.static(PUBLIC, { index: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
 const indexHtml = () =>
   fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace(/(href|src)="\/(css|js)\//g, `$1="/v/${BUILD}/$2/`);
-app.get(/^\/(?!api|vendor|v\/).*/, (req, res) => {
+app.get(/^\/(?!api|vendor|v\/|extension\.zip).*/, (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.type('html').send(indexHtml());
 });
@@ -304,6 +404,7 @@ const HOST = process.env.HOST || undefined;
 async function main() {
   await seed.run();
   report.recover();
+  pipeline.recover();
   const server = app.listen(PORT, HOST, () => {
     const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  TikTok 运营台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);

@@ -2,6 +2,7 @@
 import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox } from '../lib.js';
 
 const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
+const LISTING_STATUS = { draft: '待确认', approved: '已确认', pushed: '已上品' };
 const VCLS = { 可以上: 'v-go', 谨慎测试: 'v-watch', 不建议上: 'v-drop', 数据不足: 'v-na' };
 const verdict = (v, extra = '') => `<span class="verdict ${VCLS[v] || 'v-na'}">${esc(v || '未评估')}${extra}</span>`;
 const DIM_SHORT = { demand: '需求', trend: '趋势', content: '达人', competition: '竞争', profit: '利润', risk: '风险' };
@@ -22,7 +23,7 @@ const DIMS_EXPLAIN = [
   ['合规与风险', '定邀类目、带电、品牌/IP、认证、刷单或价格异常、低价引流款'],
 ];
 
-export async function render(view, [openId]) {
+export async function render(view, [openId, openTab]) {
   const state = { q: '', verdict: '', status: '', sort: 'score' };
   view.innerHTML = `
   <section class="page-hero">
@@ -300,8 +301,12 @@ export async function render(view, [openId]) {
   }
 
   // ---------- 商品详情 ----------
-  async function openDetail(id) {
+  async function openDetail(id, tab = 'analysis') {
     let p = await api(`/products/${id}`);
+    let links = null;
+    let erps = [];
+    if (tab === 'source') links = await api(`/products/${id}/sourcing/links`).catch(() => ({}));
+    if (tab === 'listing') erps = (await api('/connectors').catch(() => ({ items: [] }))).items.filter((c) => c.kind === 'erp' && c.enabled !== false && c.status !== 'pending');
     const m = modal({ title: esc(p.name.length > 70 ? p.name.slice(0, 70) + '…' : p.name), wide: true, body: '<div id="pd"></div>', footer: '<div id="pf" class="row" style="width:100%"></div>' });
     const root = $('#pd', m.el), foot = $('#pf', m.el);
 
@@ -316,6 +321,8 @@ export async function render(view, [openId]) {
             <div class="pd-facts"><span>${esc(mt.type)}</span><span>${esc(p.shop || '—')}</span><span>${esc(mt.market)} 站</span>${mt.ageDays != null ? `<span>上架 ${mt.ageDays} 天</span>` : ''}${p.commissionRate != null ? `<span>佣金 ${p.commissionRate}%</span>` : ''}</div>
             <div class="ext-links"><a href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">${icon('link', 13)}FastMoss 详情</a>${p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener">${icon('link', 13)}TikTok 商品页</a>` : ''}${p.shopUrl ? `<a href="${esc(p.shopUrl)}" target="_blank" rel="noopener">${icon('link', 13)}店铺分析</a>` : ''}<a href="https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw1688(p))}" target="_blank" rel="noopener">${icon('search', 13)}1688 找同款</a></div>
           </div></div>
+        <div class="seg pd-tabs" id="pdtabs">${[['analysis', '分析'], ['source', `1688 找货${p.sourcing?.offers?.length ? ` · ${p.sourcing.offers.length}` : ''}`], ['listing', `上架包${p.listing ? ` · ${LISTING_STATUS[p.listing.status] || ''}` : ''}`]].map(([k, t]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>
+        ${tab === 'source' ? sourceHTML(p) : tab === 'listing' ? listingHTML(p) : `
         ${ai ? `<div class="ai-box"><div class="row"><b>${icon('sparkles', 15)}AI 研判</b><span class="muted small">${esc(ai.model || '')} · ${esc((ai.at || '').slice(0, 10))}</span></div>
           <div class="ai-reasons">${Object.entries(ai.reasons || {}).filter(([, v]) => v).map(([k, v]) => `<div><span>${esc(k)}</span><p>${esc(v)}</p></div>`).join('')}</div>
           <dl class="kv"><dt>1688 采购价</dt><dd>${esc(ai.est1688 || '—')}${ai.profitOk === false ? ' <span class="down">（按估价利润不成立）</span>' : ai.profitOk ? ' <span class="up">（利润成立）</span>' : ''}</dd><dt>怎么做</dt><dd>${esc(ai.angle || '—')}</dd><dt>下一步</dt><dd>${esc(ai.nextStep || '—')}</dd></dl></div>` : ''}
@@ -347,7 +354,7 @@ export async function render(view, [openId]) {
             <div class="hit"><div class="row"><b>AI 深度分析</b><span class="muted small">${p.analyzedAt ? '更新于 ' + esc(p.analyzedAt.slice(0, 10)) : ''}</span><div class="spacer"></div><button class="btn sm" id="ai" data-loading="分析中…">${icon('sparkles', 14)}${a ? '重新分析' : '深度分析'}</button></div>
               ${a ? analysisHTML(a) : '<p class="small muted" style="margin:8px 0 0">在批量研判的基础上做单品深挖：目标人群、卖点怎么拍、竞品切入点、评论痛点、1688 找货关键词和采购价上限、测款方案（备货、达人、预算、成功标准、止损线）。</p>'}</div>
           </div>
-        </div>`;
+        </div>`}`;
       foot.innerHTML = `<button class="btn ghost danger" id="del">${icon('trash', 14)}删除</button><div class="spacer"></div>
         ${p.status !== 'dropped' ? '<button class="btn ghost" data-st="dropped">放弃</button>' : '<button class="btn ghost" data-st="candidate">恢复为候选</button>'}
         ${p.status !== 'testing' ? `<button class="btn ghost" data-st="testing">${icon('flow', 14)}标记测款中</button>` : ''}
@@ -361,6 +368,15 @@ export async function render(view, [openId]) {
     };
     let tmr;
     function bind() {
+      $$('#pdtabs button', root).forEach((b) => (b.onclick = async () => {
+        tab = b.dataset.tab;
+        if (tab === 'source' && !links) links = await api(`/products/${p.id}/sourcing/links`).catch(() => ({}));
+        if (tab === 'listing') erps = (await api('/connectors').catch(() => ({ items: [] }))).items.filter((c) => c.kind === 'erp' && c.enabled !== false && c.status !== 'pending');
+        draw();
+      }));
+      bindFoot();
+      if (tab === 'source') return bindSource();
+      if (tab === 'listing') return bindListing();
       const deb = () => { clearTimeout(tmr); tmr = setTimeout(async () => { await save({ costCny: $('#cost', root).value, shippingCny: $('#ship', root).value }); draw(); }, 700); };
       $('#cost', root).oninput = deb;
       $('#ship', root).oninput = deb;
@@ -374,6 +390,121 @@ export async function render(view, [openId]) {
         draw();
         toast('分析完成', 'success');
       });
+    }
+
+    // ---------- 1688 找货 ----------
+    function sourceHTML(p) {
+      const s = p.sourcing || {}, offers = s.offers || [], ceil = p.evaluation.profit?.ceilingCny;
+      const L = links || {};
+      return `<div class="src">
+        <div class="src-bar"><label class="field" style="flex:1;min-width:220px">1688 搜索词<input class="input" id="kw" value="${esc(s.keyword || L.keyword || '')}" placeholder="例如：睡眠耳机 无线 隐形"></label>
+          <button class="btn" id="src-go" data-loading="搜货中…（关键词 + 以图搜，约半分钟）">${icon('search', 15)}用 API 搜货</button>
+          ${L.keyword ? `<a class="btn ghost" target="_blank" rel="noopener" href="${esc(L.keyword)}">${icon('link', 14)}在 1688 打开</a>` : ''}${L.image ? `<a class="btn ghost" target="_blank" rel="noopener" href="${esc(L.image)}">${icon('image', 14)}1688 以图搜</a>` : ''}</div>
+        <p class="small muted">按商品主图以图搜 + 关键词搜，合并后按比价矩阵排序：阶梯价 30%、库存深度 20%、发货地 15%、单件重量 15%、SKU 丰富度 10%、商品状态 10%；AI 判断同款度。${ceil != null ? `这个商品要赚到目标利润，<b>采购 + 物流不能超过 ¥${Math.max(0, ceil)}</b>。` : ''}</p>
+        ${L.hasApi === false ? `<div class="src-hint">${icon('sparkles', 15)}<div><b>还没接 1688 接口也能找货：</b>点上面「在 1688 打开」或「1688 以图搜」，用浏览器插件「运营台助手」在结果页一键发送货源；或者在下面手动添加。接口：<a href="#/providers" data-close style="color:var(--lime)">接入配置 → 数据源与 ERP</a>（官方 / 第三方数据接口二选一）。</div></div>` : ''}
+        ${s.errors?.length ? `<p class="small down">${s.errors.map(esc).join('；')}</p>` : ''}
+        ${offers.length ? `<div class="table-wrap"><table class="src-table"><thead><tr><th>货源</th><th class="r">价格</th><th>阶梯价</th><th class="r">库存</th><th>发货地</th><th class="r">重量</th><th class="r">SKU</th><th class="r">同款度</th><th class="r">比价分</th><th class="r">到手成本</th><th></th></tr></thead><tbody>
+          ${offers.map((o) => { const id = o.offerId || o.url, on = s.chosen === id; return `<tr class="${on ? 'chosen' : ''}"><td><div class="pcell" style="min-width:240px">${o.image ? `<img class="pthumb" src="${esc(o.image)}" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}<div style="min-width:0"><a class="pname" href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a><div class="p-sub">${esc(o.shop || '')} · ${esc(o.source || '')}${o.matchNote ? ` · ${esc(o.matchNote)}` : ''}</div></div></div></td>
+            <td class="r money">¥${o.price ?? '—'}${o.moq ? `<div class="p-sub">${o.moq} 件起批</div>` : ''}</td>
+            <td class="small">${(o.priceRanges || []).slice(0, 3).map((r) => `≥${r.startQuantity ?? '?'}：¥${r.price}`).join('<br>') || '—'}</td>
+            <td class="r">${o.amountOnSale != null ? fmtNum(o.amountOnSale) : '—'}</td><td class="small">${esc(o.sendGoodsAddress || '—')}</td>
+            <td class="r">${o.unitWeight != null ? Math.round(o.unitWeight * 1000) + 'g' : '—'}</td><td class="r">${o.skuCount || '—'}</td>
+            <td class="r">${o.match != null ? `<b class="${scoreCls(o.match)}">${o.match}</b>` : '—'}</td>
+            <td class="r" title="${Object.entries(o.dims || {}).map(([k, v]) => `${{ price: '阶梯价', stock: '库存深度', origin: '发货地', weight: '单件重量', sku: 'SKU 丰富度', status: '商品状态' }[k]} ${v}`).join('\n')}"><b class="${scoreCls(o.matrix)}">${o.matrix ?? '—'}</b></td>
+            <td class="r">${o.landedCny != null ? `<span class="${o.profitOk === false ? 'down' : o.profitOk ? 'up' : ''}">¥${o.landedCny}</span><div class="p-sub">含物流 ¥${o.shippingCny}</div>` : '—'}</td>
+            <td>${on ? '<span class="verdict v-go">已选</span>' : `<button class="btn sm ghost" data-choose="${esc(id)}">选它</button>`}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+        <details class="map-details"${offers.length ? '' : ' open'}><summary>手动添加货源</summary>
+          <form class="grid g3" id="mo"><label class="field">1688 链接 *<input class="input" name="url" placeholder="https://detail.1688.com/offer/….html"></label><label class="field">标题<input class="input" name="title"></label><label class="field">价格 ¥ *<input class="input" name="price" type="number" step="0.01"></label>
+            <label class="field">起批量<input class="input" name="min_num" type="number"></label><label class="field">单件重量（克）<input class="input" name="weightG" type="number"></label><label class="field">发货地<input class="input" name="location" placeholder="广东 深圳"></label></form>
+          <div class="row mt" style="justify-content:flex-end"><button class="btn sm" id="mo-add" data-loading="添加中…">${icon('plus', 14)}添加</button></div></details>
+      </div>`;
+    }
+
+    function bindSource() {
+      $('#src-go', root).onclick = (e) => withLoading(e.currentTarget, async () => {
+        await api(`/products/${p.id}/sourcing/search`, { method: 'POST', body: { keyword: $('#kw', root).value.trim() } });
+        p = await api(`/products/${p.id}`);
+        draw();
+        toast(`找到 ${p.sourcing.offers.length} 个货源`, 'success');
+      });
+      $$('[data-choose]', root).forEach((b) => (b.onclick = () => withLoading(b, async () => {
+        p = await api(`/products/${p.id}/sourcing/choose`, { method: 'POST', body: { offerId: b.dataset.choose } });
+        load();
+        draw();
+        toast('已选定供应商，采购价和物流已填进利润测算', 'success');
+      })));
+      $('#mo-add', root).onclick = (e) => withLoading(e.currentTarget, async () => {
+        const f = Object.fromEntries(new FormData($('#mo', root)));
+        if (!f.url || !f.price) throw new Error('请填写 1688 链接和价格');
+        const offer = { detail_url: f.url, title: f.title || f.url, price: f.price, min_num: f.min_num || undefined, weight: f.weightG ? Number(f.weightG) / 1000 : undefined, location: f.location || undefined, num_iid: (f.url.match(/offer\/(\d+)/) || [])[1] };
+        await api(`/products/${p.id}/sourcing/offers`, { method: 'POST', body: { offers: [offer], source: '手动添加' } });
+        p = await api(`/products/${p.id}`);
+        draw();
+      });
+    }
+
+    // ---------- 上架包 ----------
+    function listingHTML(p) {
+      const L = p.listing, offer = p.sourcing?.offers?.find((o) => (o.offerId || o.url) === p.sourcing?.chosen);
+      if (!L) return `<div class="card card-pad empty-ish"><p>${offer ? `已选定货源 <b>¥${offer.price}</b>（${esc(offer.title.slice(0, 40))}）。` : '<span class="down">还没选定 1688 货源</span>：上架包里的 SKU 会由 AI 推断，定价也算不出来。建议先到「1688 找货」选定供应商。'}</p>
+        <p class="small muted">上架包包含：${esc(p.evaluation.metrics.market)} 站本地语言和英文标题、5 条卖点、分段描述、搜索词、SKU、按目标利润的定价，以及违禁词和合规检查。确认后可一键推送到妙手 ERP / Webhook。</p>
+        <button class="btn primary-glow" id="pk-build" data-loading="生成中…（约半分钟）">${icon('sparkles', 15)}生成上架包</button></div>`;
+      const k = L.pack, pr = L.price;
+      return `<div class="pk">
+        <div class="row" style="gap:10px;flex-wrap:wrap"><span class="verdict ${L.status === 'pushed' ? 'v-go' : L.status === 'approved' ? 'v-watch' : 'v-na'}">${LISTING_STATUS[L.status]}</span><span class="muted small">生成于 ${esc((L.at || '').slice(0, 16).replace('T', ' '))}${L.offer ? ` · 货源 ¥${L.offer.price}` : ' · 未选定货源'}</span><div class="spacer"></div>
+          <a class="btn sm ghost" href="/api/listings/export?ids=${p.id}" download>${icon('download', 14)}导出 CSV</a><button class="btn sm ghost" id="pk-build" data-loading="重新生成中…">${icon('refresh', 14)}重新生成</button></div>
+        ${L.compliance.issues.length || L.compliance.risks.length ? `<div class="flag-list" style="margin-top:12px">${L.compliance.issues.map((x) => `<div class="fl major"><i>!</i><div><b>违禁词</b><span>${esc(x)}</span></div></div>`).join('')}${L.compliance.risks.map((x) => `<div class="fl block"><i>✕</i><div><b>商品风险</b><span>${esc(x)}</span></div></div>`).join('')}</div>` : '<p class="small up">违禁词检查通过</p>'}
+        <form class="col" id="pkf" style="margin-top:12px">
+          <label class="field">本地语言标题<input class="input" name="titleLocal" value="${esc(k.titleLocal || '')}"></label>
+          <label class="field">英文标题<input class="input" name="titleEn" value="${esc(k.titleEn || '')}"></label>
+          <label class="field">卖点（每行一条）<textarea class="input" name="sellingPoints" rows="5">${esc((k.sellingPoints || []).join('\n'))}</textarea></label>
+          <label class="field">描述<textarea class="input" name="description" rows="8">${esc(k.description || '')}</textarea></label>
+          <label class="field">搜索词（逗号分隔）<input class="input" name="keywords" value="${esc((k.keywords || []).join(', '))}"></label>
+          <div class="grid g2"><div class="field">SKU<div class="hit small">${(k.skus || []).map((x) => `<div><b>${esc(x.name)}</b> ${esc(x.spec || '')}</div>`).join('') || '—'}</div></div>
+            <div class="field">定价（${esc(pr?.currency || p.evaluation.metrics.currency)}）<input class="input" name="price" type="number" step="0.01" value="${pr?.suggested ?? ''}"><span class="small muted">${pr ? `保本 + 目标利润至少 ${pr.currency}${pr.floor}，同类成交均价 ${pr.currency}${pr.competitorAsp}` : '选定货源后自动算出定价'}</span>${pr?.warn ? `<span class="small down">${esc(pr.warn)}</span>` : ''}</div></div>
+          ${k.categoryHint ? `<p class="small muted" style="margin:0">类目建议：${esc(k.categoryHint)}</p>` : ''}${k.notes ? `<p class="small down" style="margin:0">上架前确认：${esc(k.notes)}</p>` : ''}
+        </form>
+        <div class="row mt" style="gap:8px;flex-wrap:wrap"><button class="btn ghost" id="pk-save" data-loading="保存中…">${icon('check', 14)}保存修改</button>
+          ${L.status === 'draft' ? `<button class="btn" id="pk-approve" data-loading="确认中…">${icon('check', 14)}确认上架包</button>` : ''}
+          <div class="spacer"></div>
+          ${erps.length ? `<select class="input" id="pk-erp" style="width:auto">${erps.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><button class="btn primary-glow" id="pk-push" data-loading="推送中…" ${L.status === 'draft' ? 'disabled title="先确认上架包"' : ''}>${icon('upload', 15)}推送到 ERP 上品</button>` : '<a class="btn ghost" href="#/providers" data-close>添加妙手 ERP / Webhook 后可一键上品</a>'}</div>
+        ${L.pushes?.length ? `<div class="col mt">${L.pushes.map((x) => `<div class="small ${x.ok ? 'up' : 'down'}">${esc(x.at.slice(0, 16).replace('T', ' '))} · ${esc(x.connector)} · ${esc(x.message)}${x.remoteId ? ` · ${esc(x.remoteId)}` : ''}</div>`).join('')}</div>` : ''}
+      </div>`;
+    }
+
+    function bindListing() {
+      $('#pk-build', root).onclick = (e) => withLoading(e.currentTarget, async () => {
+        p = await api(`/products/${p.id}/listing`, { method: 'POST' });
+        load();
+        draw();
+      });
+      const form = () => {
+        const f = Object.fromEntries(new FormData($('#pkf', root)));
+        return { pack: { titleLocal: f.titleLocal, titleEn: f.titleEn, sellingPoints: f.sellingPoints.split('\n').map((x) => x.trim()).filter(Boolean), description: f.description, keywords: f.keywords.split(/[,，]/).map((x) => x.trim()).filter(Boolean) }, price: f.price };
+      };
+      if (!$('#pkf', root)) return;
+      $('#pk-save', root).onclick = (e) => withLoading(e.currentTarget, async () => {
+        p = await api(`/products/${p.id}/listing`, { method: 'PATCH', body: form() });
+        draw();
+        toast('已保存', 'success');
+      });
+      const ap = $('#pk-approve', root);
+      if (ap) ap.onclick = (e) => withLoading(e.currentTarget, async () => {
+        p = await api(`/products/${p.id}/listing`, { method: 'PATCH', body: { ...form(), status: 'approved' } });
+        load();
+        draw();
+        toast('上架包已确认，可以推送到 ERP', 'success');
+      });
+      const pu = $('#pk-push', root);
+      if (pu) pu.onclick = (e) => withLoading(e.currentTarget, async () => {
+        p = await api(`/products/${p.id}/listing/push`, { method: 'POST', body: { connectorId: $('#pk-erp', root).value } });
+        load();
+        draw();
+        toast('已推送到 ERP，商品标记为「测款中」', 'success');
+      });
+    }
+
+    function bindFoot() {
       $$('[data-st]', foot).forEach((b) => (b.onclick = async () => { await save({ status: b.dataset.st }); draw(); toast(`已标记为「${STATUS[b.dataset.st]}」`, 'success'); }));
       $('#del', foot).onclick = async () => {
         if (!(await confirmBox(`删除「${p.name}」？`))) return;
@@ -413,7 +544,7 @@ export async function render(view, [openId]) {
   await load();
   await loadReport();
   remountTerrain();
-  if (openId) openDetail(openId);
+  if (openId) openDetail(openId, openTab);
   return () => {
     clearTimeout(poll);
     disposeTerrain?.();

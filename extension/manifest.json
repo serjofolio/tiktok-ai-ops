@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "TikTok 运营台助手",
+  "version": "1.0.0",
+  "description": "在 1688 搜索结果、以图搜结果和商品详情页，一键把货源发送到 TikTok 运营台对应的商品。",
+  "permissions": ["storage"],
+  "host_permissions": ["https://*.1688.com/*", "https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "TikTok 运营台助手", "default_popup": "popup.html" },
+  "content_scripts": [{ "matches": ["https://*.1688.com/*"], "js": ["content-1688.js"], "css": ["panel.css"], "run_at": "document_idle" }]
+}

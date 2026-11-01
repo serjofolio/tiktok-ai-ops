@@ -22,13 +22,13 @@ test.afterEach(async () => {
   expect(errors, `页面存在 JS 错误：\n${errors.join('\n')}`).toEqual([]);
 });
 
-const PAGES = [['dashboard', '总览'], ['products', '智能选品'], ['scripts', '视频脚本'], ['knowledge', '知识库'], ['providers', '接入配置'], ['chat', 'Agent']];
+const PAGES = [['dashboard', '总览'], ['products', '智能选品'], ['pipeline', '自动上品'], ['scripts', '视频脚本'], ['knowledge', '知识库'], ['providers', '接入配置'], ['chat', 'Agent']];
 
 test('导航与所有页面', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.nav a')).toHaveCount(6);
+  await expect(page.locator('.nav a')).toHaveCount(7);
   // Agent 位于知识库、接入配置下面
-  await expect(page.locator('.nav a').nth(5)).toHaveText('Agent');
+  await expect(page.locator('.nav a').nth(6)).toHaveText('Agent');
   await expect(page.locator('#style-btn')).toHaveCount(0);
   for (const [p, title] of PAGES) {
     await page.goto(`/#/${p}`);
@@ -178,6 +178,112 @@ test('智能选品：粘贴美区表格（$ 售价）与利润测算参数', asy
   await expect(page.locator('.prow', { hasText: 'UGREEN' })).toContainText('品牌商品');
 });
 
+test('数据源与 ERP：添加第三方 1688 接口和 Webhook、测试连接、生成插件令牌', async ({ page }) => {
+  await page.goto('/#/providers');
+  await expect(page.locator('#conns')).toContainText('浏览器插件采集');
+  // 第三方 1688 数据接口（官方 API 申请不下来时的替代）
+  await page.click('#add-conn');
+  await expect(page.locator('.conn-pick')).toHaveCount(3);
+  await expect(page.locator('.modal')).toContainText('妙手 ERP');
+  await expect(page.locator('.modal')).toContainText('店小秘');
+  await page.locator('.preset-card[data-v=onebound1688]').click();
+  await page.fill('[data-cred=key]', 'k1688');
+  await page.fill('[data-cred=secret]', 's1688');
+  await page.fill('[data-opt=baseUrl]', `${UP}/1688`);
+  await page.click('.modal #ok');
+  const c1 = page.locator('.conn[data-id]', { hasText: '1688 数据接口' });
+  await c1.locator('[data-act=test]').click();
+  await expect(c1.locator('[data-result]')).toContainText('返回 4 个货源');
+  // 密钥只显示脱敏值
+  await c1.locator('[data-act=edit]').click();
+  await expect(page.locator('[data-cred=secret]')).toHaveValue(/••/);
+  await page.locator('.modal [data-close]').first().click();
+  // 通用 Webhook（n8n / 影刀 / 自研 ERP）
+  await page.click('#add-conn');
+  await page.locator('.preset-card[data-v=webhook]').click();
+  await page.fill('[data-cred=url]', `${UP}/webhook`);
+  await page.fill('[data-cred=secret]', 'whsec');
+  await page.click('.modal #ok');
+  const c2 = page.locator('.conn[data-id]', { hasText: '通用 Webhook' });
+  await c2.locator('[data-act=test]').click();
+  await expect(c2.locator('[data-result]')).toContainText('连接成功');
+  // 插件令牌只显示一次
+  await page.click('#new-token');
+  await expect(page.locator('#new-token-box .pw-box')).toContainText('tk_');
+  await expect(page.locator('.token-row')).toHaveCount(1);
+  const zip = await page.request.get('/extension.zip');
+  expect(zip.status()).toBe(200);
+  expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+});
+
+test('1688 找货 → 比价矩阵 → 选定供应商 → 上架包 → 违禁词检查 → 推送 Webhook 上品', async ({ page }) => {
+  await page.goto('/#/products');
+  await page.locator('.prow', { hasText: 'Mini Sleep Earbuds' }).click();
+  await page.locator('#pdtabs [data-tab=source]').click();
+  await page.click('#src-go');
+  await expect(page.locator('.src-table tbody tr')).toHaveCount(4, { timeout: 15000 });
+  // 同款度最高、利润成立的排第一；详情接口补全了阶梯价、库存、重量
+  const first = page.locator('.src-table tbody tr').first();
+  await expect(first).toContainText('睡眠耳机无线蓝牙隐形');
+  await expect(first).toContainText('96');
+  await expect(first).toContainText('45g');
+  await expect(first).toContainText('≥50：¥18.5');
+  await expect(first).toContainText('广东 深圳');
+  await first.locator('[data-choose]').click();
+  await expect(page.locator('.toast').last()).toContainText('已选定供应商');
+  await expect(first).toContainText('已选');
+  // 上架包
+  await page.locator('#pdtabs [data-tab=listing]').click();
+  await page.click('#pk-build');
+  await expect(page.locator('#pkf [name=titleLocal]')).toHaveValue(/Fon Telinga Tidur/, { timeout: 15000 });
+  await expect(page.locator('.pk .flag-list')).toContainText('绝对化用语');
+  await expect(page.locator('.pk .flag-list')).toContainText('100%');
+  await expect(page.locator('#pkf [name=price]')).not.toHaveValue('');
+  await expect(page.locator('#pk-push')).toBeDisabled();
+  await page.fill('#pkf [name=titleEn]', 'Mini Sleep Earbuds Wireless for Side Sleepers');
+  await page.click('#pk-approve');
+  await expect(page.locator('.toast').last()).toContainText('上架包已确认');
+  await page.click('#pk-push');
+  await expect(page.locator('.toast').last()).toContainText('已推送到 ERP');
+  const hook = await (await page.request.get(`${UP}/webhook/last`)).json();
+  expect(hook.last.body.listing.titleEn).toBe('Mini Sleep Earbuds Wireless for Side Sleepers');
+  expect(hook.last.body.source.offerId).toBe('880000001');
+  expect(hook.last.signature).toMatch(/^sha256=/);
+});
+
+test('浏览器插件接口：用 API 令牌把 1688 页面上的货源发给商品', async ({ page, browser }) => {
+  await page.goto('/#/providers');
+  const t = await (await page.request.post('/api/tokens', { data: { name: '测试插件' } })).json();
+  const ctx = await browser.newContext();
+  const headers = { Authorization: `Bearer ${t.token}` };
+  expect((await ctx.request.get('/api/ext/products')).status()).toBe(401);
+  const list = await (await ctx.request.get('/api/ext/products', { headers })).json();
+  const target = list.items.find((x) => /Titan Anti Habuk/.test(x.name));
+  expect(target).toBeTruthy();
+  const r = await ctx.request.post('/api/ext/offers', { headers: { ...headers, Origin: 'chrome-extension://abc' }, data: { productId: target.id, offers: [{ num_iid: '990001', detail_url: 'https://detail.1688.com/offer/990001.html', title: '防尘钢化膜 iPhone17 透明', price: '2.30', min_num: 10, location: '广东 广州' }] } });
+  expect(r.ok()).toBeTruthy();
+  expect((await r.json()).count).toBe(1);
+  await ctx.close();
+  await page.goto(`/#/products/${target.id}/source`);
+  await expect(page.locator('.src-table')).toContainText('防尘钢化膜');
+  await expect(page.locator('.src-table')).toContainText('浏览器插件');
+});
+
+test('自动上品流水线：研判 → 找货 → 选供应商 → 上架包 → 自动确认 → 推送', async ({ page }) => {
+  await page.goto('/#/pipeline');
+  await expect(page.locator('.rd.ok')).toHaveCount(4);
+  await page.selectOption('#cf [name=scope]', 'all');
+  await page.fill('#cf [name=topN]', '2');
+  await page.locator('#cf .toggle').click();
+  await page.click('#go');
+  await expect(page.locator('.pl h3')).toHaveText('已完成', { timeout: 30000 });
+  await expect(page.locator('.pl-st.ok')).toHaveCount(7);
+  await expect(page.locator('.pl tbody tr')).toHaveCount(2);
+  await expect(page.locator('.pl tbody')).toContainText('已推送到');
+  const hook = await (await page.request.get(`${UP}/webhook/last`)).json();
+  expect(hook.count).toBeGreaterThanOrEqual(3);
+});
+
 test('Agent：流式回答、引用知识库、会话列表', async ({ page }) => {
   await page.goto('/#/chat');
   await expect(page.locator('.suggest')).toHaveCount(4);
@@ -230,7 +336,7 @@ test('总览：3D 主视觉、拖动旋转、统计', async ({ page }) => {
 
 test('移动端布局不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ['home', 'dashboard', 'products', 'scripts', 'knowledge', 'providers', 'chat', 'account', 'admin']) {
+  for (const p of ['home', 'dashboard', 'products', 'pipeline', 'scripts', 'knowledge', 'providers', 'chat', 'account', 'admin']) {
     await page.goto(`/#/${p}`);
     await expect(page.locator('#view .skeleton')).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);

@@ -17,8 +17,10 @@ export async function render(view) {
   <div class="section-title" style="margin-top:0"><h3>模型供应商</h3><span class="muted small" id="pcount"></span></div>
   <div class="col" id="plist"></div>
 
-  <div class="section-title"><h3>数据源接口</h3><span class="muted small">审批通过后填写；目前选品通过导入 FastMoss 导出文件完成</span></div>
-  <div class="grid g2" id="sources"></div>
+  <div class="section-title"><h3>数据源与 ERP</h3><span class="muted small">FastMoss 选品数据 → 1688 找货 → ERP 上品；接口没申请下来的环节，用浏览器插件或通用 Webhook 兜底</span><div class="spacer"></div><button class="btn sm" id="add-conn">${icon('plus', 14)}添加连接</button></div>
+  <div id="conns"></div>
+  <div class="section-title"><h3>浏览器插件与 API 令牌</h3><span class="muted small">插件在你自己登录的 1688 页面采集货源；n8n、影刀等程序也用令牌调用运营台接口</span></div>
+  <div class="card card-pad" id="tokens"></div>
 
   <div class="section-title"><h3>店铺信息</h3><span class="muted small">影响脚本默认语言和分析时的目标市场</span></div>
   <div class="card card-pad"><form class="grid g3" id="store">
@@ -145,24 +147,104 @@ export async function render(view) {
     else fill();
   }
 
-  function renderSources() {
-    const s = d.dataSources;
-    const card = (key, title, desc, fields, link) => {
-      const filled = fields.some(([f]) => s[key][f]);
-      return `<div class="card card-pad" data-src="${key}"><div class="row"><h3 style="font-size:15px">${title}</h3><span class="verdict ${filled ? 'v-go' : 'v-na'}">${filled ? '已填写' : '待申请'}</span><div class="spacer"></div><a class="small" href="${link}" target="_blank" rel="noopener" style="color:var(--lime)">申请入口 ↗</a></div>
-        <p class="small muted">${desc}</p><div class="grid g2">${fields.map(([f, l]) => `<label class="field">${l}<input class="input" name="${f}" type="password" value="${esc(s[key][f] || '')}" autocomplete="off"></label>`).join('')}</div>
-        <div class="row mt" style="justify-content:flex-end"><button class="btn sm ghost" data-save data-loading="保存中…">保存</button></div></div>`;
-    };
-    $('#sources', view).innerHTML =
-      card('fastmoss', 'FastMoss 开放接口', '审批通过后自动拉取商品榜单与详情，替代手动导出。', [['apiKey', 'API Key'], ['apiSecret', 'API Secret']], 'https://www.fastmoss.com/') +
-      card('ali1688', '1688 开放平台', '审批通过后自动按商品搜同款货源和采购价，填入利润测算。', [['appKey', 'AppKey'], ['appSecret', 'AppSecret']], 'https://open.1688.com/');
-    $$('[data-src]', view).forEach((c) => (c.querySelector('[data-save]').onclick = (e) => withLoading(e.currentTarget, async () => {
-      const vals = Object.fromEntries([...c.querySelectorAll('[name]')].map((i) => [i.name, i.value.trim()]));
-      const v = await api('/settings', { method: 'PUT', body: { dataSources: { [c.dataset.src]: vals } } });
-      d.dataSources = v.dataSources;
-      renderSources();
-      toast('已保存', 'success');
-    })));
+  // ---------- 数据源与 ERP 连接器 ----------
+  const KIND = { product: ['选品数据', 'target'], sourcing: ['1688 找货', 'search'], erp: ['ERP 上品', 'upload'] };
+  const STATUS = { ready: ['可用', 'v-go'], beta: ['测试版', 'v-watch'], pending: ['待开放接口', 'v-na'] };
+  let conn = { catalog: {}, items: [] };
+  async function loadConns() {
+    conn = await api('/connectors');
+    renderConns();
+  }
+  function renderConns() {
+    const box = $('#conns', view);
+    box.innerHTML = Object.entries(KIND).map(([k, [label, ic]]) => {
+      const items = conn.items.filter((c) => c.kind === k);
+      const builtin = Object.entries(conn.catalog).filter(([, v]) => v.kind === k && v.builtin);
+      return `<div class="conn-group"><div class="conn-head">${icon(ic, 16)}<b>${label}</b><span class="muted small">${k === 'product' ? 'FastMoss 接口开通前：在「智能选品」导入导出文件' : k === 'sourcing' ? '官方 API / 第三方数据接口 / 浏览器插件，三选一即可' : '妙手 ERP、其他 ERP，或通用 Webhook 接 n8n / 影刀'}</span></div>
+        <div class="conn-list">${items.map((c) => { const st = STATUS[c.status] || STATUS.pending; return `<div class="conn ${c.enabled === false ? 'off' : ''}" data-id="${c.id}"><div class="conn-ic">${initial(c.name)}</div><div style="flex:1;min-width:0"><b>${esc(c.name)}</b><div class="muted small">${esc(conn.catalog[c.vendor]?.name || c.vendor)} · <span class="verdict ${st[1]}" style="padding:1px 8px;font-size:11px">${st[0]}</span> ${c.configured ? '' : '<span class="down small">凭证未填完整</span>'}</div><div class="small muted" data-result></div></div>
+            <button class="btn sm ghost" data-act="test" data-loading="测试中…">测试</button><button class="btn sm ghost" data-act="edit">编辑</button><button class="icon-btn danger" data-act="del">${icon('trash', 14)}</button></div>`; }).join('')}
+          ${builtin.map(([key, v]) => `<div class="conn builtin"><div class="conn-ic">${icon('link', 15)}</div><div style="flex:1"><b>${esc(v.name)}</b><div class="muted small">${esc(v.desc)}</div></div><a class="btn sm ghost" href="#tokens-anchor" data-goto-tokens>设置插件</a></div>`).join('')}
+          ${!items.length && !builtin.length ? `<div class="conn empty-conn muted small">还没有添加，点右上角「添加连接」</div>` : ''}</div></div>`;
+    }).join('');
+    $$('.conn[data-id]', box).forEach((el) => {
+      const c = conn.items.find((x) => x.id === el.dataset.id);
+      el.querySelector('[data-act=edit]').onclick = () => connEditor(c.vendor, c);
+      el.querySelector('[data-act=del]').onclick = async () => {
+        if (!(await confirmBox(`删除连接「${c.name}」？`))) return;
+        await api(`/connectors/${c.id}`, { method: 'DELETE' });
+        loadConns();
+      };
+      el.querySelector('[data-act=test]').onclick = (e) => withLoading(e.currentTarget, async () => {
+        const out = el.querySelector('[data-result]');
+        try {
+          const r = await api(`/connectors/${c.id}/test`, { method: 'POST' });
+          out.innerHTML = `<span class="up">${esc(r.message)}</span>`;
+        } catch (ex) {
+          out.innerHTML = `<span class="down">${esc(ex.message)}</span>`;
+        }
+      });
+    });
+    $$('[data-goto-tokens]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#tokens', view).scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
+  }
+
+  function connPicker() {
+    const m = modal({
+      title: '添加连接', wide: true,
+      body: Object.entries(KIND).map(([k, [label]]) => `<h4 class="rp-h" style="margin-top:6px">${label}</h4><div class="preset-grid conn-pick">${Object.entries(conn.catalog).filter(([, v]) => v.kind === k && !v.builtin).map(([key, v]) => { const st = STATUS[v.status]; return `<div class="preset-card" data-v="${key}"><div class="row" style="gap:8px"><b>${esc(v.name)}</b><span class="verdict ${st[1]}" style="padding:1px 8px;font-size:11px">${st[0]}</span></div><p class="small muted" style="margin:6px 0 0">${esc(v.desc)}</p></div>`; }).join('')}</div>`).join(''),
+      onMount(el, close) {
+        $$('[data-v]', el).forEach((c) => (c.onclick = () => { close(); connEditor(c.dataset.v); }));
+      },
+    });
+    return m;
+  }
+
+  function connEditor(vendor, c) {
+    const v = conn.catalog[vendor];
+    modal({
+      title: `${c ? '编辑' : '添加'}：${esc(v.name)}`, wide: true,
+      body: `<p class="small muted" style="margin-top:0">${esc(v.desc)} ${v.link ? `<a href="${esc(v.link)}" target="_blank" rel="noopener" style="color:var(--lime)">申请入口 ↗</a>` : ''}</p>
+        <form class="grid g2" id="cf"><label class="field">名称<input class="input" name="name" value="${esc(c?.name || v.name)}"></label><label class="field">状态<select class="input" name="enabled"><option value="1" ${c?.enabled !== false ? 'selected' : ''}>启用</option><option value="0" ${c?.enabled === false ? 'selected' : ''}>停用</option></select></label>
+          ${v.fields.map((f) => `<label class="field">${esc(f.label)}<input class="input" data-cred="${f.key}" type="${f.secret ? 'password' : 'text'}" autocomplete="off" value="${esc(c?.creds?.[f.key] || '')}" placeholder="${c && f.secret ? '留空则不修改' : ''}"></label>`).join('')}
+          ${v.options.map((o) => `<label class="field">${esc(o.label)}<input class="input" data-opt="${o.key}" value="${esc(c?.options?.[o.key] ?? o.default ?? '')}"></label>`).join('')}</form>
+        ${v.status === 'pending' ? '<p class="small down">这个厂商还没有开放接口，保存后会记录凭证，接口开放后即可使用；上品请先用「通用 Webhook」。</p>' : ''}`,
+      footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="ok" data-loading="保存中…">保存</button>`,
+      onMount(el, close) {
+        $('#ok', el).onclick = (e) => withLoading(e.currentTarget, async () => {
+          const body = { vendor, name: $('[name=name]', el).value, enabled: $('[name=enabled]', el).value === '1', creds: Object.fromEntries($$('[data-cred]', el).map((i) => [i.dataset.cred, i.value])), options: Object.fromEntries($$('[data-opt]', el).map((i) => [i.dataset.opt, i.value])) };
+          if (c) await api(`/connectors/${c.id}`, { method: 'PUT', body });
+          else await api('/connectors', { method: 'POST', body });
+          close();
+          toast('已保存，可以点「测试」检查连接', 'success');
+          loadConns();
+        });
+      },
+    });
+  }
+
+  // ---------- 浏览器插件与 API 令牌 ----------
+  async function loadTokens() {
+    const { items } = await api('/tokens');
+    const box = $('#tokens', view);
+    box.innerHTML = `<div class="grid g2" style="align-items:start">
+      <div><b>运营台助手（Chrome / Edge 插件）</b>
+        <ol class="small" style="padding-left:18px;line-height:1.9;margin:8px 0">
+          <li><a href="/extension.zip" download style="color:var(--lime)">下载插件压缩包</a>，解压到一个文件夹；</li>
+          <li>浏览器打开 <code>chrome://extensions</code>（Edge 是 <code>edge://extensions</code>），打开「开发者模式」，点「加载已解压的扩展程序」选这个文件夹；</li>
+          <li>点插件图标，填运营台地址 <code>${esc(location.origin)}</code> 和下面生成的令牌；</li>
+          <li>在 1688 搜索结果 / 以图搜结果 / 商品详情页，右下角会出现「发送到运营台」，选择要找货的商品即可。</li></ol></div>
+      <div><div class="row"><b>API 令牌</b><div class="spacer"></div><button class="btn sm" id="new-token" data-loading="生成中…">${icon('plus', 14)}生成令牌</button></div>
+        <div id="new-token-box"></div>
+        ${items.length ? `<div class="col" style="margin-top:10px">${items.map((t) => `<div class="row token-row"><code>${esc(t.prefix)}…</code><span>${esc(t.name)}</span><span class="muted small">${t.lastUsedAt ? '最近使用 ' + esc(t.lastUsedAt.slice(0, 16).replace('T', ' ')) : '未使用'}</span><div class="spacer"></div><button class="icon-btn danger" data-revoke="${t.id}" title="作废">${icon('trash', 14)}</button></div>`).join('')}</div>` : '<p class="small muted">还没有令牌</p>'}</div></div>`;
+    $('#new-token', box).onclick = (e) => withLoading(e.currentTarget, async () => {
+      const t = await api('/tokens', { method: 'POST', body: { name: '浏览器插件' } });
+      await loadTokens();
+      $('#new-token-box', view).innerHTML = `<div class="pw-box" style="font-size:13px;word-break:break-all">${esc(t.token)}</div><p class="small down" style="margin:6px 0 0">只显示这一次，请马上复制到插件里。</p>`;
+    });
+    $$('[data-revoke]', box).forEach((b) => (b.onclick = async () => {
+      if (!(await confirmBox('作废这个令牌？用它的插件或程序会立即失效。'))) return;
+      await api(`/tokens/${b.dataset.revoke}`, { method: 'DELETE' });
+      loadTokens();
+    }));
   }
 
   $('#add', view).onclick = () => editor();
@@ -170,6 +252,7 @@ export async function render(view) {
     await api('/settings', { method: 'PUT', body: { store: Object.fromEntries(new FormData($('#store', view))) } });
     toast('店铺信息已保存', 'success');
   });
+  $('#add-conn', view).onclick = connPicker;
   renderList();
-  renderSources();
+  await Promise.all([loadConns(), loadTokens()]);
 }

@@ -13,6 +13,7 @@ const reports = db.collection('reports');
 const BATCH = 8; // 每次让模型研判的商品数（太多容易超出输出长度被截断）
 const MAX = 200;
 const running = new Map(); // reportId → 进度（内存）
+const jobs = new Map(); // reportId → 执行中的 Promise（自动流水线等待用）
 
 const pctOf = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 const med = (arr) => {
@@ -252,10 +253,11 @@ function start({ ids } = {}) {
   const report = reports.insert({ status: 'running', count: items.length, ids: items.map((p) => p.id), title: `${[...new Set(items.map((p) => p.category).filter(Boolean))].join('、') || '选品'} · ${items.length} 个商品` });
   running.set(report.id, { uid: ctx.user()?.id, total: 1, done: 0, judged: 0 });
   // 后台执行：仍在当前用户的上下文里，读写的都是这个用户的数据
-  run(report, items).catch((e) => {
+  const job = run(report, items).catch((e) => {
     reports.update(report.id, { status: 'error', errors: [e.message], finishedAt: db.now() });
     running.delete(report.id);
   });
+  jobs.set(report.id, job.finally(() => jobs.delete(report.id)));
   return view(reports.get(report.id));
 }
 
@@ -278,4 +280,7 @@ function recover() {
   for (const r of reports.all()) if (r.status === 'running' && !running.has(r.id)) reports.update(r.id, { status: 'error', errors: ['服务重启，报告中断，请重新生成'] });
 }
 
-module.exports = { start, latest, get, stats, recover };
+// 等待报告生成完（自动流水线用）
+const wait = (id) => jobs.get(id) || Promise.resolve();
+
+module.exports = { start, latest, get, stats, recover, wait };

@@ -552,3 +552,56 @@ body.is-home .content { max-width: none; padding: 0; }
 /* 下拉框选项文字很长（如马来语商品标题）时不撑破布局 */
 select.input { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 .split > *, .field { min-width: 0; }
+
+/* ======================= 接入配置：连接器 ======================= */
+.conn-group { margin-bottom: 16px; }
+.conn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; } .conn-head .ico { color: var(--amber); }
+.conn-list { display: flex; flex-direction: column; gap: 8px; }
+.conn { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--panel); flex-wrap: wrap; }
+.conn.off { opacity: 0.55; }
+.conn.builtin { border-style: dashed; }
+.conn-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 159, 67, 0.1); color: var(--amber); font-weight: 700; flex-shrink: 0; }
+.empty-conn { justify-content: center; }
+.conn-pick { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.token-row { gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+
+/* ======================= 商品详情：找货 / 上架包 ======================= */
+.pd-tabs { margin: 4px 0 16px; }
+.src-bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.src-hint { display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px dashed rgba(255, 159, 67, 0.45); background: rgba(255, 159, 67, 0.05); font-size: 13px; margin: 10px 0; }
+.src-hint .ico { color: var(--amber); flex-shrink: 0; margin-top: 2px; }
+.src-table td { vertical-align: middle; }
+.src-table tr.chosen td { background: rgba(232, 220, 196, 0.06); }
+.src-table .pname { font-size: 12.5px; }
+.pk .field input, .pk .field textarea { font-size: 13px; }
+
+/* ======================= 自动上品流水线 ======================= */
+.ready { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.rd { display: flex; gap: 10px; padding: 14px; border-radius: 16px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text); transition: transform 0.3s var(--ease), border-color 0.3s; }
+.rd:hover { transform: translateY(-3px); border-color: var(--amber); }
+.rd i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.rd.ok i { background: rgba(134, 214, 162, 0.18); color: var(--ok); } .rd.half i { background: rgba(224, 180, 90, 0.18); color: var(--warn); } .rd.no i { background: rgba(255, 107, 90, 0.18); color: var(--err); }
+.rd span { display: block; font-size: 12px; color: var(--text-2); margin-top: 3px; line-height: 1.5; }
+.cfg-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.cfg-row .field { width: 160px; }
+.cfg-row .btn { margin-left: auto; }
+.pl { overflow: hidden; }
+.pl-stages { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; padding: 22px; position: relative; }
+.pl-st { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 0 6px; }
+.pl-st::before { content: ''; position: absolute; top: 19px; left: -50%; width: 100%; height: 2px; background: var(--line-2); z-index: 0; }
+.pl-st:first-child::before { display: none; }
+.pl-st.ok::before, .pl-st.run::before { background: var(--warm-grad); }
+.pl-dot { position: relative; z-index: 1; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; background: var(--panel-solid); border: 1px solid var(--line-2); color: var(--text-3); }
+.pl-st.ok .pl-dot { background: var(--warm-grad); color: #140c06; border-color: transparent; }
+.pl-st.run .pl-dot { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.6); animation: plPulse 1.4s infinite; }
+.pl-st.wait .pl-dot { border-color: var(--warn); color: var(--warn); } .pl-st.err .pl-dot { border-color: var(--err); color: var(--err); }
+@keyframes plPulse { 70% { box-shadow: 0 0 0 12px rgba(255, 159, 67, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0); } }
+.pl-st b { font-size: 13px; margin-top: 4px; } .pl-st small { font-size: 11px; color: var(--text-3); }
+.pl-st p { margin: 4px 0 0; font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.pl-badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text-3); white-space: nowrap; }
+.pl-badge.ok, .ok > .pl-badge { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); } .pl-badge.run, .run > .pl-badge { color: var(--amber); border-color: rgba(255, 159, 67, 0.45); }
+.pl-badge.wait, .wait > .pl-badge { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); } .pl-badge.err, .err > .pl-badge { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+.pl-log { margin: 0 22px 20px; font-size: 12.5px; } .pl-log summary { cursor: pointer; color: var(--text-2); margin-bottom: 8px; }
+.pl-log div { padding: 4px 0; border-bottom: 1px dashed var(--line); color: var(--text-2); } .pl-log span { font-family: var(--mono); color: var(--text-3); margin-right: 10px; }
+@media (max-width: 960px) { .ready { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pl-stages { grid-template-columns: minmax(0, 1fr); gap: 14px; } .pl-st { flex-direction: row; text-align: left; flex-wrap: wrap; } .pl-st::before { display: none; } .cfg-row .field { width: 100%; } .cfg-row .btn { margin-left: 0; } }
+@media (max-width: 560px) { .ready { grid-template-columns: minmax(0, 1fr); } }

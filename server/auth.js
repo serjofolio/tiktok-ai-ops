@@ -191,7 +191,33 @@ async function upsertAdmin(username, password) {
 
 const hasUsers = () => users.count() > 0;
 
+// ---------- API 令牌：浏览器插件、n8n、影刀等程序用（请求头 Authorization: Bearer tk_xxx） ----------
+const apiTokens = db.collection('api_tokens', { scoped: false });
+
+function createApiToken(user, name) {
+  const token = 'tk_' + crypto.randomBytes(24).toString('base64url');
+  const t = apiTokens.insert({ id: sha(token), userId: user.id, name: String(name || '浏览器插件').slice(0, 40), prefix: token.slice(0, 8) });
+  return { id: t.id, name: t.name, prefix: t.prefix, createdAt: t.createdAt, token };
+}
+const listApiTokens = (user) => apiTokens.all().filter((t) => t.userId === user.id).map(({ id, name, prefix, createdAt, lastUsedAt }) => ({ id, name, prefix, createdAt, lastUsedAt }));
+function revokeApiToken(user, id) {
+  const t = apiTokens.get(id);
+  if (!t || t.userId !== user.id) throw err('令牌不存在', 404);
+  apiTokens.remove(id);
+}
+function userFromApiToken(header) {
+  const m = String(header || '').match(/^Bearer\s+(tk_[\w-]+)$/);
+  if (!m) return null;
+  const t = apiTokens.get(sha(m[1]));
+  if (!t) return null;
+  const u = users.get(t.userId);
+  if (!u || u.disabled) return null;
+  if (!t.lastUsedAt || Date.now() - Date.parse(t.lastUsedAt) > 60e3) apiTokens.update(t.id, { lastUsedAt: db.now() });
+  return u;
+}
+
 module.exports = {
+  createApiToken, listApiTokens, revokeApiToken, userFromApiToken,
   register, login, createSession, userFromToken, endSession, endSessions, changePassword, readToken, setCookie, clientIp, publicUser,
   listUsers, adminUpdate, adminResetPassword, adminDelete, upsertAdmin, hasUsers, initUserData,
 };

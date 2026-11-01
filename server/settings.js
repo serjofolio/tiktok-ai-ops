@@ -28,6 +28,7 @@ const DEFAULTS = {
     markets: {}, // 各站点平台费率、每单固定费、人民币汇率的自定义值（默认值见 services/selection.js）
   },
   store: { name: '我的 TikTok 小店', market: 'US', language: 'English' },
+  connectors: [], // 数据源与 ERP 连接器（见 connectors.js）
 };
 
 // 文件结构：{ system: { allowRegister }, users: { [uid]: 用户配置 }, legacy: 单用户版本的旧配置（等第一个管理员认领） }
@@ -61,6 +62,7 @@ function loadFile() {
 function normalize(saved = {}) {
   const cur = merge(DEFAULTS, saved);
   cur.providers = Array.isArray(saved.providers) ? saved.providers : [];
+  cur.connectors = Array.isArray(saved.connectors) ? saved.connectors : []; // 不能共用 DEFAULTS 里的数组
   // 旧版单一 llm 配置迁移为一个供应商
   if (saved.llm && saved.llm.provider && saved.llm.provider !== 'mock' && saved.llm.apiKey && !cur.providers.length) {
     const p = { id: newId(), name: '已迁移的配置', protocol: saved.llm.provider === 'anthropic' ? 'anthropic' : 'openai', baseUrl: saved.llm.baseUrl, apiKey: saved.llm.apiKey, model: saved.llm.model, temperature: saved.llm.temperature ?? 0.7 };

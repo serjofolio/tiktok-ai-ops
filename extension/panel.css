@@ -1,0 +1,10 @@
+.tkops-root { position: fixed; right: 20px; bottom: 24px; z-index: 2147483000; font: 13px/1.5 system-ui, 'Microsoft YaHei', sans-serif; }
+.tkops-fab { padding: 10px 16px; border: 0; border-radius: 999px; background: linear-gradient(100deg, #f3e9d2, #ffb35c 45%, #ff6a4d); color: #140c06; font-weight: 700; cursor: pointer; box-shadow: 0 10px 30px -8px rgba(255, 120, 60, 0.7); }
+.tkops-panel { position: absolute; right: 0; bottom: 52px; width: 340px; border-radius: 14px; background: #111110; color: #edede9; border: 1px solid #2e2e2b; box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.8); }
+.tkops-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid #1e1e1c; }
+.tkops-x { border: 0; background: none; color: #a4a39c; font-size: 18px; cursor: pointer; }
+.tkops-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.tkops-body label { color: #a4a39c; display: flex; flex-direction: column; gap: 4px; }
+.tkops-sel { padding: 7px; border-radius: 8px; background: #161615; color: #edede9; border: 1px solid #2e2e2b; max-width: 100%; }
+.tkops-send { padding: 9px; border: 0; border-radius: 999px; background: #e8dcc4; color: #060606; font-weight: 700; cursor: pointer; }
+.tkops-found, .tkops-msg { color: #a4a39c; font-size: 12.5px; }
