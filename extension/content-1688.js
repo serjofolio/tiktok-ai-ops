@@ -5,7 +5,8 @@
 
   const api = (path, opts = {}) => new Promise((resolve, reject) => chrome.runtime.sendMessage({ type: 'api', path, ...opts }, (r) => (r?.ok ? resolve(r.data) : reject(new Error(r?.error || '插件未连接运营台')))));
   const num = (s) => { const m = String(s || '').replace(/,/g, '').match(/\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
-  const PROVINCES = /(广东|浙江|福建|江苏|上海|山东|河北|河南|湖北|湖南|安徽|江西|广西|四川|重庆|北京|天津|辽宁|吉林|黑龙江|山西|陕西|云南|贵州|海南|甘肃|宁夏|青海|新疆|西藏|内蒙古)[一-龥]{0,4}/;
+  // 「广东 深圳」「广东省深圳市」都能取到省 + 市
+  const PROVINCES = /(广东|浙江|福建|江苏|上海|山东|河北|河南|湖北|湖南|安徽|江西|广西|四川|重庆|北京|天津|辽宁|吉林|黑龙江|山西|陕西|云南|贵州|海南|甘肃|宁夏|青海|新疆|西藏|内蒙古)(省|市|自治区)?\s?[一-龥]{0,4}/;
 
   // 页面源码里的结构化数据（1688 详情页把商品数据放在脚本里；字段名可能变化，取不到就忽略）
   function fromScripts() {

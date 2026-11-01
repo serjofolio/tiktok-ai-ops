@@ -184,7 +184,7 @@ function normalizeOffer(o, source) {
     amountOnSale: toNum(pick(o, 'amountOnSale', 'saleInfo.amountOnSale', 'num', 'quantity', 'stock')),
     sendGoodsAddress: addr ? String(addr) : '',
     unitWeight: weightKg,
-    skuCount: Array.isArray(skuList) ? skuList.length : typeof skuList === 'object' ? Object.keys(skuList).length : 0,
+    skuCount: toNum(o.skuCount) ?? (Array.isArray(skuList) ? skuList.length : typeof skuList === 'object' ? Object.keys(skuList).length : 0),
     status: /publish|在售|上架|online|1|true/i.test(status) ? 'published' : status,
     sales: toNum(pick(o, 'sales', 'saleQuantity', 'monthSold', 'bookedCount')),
     shop: String(pick(o, 'seller_nick', 'nick', 'companyName', 'supplierName', 'shop', 'sellerLoginId') ?? ''),

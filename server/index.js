@@ -369,8 +369,9 @@ app.get('/extension.zip', async (req, res) => {
   try {
     const JSZip = require('jszip');
     const dir = path.join(__dirname, '..', 'extension');
+    // 文件直接放在压缩包根目录：Windows「全部解压缩」得到的 tiktok-ops-helper 文件夹里就是 manifest.json，不会多套一层
     const zip = new JSZip();
-    const folder = zip.folder('tiktok-ops-helper');
+    const folder = zip;
     for (const f of fs.readdirSync(dir)) folder.file(f, fs.readFileSync(path.join(dir, f)));
     const origin = `${String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0]}://${req.headers.host}`;
     folder.file('config.js', `self.DEFAULT_SERVER = ${JSON.stringify(origin)};\n`);
