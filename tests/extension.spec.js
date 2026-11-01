@@ -83,3 +83,73 @@ test('浏览器插件：加载 → 填令牌连接 → 1688 搜索页和详情�
   expect(o.priceRanges).toEqual([{ startQuantity: 2, price: 19.5 }, { startQuantity: 50, price: 18.5 }, { startQuantity: 500, price: 17.2 }]);
   expect(p.sourcing.offers.find((x) => x.offerId === '770000003').sendGoodsAddress).toBe('浙江 金华');
 });
+
+// 1688 首页：搜索栏的相机图标点开后出现图片上传框；上传后跳到以图搜结果页。首页本身也有推荐商品（不能被当成结果采集）
+const HOME = `<!doctype html><html><head><meta charset="utf-8"><title>阿里巴巴1688.com</title></head><body>
+<div class="search-bar"><input class="search-input"><span class="image-search-camera" onclick="document.getElementById('up').hidden=false">相机</span>
+<div id="up" hidden><input type="file" accept="image/*" id="file"></div></div>
+<div class="recommend">${card(['880000001', '首页推荐 女装连衣裙', '39.00', '成交5000件', '杭州服饰', '浙江 杭州', '1件起批'])}</div>
+<script>document.getElementById('file').onchange = (e) => { const f = e.target.files[0]; setTimeout(() => (location.href = 'https://s.1688.com/youyuan/index.htm?tab=imageSearch&imageId=' + f.size + '&type=' + encodeURIComponent(f.type)), 300); };</script></body></html>`;
+
+test('浏览器插件自动找货：选商品 → 自动打开 1688 关键词搜 → 采集 → 自动补详情；网页链接触发自动以图搜', async ({ request, baseURL }) => {
+  test.setTimeout(120000);
+  if ((await request.post('/api/auth/login', { data: ADMIN })).status() === 401) await request.post('/api/auth/register', { data: ADMIN });
+  // 带主图的商品（以图搜用）
+  const text = '商品名称\t售价\t7天销量\t28天销量\t商品图片\nPortable Mini Bluetooth Speaker Waterproof\tRM25.90\t800\t2400\thttp://127.0.0.1:3902/img/product.png';
+  for (const multipart of [{ file: { name: 'fm.xlsx', mimeType: 'application/octet-stream', buffer: fs.readFileSync(path.join(__dirname, 'fixtures', 'fastmoss-my-3c.xlsx')) } }, { text }]) {
+    const pv = await (await request.post('/api/products/import/preview', { multipart })).json();
+    await request.post('/api/products/import/commit', { data: { token: pv.token, mapping: pv.mapping } });
+  }
+  const all = (await (await request.get('/api/products')).json()).items;
+  const ear = all.find((p) => /Sleep Earbuds/.test(p.name));
+  const spk = all.find((p) => /Bluetooth Speaker/.test(p.name));
+  expect(spk.image).toContain('/img/product.png');
+  const { token } = await (await request.post('/api/tokens', { data: { name: '自动找货测试' } })).json();
+
+  const ctx = await chromium.launchPersistentContext('', { channel: 'chromium', headless: true, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+  try {
+    // 插件新开的标签页也要走假 1688
+    const opened = [];
+    await ctx.route(/^https:\/\/[a-z]+\.1688\.com\//, (route) => {
+      const u = new URL(route.request().url());
+      opened.push(u.href);
+      const body = u.hostname === 'www.1688.com' ? HOME : u.hostname === 'detail.1688.com' ? DETAIL : SEARCH;
+      return route.fulfill({ contentType: 'text/html; charset=utf-8', body });
+    });
+    let [sw] = ctx.serviceWorkers();
+    if (!sw) sw = await ctx.waitForEvent('serviceworker');
+    const extId = sw.url().split('/')[2];
+
+    // 弹窗：连接后出现「给哪个商品找货」，选睡眠耳机 → 关键词搜
+    const pop = await ctx.newPage();
+    await pop.goto(`chrome-extension://${extId}/popup.html`);
+    await pop.fill('#server', baseURL);
+    await pop.fill('#token', token);
+    await pop.click('#save');
+    await expect(pop.locator('#hunt')).toBeVisible();
+    await pop.selectOption('#product', ear.id);
+    const [search] = await Promise.all([ctx.waitForEvent('page'), pop.click('[data-mode="keyword"]')]);
+    await search.waitForURL(/s\.1688\.com\/selloffer\/offer_search\.htm\?keywords=.+&charset=utf8/);
+    expect(opened.every((u) => /1688\.com/.test(u) && !/login/.test(u))).toBe(true);
+    // 自动采集 → 自动打开详情页补数据 → 完成
+    await expect(search.locator('.tkops-status.done')).toContainText('完成：补全了', { timeout: 60000 });
+    expect(opened.filter((u) => u.includes('detail.1688.com')).length).toBeGreaterThan(0);
+    const p = await (await request.get(`/api/products/${ear.id}`)).json();
+    const detailed = p.sourcing.offers.filter((o) => o.unitWeight === 0.045);
+    expect(detailed.length).toBeGreaterThan(0);
+    expect(p.sourcing.offers.length).toBeGreaterThanOrEqual(3);
+    await expect.poll(() => ctx.pages().filter((x) => x.url().includes('detail.1688.com')).length).toBe(0); // 详情标签采完自动关闭
+
+    // 运营台网页上的「插件自动以图搜」链接：打开 1688 首页 → 点相机 → 上传主图 → 结果页自动采集（首页推荐商品不采）
+    const page = await ctx.newPage();
+    await page.goto(`https://www.1688.com/#tkops=${spk.id}&mode=image&d=0`);
+    await page.waitForURL(/youyuan/, { timeout: 30000 });
+    expect(Number(new URL(page.url()).searchParams.get('imageId'))).toBeGreaterThan(100);
+    expect(new URL(page.url()).searchParams.get('type')).toBe('image/jpeg');
+    await expect(page.locator('.tkops-status.done')).toContainText('完成：发送了 3 个货源', { timeout: 30000 });
+    const s = await (await request.get(`/api/products/${spk.id}`)).json();
+    expect(s.sourcing.offers.map((o) => o.offerId).sort()).toEqual(['770000001', '770000002', '770000003']);
+  } finally {
+    await ctx.close();
+  }
+});

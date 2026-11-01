@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TikTok 运营台助手",
-  "version": "1.0.2",
-  "description": "在 1688 搜索结果、以图搜结果和商品详情页，一键把货源发送到 TikTok 运营台对应的商品。",
+  "version": "1.1.0",
+  "description": "选好运营台里的商品，自动到 1688 关键词搜 / 以图搜，采集货源并打开详情页补全阶梯价、库存、重量、发货地，送回运营台比价。",
   "icons": { "16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png" },
   "permissions": ["storage"],
   "host_permissions": ["https://*.1688.com/*", "https://*/*", "http://localhost/*", "http://127.0.0.1/*"],

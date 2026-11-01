@@ -261,9 +261,17 @@ app.post('/api/pipeline/runs/:id/resume', h(async (req, res) => res.json(pipelin
 app.get('/api/ext/me', h(async (req, res) => res.json({ user: auth.publicUser(req.user), hasSourcingApi: connectors.active('sourcing').length > 0 })));
 // 待找货的商品：可以上 / 谨慎测试，按评分排序
 app.get('/api/ext/products', h(async (req, res) => res.json({ items: products.list({ sort: 'score' }).filter((p) => ['可以上', '谨慎测试'].includes(p.evaluation.verdict) && p.status !== 'dropped').slice(0, 60).map((p) => ({ id: p.id, name: p.name, image: p.image || '', verdict: p.evaluation.verdict, kw: p.kw1688 || p.ai?.kw1688 || '', ceilingCny: p.evaluation.profit?.ceilingCny ?? null, offers: p.sourcing?.offers?.length || 0 })) })));
+// 插件自动找货：商品主图 + 1688 搜索词（没有就让 AI 提炼）
+app.get('/api/ext/products/:id/task', h(async (req, res) => {
+  const p = products.get(req.params.id);
+  if (!p) throw notFound('商品');
+  res.json({ id: p.id, name: p.name, image: p.image || '', kw: await sourcing.keywordFor(p) });
+}));
 app.post('/api/ext/offers', h(async (req, res) => {
   const s = await sourcing.addOffers(req.body?.productId, req.body?.offers || [], '浏览器插件');
-  res.json({ ok: true, count: s.offers.length });
+  // 排名靠前、还没补详情的同款货源：插件接着打开详情页补阶梯价 / 库存 / 重量 / 发货地
+  const top = s.offers.filter((o) => o.url && (o.match == null || o.match >= 50) && o.unitWeight == null && !o.priceRanges?.length).slice(0, 5).map((o) => o.url);
+  res.json({ ok: true, count: s.offers.length, top });
 }));
 
 // ---------- 视频脚本 ----------

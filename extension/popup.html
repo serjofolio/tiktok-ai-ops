@@ -1,17 +1,30 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><style>
-body { width: 300px; margin: 0; padding: 16px; font: 13px/1.5 system-ui, 'Microsoft YaHei', sans-serif; background: #0d0d0c; color: #edede9; }
+body { width: 320px; margin: 0; padding: 16px; font: 13px/1.5 system-ui, 'Microsoft YaHei', sans-serif; background: #0d0d0c; color: #edede9; }
 h3 { margin: 0 0 12px; font-size: 15px; } label { display: block; margin-bottom: 10px; color: #a4a39c; }
-input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2e2e2b; background: #161615; color: #edede9; }
+input, select { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2e2e2b; background: #161615; color: #edede9; }
 button { width: 100%; padding: 9px; border: 0; border-radius: 999px; background: linear-gradient(100deg, #f3e9d2, #ffb35c 45%, #ff6a4d); color: #140c06; font-weight: 700; cursor: pointer; }
-#msg { margin-top: 10px; min-height: 18px; } .ok { color: #86d6a2; } .err { color: #ff6b5a; } small { color: #6c6b65; }
+.row { display: flex; gap: 6px; } .row button { padding: 9px 4px; }
+.ghost { background: #1e1e1c; color: #edede9; border: 1px solid #2e2e2b; }
+.chk { display: flex; align-items: center; gap: 6px; } .chk input { width: auto; margin: 0; }
+#msg, #hmsg { margin-top: 10px; min-height: 18px; } .ok { color: #86d6a2; } .err { color: #ff6b5a; } small { color: #6c6b65; }
+details { margin-top: 14px; } summary { cursor: pointer; color: #a4a39c; margin-bottom: 10px; }
 </style></head><body>
 <h3>TikTok 运营台助手</h3>
+<div id="hunt" hidden>
+  <label>给哪个商品找货<select id="product"></select></label>
+  <label>1688 搜索词<input id="kw" placeholder="留空由 AI 提炼"></label>
+  <div class="row"><button data-mode="keyword">关键词搜</button><button data-mode="image">以图搜</button><button data-mode="both">两种都搜</button></div>
+  <label class="chk" style="margin-top:10px"><input type="checkbox" id="dn" checked>自动打开前 3 个详情页补数据</label>
+  <div id="hmsg"></div>
+  <small>插件会打开 1688 搜索 / 上传主图以图搜，自动采集结果送回运营台，AI 判断同款并按比价矩阵打分。遇到 1688 滑块验证请手动拖一下，完成后自动继续。</small>
+</div>
+<details id="conn"><summary>连接设置</summary>
 <label>运营台地址<input id="server" placeholder="https://tkagent.hyff.cc.cd"></label>
 <label>API 令牌<input id="token" placeholder="tk_…（在「接入配置」里生成）"></label>
 <button id="save">保存并测试连接</button>
 <div id="msg"></div>
-<small>保存后打开 1688 搜索结果、以图搜结果或商品详情页，右下角会出现「发送到运营台」。</small>
+</details>
 <script src="config.js"></script>
 <script src="popup.js"></script>
 </body></html>

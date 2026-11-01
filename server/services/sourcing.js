@@ -159,8 +159,10 @@ function choose(id, offerId) {
 // 没有 API 时：给出可以直接打开的 1688 搜索链接
 function links(p, kw) {
   return {
-    keyword: `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw)}`,
-    image: p.image ? `https://s.1688.com/youyuan/index.htm?tab=imageSearch&imageAddress=${encodeURIComponent(p.image)}` : null,
+    keywordUrl: `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw)}&charset=utf8`,
+    // 装了插件：打开 1688 后插件自动搜索 / 上传主图以图搜，采集结果并补详情
+    autoKeywordUrl: `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(kw)}&charset=utf8#tkops=${p.id}&mode=keyword`,
+    autoImageUrl: p.image ? `https://www.1688.com/#tkops=${p.id}&mode=image` : null,
   };
 }
 

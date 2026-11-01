@@ -231,7 +231,7 @@ export async function render(view) {
           <li><a href="/extension.zip?v=${Date.now()}" download="tiktok-ops-helper.zip" style="color:var(--lime)">下载插件压缩包</a>，右键「全部解压缩」，得到 <code>tiktok-ops-helper</code> 文件夹（打开能直接看到 manifest.json）；</li>
           <li>浏览器打开 <code>chrome://extensions</code>（Edge 是 <code>edge://extensions</code>），打开右上角「开发者模式」，点左上角<b>「加载未打包的扩展程序」</b>（不是「打包扩展程序」），选这个文件夹；</li>
           <li>点插件图标，填运营台地址 <code>${esc(location.origin)}</code> 和下面生成的令牌；</li>
-          <li>在 1688 搜索结果 / 以图搜结果 / 商品详情页，右下角会出现「发送到运营台」，选择要找货的商品即可。</li></ol></div>
+          <li><b>自动找货</b>：点插件图标选商品 →「关键词搜 / 以图搜」，插件自动打开 1688 搜索或上传主图，采集结果并打开前 3 个详情页补数据，全部送回运营台比价；在商品详情「1688 找货」里点「插件自动搜」效果相同。</li><li>也可以在任意 1688 搜索 / 详情页点右下角「运营台找货 → 发送本页货源」手动发送。</li></ol></div>
       <div><div class="row"><b>API 令牌</b><div class="spacer"></div><button class="btn sm" id="new-token" data-loading="生成中…">${icon('plus', 14)}生成令牌</button></div>
         <div id="new-token-box"></div>
         ${items.length ? `<div class="col" style="margin-top:10px">${items.map((t) => `<div class="row token-row"><code>${esc(t.prefix)}…</code><span>${esc(t.name)}</span><span class="muted small">${t.lastUsedAt ? '最近使用 ' + esc(t.lastUsedAt.slice(0, 16).replace('T', ' ')) : '未使用'}</span><div class="spacer"></div><button class="icon-btn danger" data-revoke="${t.id}" title="作废">${icon('trash', 14)}</button></div>`).join('')}</div>` : '<p class="small muted">还没有令牌</p>'}</div></div>`;

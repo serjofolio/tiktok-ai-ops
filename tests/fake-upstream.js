@@ -102,6 +102,11 @@ function start(port = 3902) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname.startsWith('/1688/')) return fake1688(req, res, url);
+    // 商品主图（插件以图搜测试用）
+    if (url.pathname === '/img/product.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      return res.end(require('fs').readFileSync(require('path').join(__dirname, '..', 'extension', 'icon128.png')));
+    }
     if (url.pathname === '/webhook' && req.method === 'POST') {
       hooks.unshift({ body: await readBody(req), signature: req.headers['x-tk-signature'] || '' });
       res.writeHead(200, { 'Content-Type': 'application/json' });
