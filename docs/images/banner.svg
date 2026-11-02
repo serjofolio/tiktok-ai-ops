@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07070d"/>
+      <stop offset="1" stop-color="#121226"/>
+    </linearGradient>
+    <linearGradient id="line" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1056" y2="0"><stop offset="0" stop-color="#25f4ee"/><stop offset="1" stop-color="#fe2c55"/></linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#25f4ee"/>
+      <stop offset="1" stop-color="#fe2c55"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#25f4ee" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#25f4ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fe2c55" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#fe2c55" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.045"/>
+    </pattern>
+    <style>
+      .orb { animation: drift 12s ease-in-out infinite alternate; }
+      .orb2 { animation: drift 15s ease-in-out infinite alternate-reverse; }
+      @keyframes drift { from { transform: translate(0,0); } to { transform: translate(60px,-30px); } }
+      .flow { stroke-dasharray: 6 10; animation: dash 1.6s linear infinite; }
+      @keyframes dash { to { stroke-dashoffset: -32; } }
+      .node rect { fill: #10101e; fill-opacity: 0.92; stroke: #ffffff; stroke-opacity: 0.14; }
+      .node text { fill: #d8d8e6; font-size: 15px; font-weight: 600; text-anchor: middle; }
+      .node .lit { fill: url(#brand); fill-opacity: 0.16; stroke: none; opacity: 0; animation: lit 7s infinite; }
+      @keyframes lit { 0%, 14% { opacity: 1; } 20%, 100% { opacity: 0; } }
+      .n1 .lit { animation-delay: 0s; } .n2 .lit { animation-delay: 1s; } .n3 .lit { animation-delay: 2s; }
+      .n4 .lit { animation-delay: 3s; } .n5 .lit { animation-delay: 4s; } .n6 .lit { animation-delay: 5s; }
+      .pulse { animation: run 7s linear infinite; }
+      @keyframes run { from { transform: translateX(0); } 86% { transform: translateX(905px); opacity: 1; } 87%, to { transform: translateX(905px); opacity: 0; } }
+      .blink { animation: blink 1.2s steps(2) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+    </style>
+  </defs>
+
+  <rect width="1200" height="360" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="20" fill="url(#grid)"/>
+  <circle class="orb" cx="190" cy="80" r="220" fill="url(#glowA)"/>
+  <circle class="orb2" cx="1040" cy="300" r="240" fill="url(#glowB)"/>
+
+  <text x="72" y="64" fill="#25f4ee" font-size="14" font-weight="700" letter-spacing="4">AI · CROSS-BORDER · TIKTOK SHOP</text>
+  <text x="72" y="128" font-size="56" font-weight="800" fill="url(#brand)">TikTok 运营台</text>
+  <text x="72" y="170" font-size="22" fill="#e8e8f2">一个人，做完一个跨境团队的活<tspan class="blink" fill="#25f4ee">▍</tspan></text>
+
+  <g transform="translate(72,236)">
+    <line x1="70" y1="36" x2="986" y2="36" stroke="url(#line)" stroke-width="2" stroke-opacity="0.7" class="flow"/>
+    <circle class="pulse" cx="70" cy="36" r="5" fill="#ffffff"/>
+    <g class="node n1"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">选品研判</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">六维评分 + AI</text></g>
+    <g class="node n2" transform="translate(183,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">1688 找货</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">关键词 + 以图搜</text></g>
+    <g class="node n3" transform="translate(366,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">比价同款</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">权重矩阵</text></g>
+    <g class="node n4" transform="translate(549,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">AI 上架包</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">本地语言 + 定价</text></g>
+    <g class="node n5" transform="translate(732,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">推送 ERP</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">妙手 / Webhook</text></g>
+    <g class="node n6" transform="translate(915,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">带货脚本</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">分镜 + A/B 钩子</text></g>
+  </g>
+</svg>

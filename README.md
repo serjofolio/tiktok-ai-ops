@@ -1,12 +1,12 @@
 <div align="center">
 
-# TikTok 运营台
+<img src="docs/images/banner.svg" alt="TikTok 运营台" width="100%">
 
 **AI 驱动的 TikTok 跨境电商全链路运营系统**
 
-选品研判 · 1688 找货比价 · AI 上架 · ERP 推送 · 带货脚本：一条多 Agent 流水线跑完
+选品研判 → 1688 找货比价 → AI 上架 → ERP 推送 → 带货脚本，一条多 Agent 流水线跑完
 
-一个人，做完一个跨境团队的活。
+<a href="https://tkagent.hyff.cc.cd"><img src="https://img.shields.io/badge/在线体验-tkagent.hyff.cc.cd-fe2c55?style=for-the-badge" alt="在线体验"></a>
 
 ![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
@@ -15,6 +15,8 @@
 ![LLM](https://img.shields.io/badge/大模型-GLM_/_DeepSeek_/_Kimi_/_通义_/_Claude-8A2BE2)
 
 <img src="docs/images/home.jpg" alt="TikTok 运营台首页" width="900">
+
+<sub>注册账号即可体验；每个账号的数据和模型密钥相互隔离。AI 功能需在「接入配置」填入你自己的大模型密钥。</sub>
 
 </div>
 
@@ -53,6 +55,19 @@ flowchart LR
 | 🎬 | **带货视频脚本** | 「钩子 → 痛点 → 演示 → 证明 → 行动号召」分镜脚本 + 3 个 A/B 测试钩子 |
 | 📚 | **知识库 + Agent** | 上传运营资料切片检索，对话式 Agent 引用来源回答 |
 | 👥 | **多账号与数据隔离** | 管理员 + 注册用户，商品、知识库、模型密钥按账号完全隔离，适合对外演示 |
+
+## 工程亮点
+
+| 难点 | 做法 |
+|---|---|
+| **AI 不可靠** | 规则引擎先给出六维评分和硬性风险，AI 只做增强；AI 的结论和规则冲突时以规则为准，并在页面说明原因 |
+| **大模型输出被截断 / 超时** | 分批并发调用，残缺 JSON 自动修复，失败重试，任务状态持久化，可从中断处继续 |
+| **多账号数据隔离** | 用 `AsyncLocalStorage` 在请求上下文里携带当前账号，存储层自动按账号读写，业务代码不用到处传用户 ID，也就不会漏传 |
+| **没有 1688 官方接口** | Chrome MV3 插件自动完成搜索、以图搜、采集。商品卡片不依赖 class 名识别：从商品 ID 出发找「只包含这个 ID 的最大祖先节点」，1688 改版后仍然有效；识别失败时一键上报页面结构 |
+| **1688 风控** | 模拟真实浏览节奏（随机间隔、平滑滚动、完整的指针事件），检测到人机验证立即暂停，之后 20 分钟内不再自动打开页面 |
+| **插件后台被浏览器回收** | 任务状态存在 `chrome.storage.session`，按标签页登记；写入串行化，避免并发事件互相覆盖 |
+| **安全** | 服务只监听本机端口，外网只能经 Cloudflare 隧道访问；用户填写的接口地址禁止指向内网；令牌只存哈希 |
+| **可验证** | 24 个 Playwright 端到端用例，在真实 Chromium 中加载插件跑完整流程；大模型、1688、ERP 由本地模拟服务提供 |
 
 ---
 
@@ -253,3 +268,7 @@ npm test
 - [ ] FastMoss 开放接口自动拉取选品数据
 - [ ] 上架后数据回流：跟踪测款销量，自动建议加推或下架
 - [ ] 团队协作：商品分配与审核流
+
+## 版权声明
+
+© 2025–2026 serjofolio。本仓库用于作品展示与技术交流，未授权任何开源许可证；未经作者书面许可，不得复制、修改或用于商业用途。
