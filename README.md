@@ -1,70 +1,255 @@
-# TikTok 跨境电商运营台
+<div align="center">
 
-面向 TikTok Shop 卖家的选品与内容工具：**FastMoss 数据选品 → 硬指标与利润测算 → AI 选品分析与测款方案 → 一键带货视频脚本**，配套 TikTok 官方文档知识库和可对话的 Agent。
+# TikTok 运营台
 
-## 功能
+**AI 驱动的 TikTok 跨境电商全链路运营系统**
 
-| 模块 | 能做什么 |
-|---|---|
-| 智能选品 | 页面写明选品思路（找潜力趋势 → 数据工具筛选 → 竞品分析 → 判断能否卖 → 测试方案 → 视频脚本）。导入 FastMoss 导出的 Excel/CSV 或直接粘贴表格，自动识别列；逐项检查「销量在增长、利润够、对标视频足够多、价格带、竞争分布、卖点能拍出来、自己也想买」；填入 1688 采购价和物流即算出单件净利；AI 说明为什么选、目标人群、卖点拍法、竞品切入点、风险、测款方案；附 FastMoss / TikTok / 1688 找货源链接 |
-| 视频脚本 | 从选品库选商品（测款中、推荐测款优先），可贴对标视频文案，生成按「钩子 → 痛点 → 演示 → 证明 → 行动号召」组织的分镜脚本，含 3 个备选钩子用于 A/B 测款 |
-| 知识库 | 上传 Word / PDF / Markdown / 网页，切片检索；飞书文档需先「下载为」Word/PDF 再上传 |
-| 接入配置 | 类似 CC Switch：添加多个模型供应商（智谱 GLM、GLM 编码套餐、GLM Anthropic 协议、DeepSeek、Kimi、通义、豆包、OpenAI、Claude、自定义），一键启用、测试、从上游获取模型列表；FastMoss / 1688 接口凭证预留位 |
-| Agent | 普通 AI 聊天界面，流式输出，可引用知识库并标注来源，显示思考过程，可随时停止 |
+选品研判 · 1688 找货比价 · AI 上架 · ERP 推送 · 带货脚本：一条多 Agent 流水线跑完
 
-所有 AI 功能都调用你在「接入配置」里启用的真实模型，没有离线假数据。
+一个人，做完一个跨境团队的活。
 
-### 自动上品：选品 → 1688 找货 → 上架包 → ERP
-| 环节 | 有接口时 | 接口没申请下来时 |
+![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
+![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
+![Chrome Extension](https://img.shields.io/badge/Chrome-MV3_插件-4285F4?logo=googlechrome&logoColor=white)
+![Playwright](https://img.shields.io/badge/E2E-Playwright_24_用例-2EAD33?logo=playwright&logoColor=white)
+![LLM](https://img.shields.io/badge/大模型-GLM_/_DeepSeek_/_Kimi_/_通义_/_Claude-8A2BE2)
+
+<img src="docs/images/home.jpg" alt="TikTok 运营台首页" width="900">
+
+</div>
+
+---
+
+## 为什么做这个
+
+做 TikTok 东南亚跨境，一个商品从「看到数据」到「挂上店铺」要经过：数据工具里筛品、算利润、查侵权，在 1688 上反复搜索比价，写马来语 / 泰语上架资料，录进 ERP，再写带货视频脚本。这些工作通常要选品、采购、运营、内容 **4～5 个岗位、十几个人** 配合完成，大部分时间都花在重复判断和搬运上。
+
+**TikTok 运营台把这条链路交给 AI Agent 接力完成**：人只在关键节点做决定，其他交给系统。
+
+```mermaid
+flowchart LR
+    A[FastMoss<br>选品数据] --> B[研判 Agent<br>六维评分 + AI 结论]
+    B --> C[找货 Agent<br>1688 关键词 + 以图搜]
+    C --> D[采购 Agent<br>比价矩阵 + 同款判断]
+    D --> E[上架 Agent<br>本地语言资料 + 定价]
+    E --> F{人工确认}
+    F --> G[上品 Agent<br>推送 ERP]
+    B -.-> H[脚本 Agent<br>带货视频分镜]
+```
+
+## 核心能力
+
+| | 能力 | 说明 |
 |---|---|---|
-| 选品数据 | FastMoss 开放接口（待官方文档） | 在「智能选品」导入 FastMoss 导出的 Excel |
-| 1688 找货 | 1688 开放平台（官方）或第三方数据接口（万邦等 item_search / item_search_img / item_get） | 浏览器插件「运营台助手」：在 1688 搜索 / 以图搜 / 详情页一键发送货源；或手动添加 |
-| 上品 | 妙手 ERP 开放平台（测试版，审核通过后核对接口路径） | 通用 Webhook：把上架包 POST 给 n8n、影刀 RPA 或自研 ERP；或导出 CSV |
+| 🎯 | **多维度智能选品** | 导入 FastMoss 导出数据，从需求规模、增长趋势、达人带货、竞争格局、利润空间、风险六个维度打分，给出「可以上 / 谨慎测试 / 不建议上」和理由 |
+| 🧠 | **AI 研判报告** | 整批商品的市场概览、机会方向、品型地图、价格带分析；逐个商品给出能不能做、怎么做、下一步 |
+| 🛡️ | **硬性风险拦截** | 邀约类目、带电商品、品牌 / IP 侵权、疑似刷单数据自动识别；**规则优先，AI 不能把有硬伤的商品判成能上** |
+| 💰 | **利润倒推** | 按站点平台费率、达人佣金、退货、广告费和汇率，算出单件净利和「采购 + 物流最多能花多少」 |
+| 🔍 | **1688 找货比价** | AI 提炼中文搜索词，关键词 + 主图以图搜，比价矩阵排序，AI 判断同款度，标出利润是否成立 |
+| ✍️ | **AI 上架包** | 本地语言 + 英文标题、5 条卖点、描述、搜索词、SKU、按目标利润定价；自动检查违禁词 |
+| 🔗 | **ERP 一键推送** | 妙手 ERP、通用 Webhook（n8n / 影刀 / 自研 ERP）、CSV 导出；店小秘、马帮等预留接入 |
+| ⚙️ | **多 Agent 流水线** | 7 个环节自动接力，每一步有状态和日志；缺接口时停下提示，可选全自动 |
+| 🧩 | **浏览器插件** | 没有 1688 官方接口也能跑：插件自动搜索、上传主图以图搜、采集货源、补全详情 |
+| 🎬 | **带货视频脚本** | 「钩子 → 痛点 → 演示 → 证明 → 行动号召」分镜脚本 + 3 个 A/B 测试钩子 |
+| 📚 | **知识库 + Agent** | 上传运营资料切片检索，对话式 Agent 引用来源回答 |
+| 👥 | **多账号与数据隔离** | 管理员 + 注册用户，商品、知识库、模型密钥按账号完全隔离，适合对外演示 |
 
-- **找货**：AI 把 TikTok 标题提炼成 1688 中文搜索词，关键词 + 主图以图搜合并去重，补全详情后按比价矩阵排序（阶梯价 30%、库存深度 20%、发货地 15%、单件重量 15%、SKU 丰富度 10%、商品状态 10%），AI 判断同款度，按「采购 + 估算物流 ≤ 成本上限」标出利润是否成立。选定供应商后采购价和物流自动填进利润测算。
-- **上架包**：站点本地语言 + 英文标题、5 条卖点、分段描述、搜索词、SKU、按目标利润倒推的定价；违禁词（绝对化、医疗功效、100%/guaranteed、站外引流、品牌名误用）和商品风险检查。人工确认后推送 ERP。
-- **自动上品流水线**（导航「自动上品」）：选品数据 → AI 研判 → 1688 找货 → 选定供应商 → 上架包 → 人工确认（可设为全自动）→ 推送 ERP，每一步有状态和日志，缺接口的环节会停下来提示怎么补。
-- **浏览器插件**：「接入配置 → 浏览器插件与 API 令牌」下载并生成令牌。选好商品后插件自动到 1688 关键词搜 / 上传主图以图搜（自动点弹出框里的「搜索」），采集结果并在后台隔十几秒打开 1 个排名靠前的详情页补阶梯价、库存、重量、发货地。识别不依赖固定类名（详情链接、data-offerid、埋点属性、页面数据都能认）；识别失败时把页面结构上报到运营台的 `ext-debug` 目录，方便调整规则。防风控：操作节奏随机放慢，两次找货至少间隔 15 秒；1688 弹出验证时暂停等人工处理，之后 20 分钟内不自动打开详情页。插件和 n8n / 影刀等程序都用 `Authorization: Bearer tk_…` 调用 `/api/ext/*` 接口。
+---
 
-### 账号与数据隔离
-- 首页无需登录；其他页面需要登录。**第一个注册的账号自动成为管理员**，并接管旧版单用户的数据和模型配置。
-- 每个账号的商品、脚本、知识库、模型 Key、对话互相不可见；「运营参考（平台内置）」知识库所有人只读共享。
-- 管理员在右上角菜单 →「用户管理」可开关注册、停用 / 启用账号、重置密码、设为管理员、删除账号（连同其数据）。
-- 忘记管理员密码：停止服务后在服务器上执行 `node server/cli.js admin <用户名> [新密码]`（不填密码则随机生成），`node server/cli.js users` 列出所有账号。
-- 密码用 scrypt 加盐哈希保存；登录凭证为 HttpOnly Cookie，30 天有效；同一 IP 连续输错 10 次锁定 15 分钟。
+## 功能详解
 
-### 智谱 GLM 接入
+### 1. 智能选品：导入数据，AI 告诉你哪些能上、为什么
+
+<img src="docs/images/products.jpg" alt="智能选品与 AI 研判报告" width="900">
+
+- **零配置导入**：拖入 FastMoss 导出的 Excel / CSV，自动识别全部 22 个字段，兼容 `RM` 等币种前缀和区间价格。
+- **六维评分**：
+  - **需求规模**：近 7 天销量、销售额排名。
+  - **增长趋势**：动销倍数，即近 7 天销量 ÷ 28 天周均。
+  - **达人带货**：达人数、出单率、视频与直播数。
+  - **竞争格局**：品牌垄断度。
+  - **利润空间**：实际成交均价，并倒推成本上限。
+  - **风险**：侵权、类目、带电、数据异常。
+- **AI 研判报告**：
+  - 市场一句话总结、机会方向（建议售价、差异化打法、1688 搜索词）。
+  - 品型地图、价格带分布、品牌集中度、新品占比。
+  - 每个商品的 AI 结论和理由。
+- **数据可信度**：销量远超同类但达人很少、销量来源不明等异常数据标记为「数据可疑」，不计入市场统计。
+- **工程上的稳健性**：AI 分批研判、并发调用；模型输出被截断时自动修复 JSON，失败时拆半重试；服务重启后任务可以恢复。
+
+<img src="docs/images/product-analysis.jpg" alt="单品 AI 研判与维度评分" width="900">
+
+### 2. 1688 找货：比价矩阵 + AI 同款判断
+
+<img src="docs/images/product-sourcing.jpg" alt="1688 找货与比价矩阵" width="900">
+
+| 维度 | 权重 | 看什么 |
+|---|---|---|
+| 阶梯价 | 30% | 起批价、批量价 |
+| 库存深度 | 20% | 能不能稳定供货 |
+| 发货地 | 15% | 广东、浙江等产业带优先 |
+| 单件重量 | 15% | 决定跨境物流成本 |
+| SKU 丰富度 | 10% | 款式、颜色可选 |
+| 商品状态 | 10% | 是否在售 |
+
+- AI 判断每个货源与 TikTok 商品的同款度（0～100），**同款优先，价格再低不是同款也没用**。
+- 到手成本 = 采购价 + 估算跨境物流，直接和成本上限比较，红绿标出利润是否成立。
+- 选定供应商后，采购价和物流自动写回利润测算。
+
+### 3. AI 上架包：本地化资料 + 违禁词检查
+
+<img src="docs/images/product-listing.jpg" alt="AI 上架包与违禁词检查" width="900">
+
+- 按站点生成本地语言（马来语 / 泰语 / 越南语…）和英文标题、5 条卖点、分段描述、搜索词、SKU。
+- 按目标利润率倒推售价。
+- 违禁词检查：
+  - 绝对化用语（best / No.1）、绝对承诺（100% / guaranteed）。
+  - 医疗功效、站外引流。
+  - 品牌名误用：自动识别 `for iPhone` 这类兼容写法，不误报。
+- 人工确认后才能推送，推送成功后商品自动进入「测款中」。
+
+### 4. 自动上品流水线：多 Agent 接力
+
+<img src="docs/images/pipeline.jpg" alt="多 Agent 自动上品流水线" width="900">
+
+- 7 个环节：选品数据 → AI 研判 → 1688 找货 → 选定供应商 → 生成上架包 → 人工确认 → 推送 ERP。
+- 运行前检查大模型、选品数据、1688 找货、ERP 四项是否就绪，缺什么、去哪补一目了然。
+- 可配置范围（最近一次导入 / 整个选品库）、取前 N 个「可以上」、同款度门槛、推送目标；人工确认可改为全自动。
+- 中断后可以从断点继续。
+
+### 5. 浏览器插件「运营台助手」：没有官方接口也能自动找货
+
+1688 开放平台接口申请门槛高，妙手等 ERP 接口要审核。插件在你**自己已登录的浏览器**里完成采集：
+
+- **自动关键词搜**：选好商品，插件打开 1688 搜索，像人一样浏览页面，采集结果卡片送回运营台。
+- **自动以图搜**：插件把商品主图传进 1688「以图搜款」，自动点击「搜索」并采集结果。
+- **自动补详情**：在后台依次打开排名靠前的详情页，补全阶梯价、库存、单件重量、发货地、SKU。
+- **识别不依赖页面样式**：从详情链接、商品 ID 属性、埋点数据、页面内嵌数据多路识别，1688 改版也能工作；识别失败时自动把页面结构上报到运营台，便于快速修正。
+- **防风控**：操作节奏随机，详情页间隔 8～15 秒，两次找货间隔至少 15 秒；弹出人机验证时暂停等你处理，之后 20 分钟内不再自动打开详情页。
+- 插件和 n8n、影刀等外部程序统一用 API 令牌（`Authorization: Bearer tk_…`）调用 `/api/ext/*`。
+
+### 6. 接入配置：多模型、多数据源、多 ERP
+
+<img src="docs/images/providers.jpg" alt="接入配置" width="900">
+
+| 类别 | 支持 |
+|---|---|
+| 大模型 | 智谱 GLM（按量 / 编码套餐 / Anthropic 协议）、DeepSeek、Kimi、通义千问、豆包、OpenAI、Claude、任意 OpenAI 兼容接口 |
+| 1688 数据 | 1688 开放平台（官方签名调用）、第三方数据接口（关键词搜 / 以图搜 / 商品详情）、浏览器插件 |
+| ERP | 妙手 ERP、通用 Webhook（HMAC 签名）、CSV 导出；店小秘、马帮、芒果店长、通途、领星、积加预留 |
+
+---
+
+## 系统架构
+
+```mermaid
+flowchart TB
+    subgraph Client[客户端]
+        W[运营台 Web<br>原生 ES Modules SPA]
+        X[Chrome 插件<br>Manifest V3]
+    end
+    subgraph Server[服务端 Node.js 22 + Express 5]
+        R[路由 / 鉴权 / 数据隔离<br>AsyncLocalStorage]
+        S1[选品 · 研判]
+        S2[找货 · 比价]
+        S3[上架 · 推送]
+        S4[流水线编排]
+        S5[脚本 · 知识库 · Agent]
+        DB[(JSON 存储<br>按账号隔离)]
+    end
+    subgraph External[外部服务]
+        L[大模型 API]
+        A[1688 接口]
+        E[ERP / Webhook]
+    end
+    W --> R
+    X -->|API 令牌| R
+    X -->|自动采集| A1688[1688 网页]
+    R --> S1 & S2 & S3 & S4 & S5
+    S1 & S2 & S3 & S4 & S5 --> DB
+    S1 & S2 & S3 & S5 --> L
+    S2 --> A
+    S3 --> E
+```
+
+| 目录 | 内容 |
+|---|---|
+| `server/services/selection.js` | 选品规则：站点费率、品型识别、六维评分、风险标记 |
+| `server/services/report.js` | AI 研判报告：分批、并发、截断修复、重试、断点恢复 |
+| `server/services/sourcing.js` | 1688 找货：搜索词、比价矩阵、同款判断、到手成本 |
+| `server/services/listing.js` | 上架包、违禁词、定价、推送 |
+| `server/services/pipeline.js` | 多 Agent 流水线编排 |
+| `server/connectors.js` | 数据源 / ERP 连接器、签名、防内网访问 |
+| `extension/` | 浏览器插件：任务调度、页面识别、自动操作 |
+| `tests/` | Playwright 端到端测试 + 本地模拟上游（大模型 / 1688 / Webhook） |
+
+## 安全设计
+
+- **账号隔离**：商品、脚本、知识库、模型密钥、连接器全部按账号隔离；第一个注册的账号自动成为管理员。管理员可以开关注册、停用账号、重置密码、删除账号（连同数据）。
+- **密码与会话**：scrypt 加盐哈希；HttpOnly 会话 Cookie；同一 IP 连续输错 10 次锁定 15 分钟；跨站请求来源校验。
+- **API 令牌**：只显示一次，服务端只存哈希，可随时撤销。
+- **防内网访问**：普通用户配置的接口地址不能指向服务器内网。
+- **部署隔离**：服务只监听 `127.0.0.1`，外网只能经 Cloudflare 隧道和域名访问，IP 直连一律 403。
+- **密钥不入库**：隧道令牌、服务器地址只放在被 git 忽略的 `deploy/deploy.env`。
+
+---
+
+## 快速开始
+
+### Windows 本机
+安装 [Node.js 18+](https://nodejs.org/zh-cn/download)，双击 `start.bat`，浏览器打开 `http://localhost:3800`，注册第一个账号（自动成为管理员）。
+
+### macOS / Linux
+```bash
+npm install
+npm start          # http://localhost:3800
+```
+
+### 接入大模型（以智谱 GLM 为例）
+「接入配置 → 添加供应商」选择预设即可：
 - OpenAI 兼容（按量计费）：`https://open.bigmodel.cn/api/paas/v4`
-- GLM 编码套餐（和 Codex 等工具同一套额度）：`https://open.bigmodel.cn/api/coding/paas/v4`
+- GLM 编码套餐：`https://open.bigmodel.cn/api/coding/paas/v4`
 - Anthropic 协议：`https://open.bigmodel.cn/api/anthropic`（协议选 Anthropic，地址不要再加 /v1）
 
-模型名填 `glm-4.6`、`glm-4.5-air` 等，以智谱控制台为准。
+### 安装浏览器插件
+1. 「接入配置 → 浏览器插件与 API 令牌」：下载插件压缩包，生成令牌。
+2. 解压得到 `tiktok-ops-helper` 文件夹（里面直接是 `manifest.json`）。
+3. Chrome 打开 `chrome://extensions`，开启开发者模式，点 **「加载未打包的扩展程序」**（不是「打包扩展程序」），选择该文件夹。
+4. 点插件图标，粘贴令牌，「保存并测试连接」。
 
-## Windows 启动
+## 部署（Cloudflare 隧道）
 
-安装 [Node.js 18+](https://nodejs.org/zh-cn/download)，双击 `start.bat`，浏览器打开 `http://localhost:3800`。
+```bash
+# deploy/deploy.env（已被 git 忽略）
+CF_TUNNEL_TOKEN=...
+DEPLOY_SERVER=root@你的服务器IP
+ADMIN_USER=admin
+
+./deploy/deploy.sh                                              # macOS / Linux
+powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1    # Windows
+```
+
+一条命令完成：打包 → 上传 → 备份旧数据 → 安装 Node 运行时与依赖 → systemd 服务 → Cloudflare 隧道 → 健康检查。
+- 数据目录 `/var/lib/tkagent`，备份在 `/var/backups/tkagent`，日志 `journalctl -u tkagent -f`。
+- 忘记管理员密码：停止服务后执行 `node server/cli.js admin <用户名> [新密码]`；`node server/cli.js users` 列出所有账号。
 
 ## 测试
 
 ```bash
 npm install && npx playwright install chromium
-npm test   # Playwright 无头；使用本地模拟大模型上游（tests/fake-upstream.js）验证真实调用链路
+npm test
 ```
 
-## ☁️ 服务器部署（Cloudflare 隧道）
+24 个 Playwright 端到端用例，覆盖注册登录与数据隔离、导入与评分、AI 研判报告、找货比价、上架包与违禁词、Webhook 签名推送、流水线，以及**在真实 Chromium 中加载插件**完成自动关键词搜、自动以图搜、采集新版 1688 卡片、补详情的全过程。大模型、1688、ERP 由本地模拟服务提供，测试走真实调用链路，结果稳定可重复。
 
-在你自己的电脑上执行一条命令即可完成：打包 → 上传 → 安装 Node.js 运行时与生产依赖 → systemd 服务 → Cloudflare 隧道。
+## 路线图
 
-```powershell
-# Windows（项目根目录）
-powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1
-# macOS / Linux
-./deploy/deploy.sh root@你的服务器IP
-```
-
-- 服务以 `tkagent` 账户运行，**只监听 `127.0.0.1:5100`**，外网无法通过 IP+端口访问；防火墙再额外拦截 5100。
-- `ALLOWED_HOSTS` 只放行隧道域名，其它 Host 头一律 403。
-- 隧道 token 和服务器地址放在 `deploy/deploy.env`（`CF_TUNNEL_TOKEN=...`、`DEPLOY_SERVER=root@服务器IP`，已被 git 忽略）：token 部署时上传并在服务器上读取后删除；写了 `DEPLOY_SERVER` 后部署脚本可以不带参数运行。
-- 在 Cloudflare Zero Trust → Tunnels → Public Hostname 中把域名指向 `http://127.0.0.1:5100`。
-- 数据目录 `/var/lib/tkagent`，日志 `journalctl -u tkagent -f`，重新部署直接再次运行脚本（数据保留）。
-
+- [x] 多维度选品 + AI 研判报告
+- [x] 1688 找货比价 + AI 同款判断
+- [x] AI 上架包 + 违禁词检查 + Webhook / ERP 推送
+- [x] 多 Agent 自动上品流水线
+- [x] 浏览器插件自动关键词搜 / 以图搜 / 补详情
+- [ ] 妙手 ERP 官方接口审核通过后完成真实上品联调
+- [ ] FastMoss 开放接口自动拉取选品数据
+- [ ] 上架后数据回流：跟踪测款销量，自动建议加推或下架
+- [ ] 团队协作：商品分配与审核流
