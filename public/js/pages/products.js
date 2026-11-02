@@ -309,6 +309,8 @@ export async function render(view, [openId, openTab]) {
     let erps = [];
     if (tab === 'source') links = await api(`/products/${id}/sourcing/links`).catch(() => ({}));
     if (tab === 'listing') erps = (await api('/connectors').catch(() => ({ items: [] }))).items.filter((c) => c.kind === 'erp' && c.enabled !== false && c.status !== 'pending');
+    // 等数据期间已经切到别的页面（或同一页面被重新渲染）：不再弹出，避免叠出两个详情
+    if (!view.isConnected) return;
     const m = modal({ title: esc(p.name.length > 70 ? p.name.slice(0, 70) + '…' : p.name), wide: true, body: '<div id="pd"></div>', footer: '<div id="pf" class="row" style="width:100%"></div>' });
     const root = $('#pd', m.el), foot = $('#pf', m.el);
 
