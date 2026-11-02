@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TikTok 运营台助手",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "选好运营台里的商品，自动到 1688 关键词搜 / 以图搜，采集货源并打开详情页补全阶梯价、库存、重量、发货地，送回运营台比价。",
   "icons": {
     "16": "icon16.png",

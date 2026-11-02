@@ -22,11 +22,16 @@ async function call(path, { method = 'GET', body } = {}) {
 async function tasks() {
   return (await chrome.storage.session.get({ tasks: {} })).tasks;
 }
-async function setTask(tabId, t) {
-  const all = await tasks();
-  if (t) all[tabId] = t;
-  else delete all[tabId];
-  await chrome.storage.session.set({ tasks: all });
+// 读改写排队执行：关标签（清任务）和开新标签（记任务）同时发生时，后写的不会覆盖先写的
+let queue = Promise.resolve();
+function setTask(tabId, t) {
+  queue = queue.then(async () => {
+    const all = await tasks();
+    if (t) all[tabId] = t;
+    else delete all[tabId];
+    await chrome.storage.session.set({ tasks: all });
+  }).catch(() => {});
+  return queue;
 }
 
 // ---------- 防风控：1688 弹过验证后一段时间内不自动打开详情页；两次找货至少间隔 15 秒 ----------
