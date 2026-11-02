@@ -5,3 +5,9 @@ playwright-report/
 *.log
 .env
 deploy/deploy.env
+.env.*
+*.pem
+*.key
+id_rsa*
+*.env
+ext-debug/

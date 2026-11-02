@@ -11,7 +11,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
 ![Chrome Extension](https://img.shields.io/badge/Chrome-MV3_插件-4285F4?logo=googlechrome&logoColor=white)
-[![E2E](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml/badge.svg)](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml)
+[![CI](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml/badge.svg)](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml)
 ![Playwright](https://img.shields.io/badge/Playwright-24_个端到端用例-2EAD33?logo=playwright&logoColor=white)
 ![LLM](https://img.shields.io/badge/大模型-GLM_/_DeepSeek_/_Kimi_/_通义_/_Claude-8A2BE2)
 
@@ -206,7 +206,7 @@ flowchart TB
 - **API 令牌**：只显示一次，服务端只存哈希，可随时撤销。
 - **防内网访问**：普通用户配置的接口地址不能指向服务器内网。
 - **部署隔离**：服务只监听 `127.0.0.1`，外网只能经 Cloudflare 隧道和域名访问，IP 直连一律 403。
-- **密钥不入库**：隧道令牌、服务器地址只放在被 git 忽略的 `deploy/deploy.env`。
+- **密钥不入库**：隧道令牌、服务器地址只放在被 git 忽略的 `deploy/deploy.env`；每次推送由 CI 用 gitleaks 扫描全部提交历史，发现密钥即报红。
 
 ---
 

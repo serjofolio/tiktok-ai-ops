@@ -1,4 +1,4 @@
-name: E2E
+name: CI
 
 on:
   push:
@@ -10,6 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  secrets:
+    name: 密钥泄露扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   playwright:
     runs-on: ubuntu-latest
     timeout-minutes: 20
