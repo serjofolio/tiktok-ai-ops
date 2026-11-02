@@ -11,7 +11,8 @@
 ![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
 ![Chrome Extension](https://img.shields.io/badge/Chrome-MV3_插件-4285F4?logo=googlechrome&logoColor=white)
-![Playwright](https://img.shields.io/badge/E2E-Playwright_24_用例-2EAD33?logo=playwright&logoColor=white)
+[![E2E](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml/badge.svg)](https://github.com/serjofolio/tiktok-ai-ops/actions/workflows/test.yml)
+![Playwright](https://img.shields.io/badge/Playwright-24_个端到端用例-2EAD33?logo=playwright&logoColor=white)
 ![LLM](https://img.shields.io/badge/大模型-GLM_/_DeepSeek_/_Kimi_/_通义_/_Claude-8A2BE2)
 
 <img src="docs/images/home.jpg" alt="TikTok 运营台首页" width="900">
