@@ -62,7 +62,18 @@ const TYPES = [
   ['灯', /\blamp\b|night light|lampu|LED light|灯/i],
   ['电池', /CR20\d\d|battery|bateri|电池/i],
   ['存储', /memory card|sd card|flash drive|pendrive|U盘|内存卡/i],
+  // 首饰：英语 / 马来语 / 印尼语 / 泰语 / 越南语 / 西语 / 中文
+  ['耳饰', /ear\s?rings?|ear\s?studs?|\bstuds?\b|\bhoops?\b|huggies?|anting|subang|ต่างหู|bông tai|pendientes|aretes|耳环|耳钉|耳饰|耳圈/i],
+  ['项链', /necklaces?|pendants?|chokers?|kalung|rantai leher|loket|สร้อยคอ|dây chuyền|collares?\b|项链|吊坠|锁骨链/i],
+  ['手链手镯', /bracelets?|bangles?|\bcuffs?\b|gelang(?! kaki)|กำไล|สร้อยข้อมือ|vòng tay|pulseras?|手链|手镯|手串/i],
+  ['戒指', /\brings?\b(?!\s*(light|holder|stand|lamp))|cincin|แหวน|nhẫn|anillos?\b|戒指|指环/i],
+  ['脚链', /anklets?|gelang kaki|tobilleras?|脚链/i],
+  ['首饰套装', /jewell?ery sets?|set perhiasan|首饰套装/i],
+  ['胸针', /brooch|kerongsang|bros\b|胸针/i],
 ];
+const JEWELRY_TYPES = new Set(['耳饰', '项链', '手链手镯', '戒指', '脚链', '首饰套装', '胸针']);
+const JEWELRY_CATEGORY = /首饰|珠宝|饰品|jewel|perhiasan|barang kemas|ornament|เครื่องประดับ|trang sức|joyería/i;
+const isJewelry = (p, type = productType(p.name)) => JEWELRY_TYPES.has(type) || JEWELRY_CATEGORY.test(p.category || '');
 
 function productType(name) {
   const s = String(name || '');
@@ -77,8 +88,10 @@ function productType(name) {
 }
 
 // 知名品牌：卖家本身是品牌方/经销商时，跨境卖家不能卖同款
-const BRANDS = ['ugreen', 'mcdodo', 'niumo', 'baseus', 'anker', 'xiaomi', 'redmi', 'samsung', 'apple', 'huawei', 'honor', 'oppo', 'vivo', 'realme', 'infinix', 'jbl', 'sony', 'jeep', 'torras', 'spigen', 'belkin', 'philips', 'lenovo', 'cuktech', 'hoco', 'remax', 'joyroom', 'edifier', 'soundpeats', 'qcy', 'romoss', 'orico', 'esr', 'ringke'];
+const BRANDS = ['ugreen', 'mcdodo', 'niumo', 'baseus', 'anker', 'xiaomi', 'redmi', 'samsung', 'apple', 'huawei', 'honor', 'oppo', 'vivo', 'realme', 'infinix', 'jbl', 'sony', 'jeep', 'torras', 'spigen', 'belkin', 'philips', 'lenovo', 'cuktech', 'hoco', 'remax', 'joyroom', 'edifier', 'soundpeats', 'qcy', 'romoss', 'orico', 'esr', 'ringke', 'pavoi', 'pandora', 'swarovski', 'kendra scott', 'mejuri', 'gorjana', 'ana luisa', 'lovisa', 'monica vinader', 'david yurman'];
 const IP = /\bMLBB\b|mobile legends|black myth|wukong|pok[eé]mon|disney|marvel|sanrio|hello kitty|naruto|one piece|doraemon|labubu|spider-?man|\bnba\b/i;
+// 奢侈品牌名或它们的标志性设计：不是自己的品牌就不能在标题和视频里提
+const LUXURY = /van\s?cleef|alhambra|cartier|tiffany|bvlgari|bulgari|chanel|dior|gucci|hermes|hermès|louis vuitton|\blv\b/i;
 
 function sellerBrand(p) {
   const shop = String(p.shop || '').toLowerCase();
@@ -137,6 +150,7 @@ function metrics(p, now = Date.now()) {
     recentShare: total && s28 != null ? round(s28 / total, 3) : null,
     weeklyAvg28: s28 != null ? Math.round(s28 / 4) : null,
     type: productType(p.name),
+    group: isJewelry(p) ? '首饰' : '',
     brand: sellerBrand(p),
     ip: IP.test(p.name || '') || IP.test(p.shop || ''),
     priceSpread: p.priceMin && p.priceMax ? round(p.priceMax / p.priceMin, 2) : null,
@@ -199,6 +213,12 @@ function riskFlags(p, m, g, sel) {
   if (m.brand) add('block', `品牌商品（${m.brand}）`, `卖家是品牌方或品牌经销商，这个商品不能卖同款（需品牌授权）；如果品型有需求，可以做无品牌同类，但要和品牌的信任度、价格竞争`);
   if (m.ip) add('block', 'IP 授权', '商品使用了游戏/动漫等 IP，未获授权属于侵权，不能跟卖');
   if (/zikir|quran|ruqyah|surah|al-?quran|佛经|念佛/i.test(p.name || '')) add('minor', '宗教用品', '宗教相关商品文化敏感，宣传话术和画面要谨慎');
+  if (LUXURY.test(p.name || '')) add('block', '奢侈品牌名', '标题里出现奢侈品牌名或它们的标志性系列：平台禁止冒用商标，不能跟卖，也不能在视频里说成「平替」');
+  if (m.group === '首饰') {
+    if (/clover|四叶草/i.test(p.name || '')) add('minor', '设计相似风险', '四叶草造型容易让人联想到大牌的标志性系列：不要在标题和视频里提任何大牌或说「平替」，上架前确认供应商不是直接仿款');
+    if (/hypoallergenic|nickel[- ]?free|lead[- ]?free|sterling|925|18k|14k|tarnish|waterproof|anti[- ]?karat|tak berkarat|防过敏|无镍|不褪色|防水|纯银/i.test(p.name || ''))
+      add('minor', '材质和功能要有依据', '标题写了防过敏、无镍、925、18K、防水或不褪色：上架和拍视频前向供应商要检测报告或自己实测，说不出依据就不要这样写');
+  }
 
   // 数据可信度
   const creators = p.creatorCount ?? 0, videos = p.videoCount ?? 0, lives = p.liveCount ?? 0;

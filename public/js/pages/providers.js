@@ -10,16 +10,19 @@ export async function render(view) {
   view.innerHTML = `
   <section class="page-hero">
     <div class="kicker">接入配置 · API</div>
-    <h2>接入你的<em>大模型</em>，一键切换</h2>
-    <p>添加多个模型供应商，点「启用」即可切换整个平台（选品分析、视频脚本、Agent）使用的模型。密钥只保存在你自己的服务器上，页面只显示脱敏后的值。</p>
+    <h2>接入<em>大模型</em>和视频模型</h2>
+    <p>添加多个模型供应商，点「启用」即可切换整个平台（选品分析、视频脚本、Agent）使用的模型。在下面的「视频模型」接入后，脚本可以直接生成视频。页面只显示脱敏后的密钥。</p>
     <div class="actions"><button class="btn lg primary-glow" id="add">${icon('plus')}添加供应商</button></div>
   </section>
   <div class="section-title" style="margin-top:0"><h3>模型供应商</h3><span class="muted small" id="pcount"></span></div>
   <div class="col" id="plist"></div>
 
+  <div class="section-title section-wrap"><h3>视频模型</h3><span class="muted small">从脚本直接生成视频；拆解爆款时看画面、听口播</span><div class="spacer"></div><button class="btn sm" id="add-media">${icon('plus', 14)}添加模型</button></div>
+  <div id="media-conns"></div>
+
   <div class="section-title"><h3>数据源与 ERP</h3><span class="muted small">FastMoss 选品数据 → 1688 找货 → ERP 上品；接口没申请下来的环节，用浏览器插件或通用 Webhook 兜底</span><div class="spacer"></div><button class="btn sm" id="add-conn">${icon('plus', 14)}添加连接</button></div>
   <div id="conns"></div>
-  <div class="section-title"><h3>浏览器插件与 API 令牌</h3><span class="muted small">插件在你自己登录的 1688 页面采集货源；n8n、影刀等程序也用令牌调用运营台接口</span></div>
+  <div class="section-title"><h3>浏览器插件与 API 令牌</h3><span class="muted small">插件在你自己登录的 1688 和 FastMoss 页面发送数据；n8n、影刀等程序也用令牌调用运营台接口</span></div>
   <div class="card card-pad" id="tokens"></div>
 
   <div class="section-title"><h3>店铺信息</h3><span class="muted small">影响脚本默认语言和分析时的目标市场</span></div>
@@ -149,6 +152,7 @@ export async function render(view) {
 
   // ---------- 数据源与 ERP 连接器 ----------
   const KIND = { product: ['选品数据', 'target'], sourcing: ['1688 找货', 'search'], erp: ['ERP 上品', 'upload'] };
+  const MEDIA_KIND = { video: ['生成视频', 'video', '接入后，脚本页点「生成视频」就能直接出片。没有接入时其他功能不受影响'], vision: ['看画面', 'image', '拆解爆款视频时用。不接也行：当前大模型能看图时会直接用它'], asr: ['听口播', 'file', '拆解爆款视频时把口播转成文字。不接时只能从字幕读'] };
   const STATUS = { ready: ['可用', 'v-go'], beta: ['测试版', 'v-watch'], pending: ['待开放接口', 'v-na'] };
   let conn = { catalog: {}, items: [] };
   async function loadConns() {
@@ -157,6 +161,7 @@ export async function render(view) {
   }
   function renderConns() {
     const box = $('#conns', view);
+    drawGroups($('#media-conns', view), MEDIA_KIND, (k) => MEDIA_KIND[k][2]);
     box.innerHTML = Object.entries(KIND).map(([k, [label, ic]]) => {
       const items = conn.items.filter((c) => c.kind === k);
       const builtin = Object.entries(conn.catalog).filter(([, v]) => v.kind === k && v.builtin);
@@ -166,6 +171,11 @@ export async function render(view) {
           ${builtin.map(([key, v]) => `<div class="conn builtin"><div class="conn-ic">${icon('link', 15)}</div><div style="flex:1"><b>${esc(v.name)}</b><div class="muted small">${esc(v.desc)}</div></div><a class="btn sm ghost" href="#tokens-anchor" data-goto-tokens>设置插件</a></div>`).join('')}
           ${!items.length && !builtin.length ? `<div class="conn empty-conn muted small">还没有添加，点右上角「添加连接」</div>` : ''}</div></div>`;
     }).join('');
+    bindConns(box);
+    $$('[data-goto-tokens]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#tokens', view).scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
+  }
+
+  function bindConns(box) {
     $$('.conn[data-id]', box).forEach((el) => {
       const c = conn.items.find((x) => x.id === el.dataset.id);
       el.querySelector('[data-act=edit]').onclick = () => connEditor(c.vendor, c);
@@ -184,7 +194,27 @@ export async function render(view) {
         }
       });
     });
-    $$('[data-goto-tokens]', box).forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#tokens', view).scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
+  }
+
+  // 视频模型分组
+  function drawGroups(box, kinds, hint) {
+    box.innerHTML = Object.entries(kinds).map(([k, [label, ic]]) => {
+      const items = conn.items.filter((c) => c.kind === k);
+      return `<div class="conn-group"><div class="conn-head">${icon(ic, 16)}<b>${label}</b><span class="muted small">${esc(hint(k))}</span></div>
+        <div class="conn-list">${items.map((c) => { const st = STATUS[c.status] || STATUS.pending; return `<div class="conn ${c.enabled === false ? 'off' : ''}" data-id="${c.id}"><div class="conn-ic">${initial(c.name)}</div><div style="flex:1;min-width:0"><b>${esc(c.name)}</b><div class="muted small">${esc(c.options?.model || conn.catalog[c.vendor]?.name || '')}</div><div class="small" data-result></div></div><span class="verdict ${st[1]}" style="font-size:11px">${st[0]}</span><button class="btn sm ghost" data-act="test" data-loading="测试中…">测试</button><button class="btn sm ghost" data-act="edit">编辑</button><button class="icon-btn danger" data-act="del">${icon('trash', 14)}</button></div>`; }).join('')}${items.length ? '' : `<div class="conn empty-conn muted small">还没有添加</div>`}</div></div>`;
+    }).join('');
+    bindConns(box);
+  }
+
+  function mediaPicker() {
+    const m = modal({
+      title: '添加模型', wide: true,
+      body: `<p class="small muted" style="margin-top:0">视频模型按生成的秒数或条数收费，费用在你自己的模型账号里扣。标着「测试版」的是按官方文档接好、还没用真实密钥跑过的，第一次用先生成一条短的试试。</p>${Object.entries(MEDIA_KIND).map(([k, [label]]) => `<h4 class="rp-h" style="margin-top:6px">${label}</h4><div class="preset-grid conn-pick">${Object.entries(conn.catalog).filter(([, v]) => v.kind === k).map(([key, v]) => { const st = STATUS[v.status]; return `<div class="preset-card" data-v="${key}"><div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b><span class="verdict ${st[1]}" style="font-size:10px">${st[0]}</span></div><small>${esc(v.desc)}</small></div>`; }).join('')}</div>`).join('')}`,
+      onMount(el, close) {
+        $$('[data-v]', el).forEach((c) => (c.onclick = () => { close(); connEditor(c.dataset.v); }));
+      },
+    });
+    return m;
   }
 
   function connPicker() {
@@ -205,7 +235,7 @@ export async function render(view) {
       body: `<p class="small muted" style="margin-top:0">${esc(v.desc)} ${v.link ? `<a href="${esc(v.link)}" target="_blank" rel="noopener" style="color:var(--lime)">申请入口 ↗</a>` : ''}</p>
         <form class="grid g2" id="cf"><label class="field">名称<input class="input" name="name" value="${esc(c?.name || v.name)}"></label><label class="field">状态<select class="input" name="enabled"><option value="1" ${c?.enabled !== false ? 'selected' : ''}>启用</option><option value="0" ${c?.enabled === false ? 'selected' : ''}>停用</option></select></label>
           ${v.fields.map((f) => `<label class="field">${esc(f.label)}<input class="input" data-cred="${f.key}" type="${f.secret ? 'password' : 'text'}" autocomplete="off" value="${esc(c?.creds?.[f.key] || '')}" placeholder="${c && f.secret ? '留空则不修改' : ''}"></label>`).join('')}
-          ${v.options.map((o) => `<label class="field">${esc(o.label)}<input class="input" data-opt="${o.key}" value="${esc(c?.options?.[o.key] ?? o.default ?? '')}"></label>`).join('')}</form>
+          ${v.options.map((o) => `<label class="field">${esc(o.label)}<input class="input" data-opt="${o.key}" ${o.choices?.length ? `list="dl-${o.key}"` : ''} value="${esc(c?.options?.[o.key] ?? o.default ?? '')}">${o.choices?.length ? `<datalist id="dl-${o.key}">${o.choices.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}</label>`).join('')}</form>
         ${v.status === 'pending' ? '<p class="small down">这个厂商还没有开放接口，保存后会记录凭证，接口开放后即可使用；上品请先用「通用 Webhook」。</p>' : ''}`,
       footer: `<button class="btn ghost" data-close>取消</button><button class="btn" id="ok" data-loading="保存中…">保存</button>`,
       onMount(el, close) {
@@ -231,7 +261,7 @@ export async function render(view) {
           <li><a href="/extension.zip?v=${Date.now()}" download="tiktok-ops-helper.zip" style="color:var(--lime)">下载插件压缩包</a>，右键「全部解压缩」，得到 <code>tiktok-ops-helper</code> 文件夹（打开能直接看到 manifest.json）；</li>
           <li>浏览器打开 <code>chrome://extensions</code>（Edge 是 <code>edge://extensions</code>），打开右上角「开发者模式」，点左上角<b>「加载未打包的扩展程序」</b>（不是「打包扩展程序」），选这个文件夹；</li>
           <li>点插件图标，填运营台地址 <code>${esc(location.origin)}</code> 和下面生成的令牌；</li>
-          <li><b>自动找货</b>：点插件图标选商品 →「关键词搜 / 以图搜」，插件自动打开 1688 搜索或上传主图，采集结果并打开前 3 个详情页补数据，全部送回运营台比价；在商品详情「1688 找货」里点「插件自动搜」效果相同。</li><li>也可以在任意 1688 搜索 / 详情页点右下角「运营台找货 → 发送本页货源」手动发送。</li></ol></div>
+          <li><b>自动找货</b>：点插件图标选商品 →「关键词搜 / 以图搜」，插件自动打开 1688 搜索或上传主图，采集结果并打开前 3 个详情页补数据，全部送回运营台比价；在商品详情「1688 找货」里点「插件自动搜」效果相同。</li><li><b>FastMoss 当前页</b>：打开 FastMoss 的商品搜索或榜单页，右下角点「发送本页商品到运营台」，不占用每周导出次数。只发你正在看的这一页，翻一页点一次（测试版，第一次用请确认数据对不对）。</li><li>也可以在任意 1688 搜索 / 详情页点右下角「运营台找货 → 发送本页货源」手动发送。</li></ol></div>
       <div><div class="row"><b>API 令牌</b><div class="spacer"></div><button class="btn sm" id="new-token" data-loading="生成中…">${icon('plus', 14)}生成令牌</button></div>
         <div id="new-token-box"></div>
         ${items.length ? `<div class="col" style="margin-top:10px">${items.map((t) => `<div class="row token-row"><code>${esc(t.prefix)}…</code><span>${esc(t.name)}</span><span class="muted small">${t.lastUsedAt ? '最近使用 ' + esc(t.lastUsedAt.slice(0, 16).replace('T', ' ')) : '未使用'}</span><div class="spacer"></div><button class="icon-btn danger" data-revoke="${t.id}" title="作废">${icon('trash', 14)}</button></div>`).join('')}</div>` : '<p class="small muted">还没有令牌</p>'}</div></div>`;
@@ -253,6 +283,7 @@ export async function render(view) {
     toast('店铺信息已保存', 'success');
   });
   $('#add-conn', view).onclick = connPicker;
+  $('#add-media', view).onclick = mediaPicker;
   renderList();
   await Promise.all([loadConns(), loadTokens()]);
 }

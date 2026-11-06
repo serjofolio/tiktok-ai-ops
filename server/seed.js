@@ -153,6 +153,8 @@ async function run() {
     mark(db.chunks);
   }
   if (!db.docs.all().some((d) => d.title === METHOD_DOC.title)) await rag.addDocument(ref.id, { ...METHOD_DOC, source: 'builtin' });
+  const playbookDoc = require('./services/playbook').asDocument();
+  if (!db.docs.all().some((d) => d.title === playbookDoc.title)) await rag.addDocument(ref.id, { ...playbookDoc, source: 'builtin' });
   // 每个用户自己的「TikTok 官方文档」知识库在注册时创建（见 auth.initUserData）
 }
 

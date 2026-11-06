@@ -1,5 +1,5 @@
 // 智能选品：导入 FastMoss 数据 → 六维评估（需求 / 趋势 / 达人 / 竞争 / 利润 / 风险）→ AI 选品报告与逐个研判 → 单品深度分析 → 测款 → 视频脚本
-import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox } from '../lib.js';
+import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox, sparkline } from '../lib.js';
 
 const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
 const LISTING_STATUS = { draft: '待确认', approved: '已确认', pushed: '已上品' };
@@ -26,7 +26,10 @@ const DIMS_EXPLAIN = [
 ];
 
 export async function render(view, [openId, openTab]) {
-  const state = { q: '', verdict: '', status: '', sort: 'score' };
+  const state = { q: '', verdict: '', status: '', sort: 'score', date: '', batch: '', category: '', group: '', type: '', market: '', priceMin: '', priceMax: '', minSales: '' };
+  const FILTERS = ['date', 'batch', 'category', 'group', 'type', 'market', 'priceMin', 'priceMax', 'minSales'];
+  const hasFilter = () => FILTERS.some((k) => state[k] !== '');
+  const today = () => new Date().toLocaleDateString('en-CA');
   view.innerHTML = `
   <section class="page-hero">
     <div class="kicker">智能选品 · FastMoss 数据 × AI 研判</div>
@@ -34,6 +37,7 @@ export async function render(view, [openId, openTab]) {
     <p>从 FastMoss 导出商品数据拖进来：系统按需求、趋势、达人、竞争、利润、风险六个维度给每个商品打分，AI 再逐个研判能不能上、为什么、做什么款，并写出这个类目的市场报告。</p>
     <div class="actions">
       <button class="btn lg primary-glow" id="import">${icon('upload')}导入 FastMoss 数据</button>
+      <button class="btn ghost lg" id="pull">${icon('zap')}FastMoss 接口拉取</button>
       <button class="btn ghost lg" id="add">${icon('plus')}手动添加</button>
       <a class="btn ghost lg" href="https://www.fastmoss.com/zh/e-commerce/search" target="_blank" rel="noopener">${icon('link')}打开 FastMoss</a>
     </div>
@@ -41,14 +45,19 @@ export async function render(view, [openId, openTab]) {
   <section id="report"></section>
   <section class="terrain terrain-card" id="terrain"><div class="copy"><h2>市场地形</h2><p>每个方块是一个商品，高度是综合评分，骨白色是「可以上」。点击方块查看详情。</p></div></section>
   <section data-reveal>
-    <div class="section-title"><h3>选品库</h3><span class="muted small" id="summary"></span><div class="spacer"></div>
+    <div class="section-title section-wrap"><h3>选品库</h3><div class="seg" id="panes"><button data-p="lib" class="on">全部商品</button><button data-p="growth">增长榜</button></div><span class="muted small" id="summary"></span><div class="spacer"></div>
       <button class="btn sm ghost" id="method">${icon('layers', 14)}评估方法</button><button class="btn sm ghost" id="assume">${icon('settings', 14)}利润测算参数</button></div>
+    <div id="lib-pane">
     <div class="toolbar">
       <div class="input-icon">${icon('search', 16)}<input class="input" id="q" placeholder="搜索商品、品型、店铺"></div>
       <div class="seg" id="tabs"><button data-v="" class="on">全部</button><button data-v="可以上">可以上</button><button data-v="谨慎测试">谨慎测试</button><button data-v="不建议上">不建议上</button><button data-s="testing">测款中</button><button data-s="dropped">已放弃</button></div>
       <select class="input" id="sort" style="width:150px"><option value="score">综合评分</option><option value="gmv">7 天销售额</option><option value="sales">7 天销量</option><option value="trend">增长最快</option><option value="profit">利润空间最大</option><option value="recent">最近导入</option></select>
     </div>
+    <div class="filters" id="filters"></div>
+    <div id="bulkbar"></div>
     <div id="list"></div>
+    </div>
+    <div id="growth-pane" hidden></div>
   </section>`;
 
   let all = [];
@@ -56,25 +65,195 @@ export async function render(view, [openId, openTab]) {
   let markets = {};
   let report = null;
   let poll = null;
+  let facets = { categories: [], types: [], markets: [], groups: [], dates: [], batches: [], total: 0 };
+  let quota = null;
+  const selected = new Set();
   const PAGE = 100;
   let shown = PAGE;
 
   async function load() {
-    const d = await api(`/products?${new URLSearchParams({ q: state.q, sort: state.sort, verdict: state.verdict, status: state.status })}`);
+    const d = await api(`/products?${new URLSearchParams({ ...state, facets: 1, today: today() })}`);
     assumptions = d.assumptions;
     markets = d.markets;
     all = d.items;
-    if (!state.q && !state.verdict && !state.status) countAll(all);
+    facets = d.facets;
+    quota = d.quota;
+    renderFilters();
+    if (!state.q && !state.verdict && !state.status && !hasFilter()) countAll(all);
+    else $('#summary', view).textContent = `筛选出 ${all.length} 个，共 ${facets.total} 个`;
+    for (const id of [...selected]) if (!all.some((p) => p.id === id)) selected.delete(id);
+    renderBulk();
     const items = all.slice(0, shown);
     const box = $('#list', view);
-    if (!all.length && !state.q && !state.verdict && !state.status) return (box.innerHTML = onboarding());
+    if (!facets.total) return (box.innerHTML = onboarding());
     if (!items.length) return (box.innerHTML = `<div class="card">${empty('没有符合条件的商品', 'search')}</div>`);
     const more = all.length > items.length ? `<div class="row mt" style="justify-content:center"><button class="btn ghost" id="more">显示更多（还有 ${all.length - items.length} 个）</button></div>` : '';
-    box.innerHTML = `<div class="table-wrap"><table class="ptable"><thead><tr><th>商品</th><th class="r">成交均价</th><th class="r">7 天销量</th><th>趋势</th><th class="r">达人 · 出单率</th><th class="r" title="想达到目标净利，采购 + 物流最多能花多少人民币">成本上限</th><th>六维评分</th><th>结论</th></tr></thead><tbody>
+    box.innerHTML = `<div class="table-wrap"><table class="ptable"><thead><tr><th class="chk" data-stop><input type="checkbox" id="chk-all" aria-label="全选这一页"></th><th>商品</th><th class="r">成交均价</th><th class="r">7 天销量</th><th>趋势</th><th class="r">达人 · 出单率</th><th class="r" title="想达到目标净利，采购 + 物流最多能花多少人民币">成本上限</th><th>六维评分</th><th>结论</th></tr></thead><tbody>
       ${items.map(rowHTML).join('')}</tbody></table></div>${more}`;
     const mb = box.querySelector('#more');
     if (mb) mb.onclick = () => { shown += PAGE; load(); };
     $$('.prow', box).forEach((tr) => tr.addEventListener('click', (e) => !e.target.closest('[data-stop]') && openDetail(tr.dataset.id)));
+    $$('[data-chk]', box).forEach((c) => (c.onchange = () => { c.checked ? selected.add(c.dataset.chk) : selected.delete(c.dataset.chk); renderBulk(); syncChkAll(); }));
+    $('#chk-all', box).onchange = (e) => { for (const p of items) e.target.checked ? selected.add(p.id) : selected.delete(p.id); $$('[data-chk]', box).forEach((c) => (c.checked = e.target.checked)); renderBulk(); };
+    syncChkAll();
+  }
+  const syncChkAll = () => { const boxes = $$('[data-chk]', view); const head = $('#chk-all', view); if (head) head.checked = boxes.length > 0 && boxes.every((c) => c.checked); };
+
+  // ---------- 筛选 ----------
+  const SOURCE = { file: '文件导入', paste: '粘贴导入', api: '接口拉取', plugin: '插件发送' };
+  const categoryOptions = (cat, grp) => `<option value="">商品分类：全部</option>
+    ${facets.groups.map((g) => `<option value="group:${esc(g.name)}" ${grp === g.name ? 'selected' : ''}>${esc(g.name)}（按类目和标题识别，${g.count}）</option>`).join('')}
+    ${facets.categories.map((c) => `<option value="${esc(c.name)}" ${cat === c.name ? 'selected' : ''}>${esc(c.name)}（${c.count}）</option>`).join('')}`;
+  const marketOptions = (cur) => `<option value="">站点：全部</option>${facets.markets.map((x) => `<option value="${esc(x.name)}" ${cur === x.name ? 'selected' : ''}>${esc(markets[x.name]?.name || x.name)}（${x.count}）</option>`).join('')}`;
+  function renderFilters() {
+    const box = $('#filters', view);
+    if (!box) return;
+    if (!facets.total) return (box.innerHTML = '');
+    const pick = (k, label, opts) => `<select class="input" data-f="${k}" aria-label="${label}"><option value="">${label}：全部</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${state[k] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    box.innerHTML = `${pick('date', '导入日期', facets.dates.map((d) => [d.date, `${d.date}（${d.count}）`]))}
+      ${pick('batch', '导入批次', facets.batches.map((b) => [b.id, `${b.date} · ${b.fileName || SOURCE[b.source] || '导入'} · ${b.count} 个`]))}
+      <select class="input" id="f-cat" aria-label="商品分类">${categoryOptions(state.category, state.group)}</select>
+      ${pick('type', '品型', facets.types.map((t) => [t.name, `${t.name}（${t.count}）`]))}
+      <select class="input" data-f="market" aria-label="站点">${marketOptions(state.market)}</select>
+      <input class="input num" data-n="priceMin" type="number" min="0" step="any" placeholder="成交价从" value="${esc(state.priceMin)}" aria-label="最低成交价"><input class="input num" data-n="priceMax" type="number" min="0" step="any" placeholder="到" value="${esc(state.priceMax)}" aria-label="最高成交价">
+      <input class="input num" data-n="minSales" type="number" min="0" placeholder="7 天销量≥" value="${esc(state.minSales)}" aria-label="最低 7 天销量">
+      ${hasFilter() ? `<button class="btn sm ghost" id="f-clear">${icon('x', 13)}清除筛选</button>` : ''}`;
+    const again = () => { shown = PAGE; load().then(remountTerrain); };
+    $$('[data-f]', box).forEach((s) => (s.onchange = () => { state[s.dataset.f] = s.value; again(); }));
+    $$('[data-n]', box).forEach((s) => (s.onchange = () => { state[s.dataset.n] = s.value; again(); }));
+    $('#f-cat', box).onchange = (e) => { const v = e.target.value; state.group = v.startsWith('group:') ? v.slice(6) : ''; state.category = v.startsWith('group:') ? '' : v; again(); };
+    const clear = $('#f-clear', box);
+    if (clear) clear.onclick = () => { for (const k of FILTERS) state[k] = ''; again(); };
+  }
+
+  // ---------- 批量操作 ----------
+  function renderBulk() {
+    const box = $('#bulkbar', view);
+    if (!box) return;
+    if (!selected.size) return (box.innerHTML = '');
+    box.innerHTML = `<div class="bulkbar"><b>已选 ${selected.size} 个</b>
+      ${all.length > selected.size ? `<button class="btn sm ghost" data-b="all">全选筛选结果（${all.length} 个）</button>` : ''}
+      <div class="spacer"></div>
+      <button class="btn sm" data-b="report">${icon('sparkles', 14)}AI 研判选中的</button>
+      <button class="btn sm ghost" data-b="testing">标记测款</button>
+      <button class="btn sm ghost" data-b="dropped">放弃</button>
+      <button class="btn sm ghost danger" data-b="delete">${icon('trash', 14)}删除</button>
+      <button class="icon-btn" data-b="none" title="取消选择">${icon('x', 15)}</button></div>`;
+    $$('[data-b]', box).forEach((b) => (b.onclick = async () => {
+      const act = b.dataset.b;
+      const ids = [...selected];
+      if (act === 'all') { for (const p of all) selected.add(p.id); $$('[data-chk]', view).forEach((c) => (c.checked = true)); renderBulk(); syncChkAll(); return; }
+      if (act === 'none') { selected.clear(); $$('[data-chk]', view).forEach((c) => (c.checked = false)); renderBulk(); syncChkAll(); return; }
+      if (act === 'report') { await startReport(ids); $('#report', view).scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      if (act === 'delete' && !(await confirmBox(`删除选中的 ${ids.length} 个商品？删除后找不回来，它们的货源和上架包也会一起删除。`))) return;
+      const r = await api('/products/bulk', { method: 'POST', body: act === 'delete' ? { ids, action: 'delete' } : { ids, action: 'status', status: act } });
+      selected.clear();
+      toast(act === 'delete' ? `已删除 ${r.count} 个商品` : `已更新 ${r.count} 个商品`, 'success');
+      await load();
+      remountTerrain();
+    }));
+  }
+
+  // ---------- 增长榜 ----------
+  const growthState = { window: '10', sort: 'composite', category: '', group: '', market: '', minUnits: '' };
+  const GRADE = { daily: ['实测·逐日', 'v-go'], snapshot: ['实测·两次导入', 'v-go'], estimate: ['估算', 'v-na'] };
+  const pct = (v) => (v == null ? '<span class="muted">—</span>' : `<b class="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v}%</b>`);
+  async function loadGrowth() {
+    const box = $('#growth-pane', view);
+    const d = await api(`/products/growth?${new URLSearchParams(growthState)}`);
+    const W = d.window;
+    const sel = (k, opts) => `<select class="input" data-g="${k}">${opts.map(([v, t]) => `<option value="${esc(v)}" ${growthState[k] === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    const hint = d.grades.estimate
+      ? `<div class="note-card"><b>${d.grades.estimate} 个商品只有一次数据，增长是估算的。</b>想看真实的 ${W} 天增长，三个办法选一个：隔 ${Math.max(7, W)} 天左右再导入同一类目；把电脑里以前导出的文件补传进来（导入时选当时的日期）；或者接入 FastMoss 接口，直接拿每天的销量。</div>`
+      : '';
+    box.innerHTML = `<div class="filters">
+        ${sel('window', d.windows.map((x) => [String(x), `近 ${x} 天`]))}
+        <select class="input" id="g-cat" aria-label="商品分类">${categoryOptions(growthState.category, growthState.group)}</select>
+        <select class="input" data-g="market" aria-label="站点">${marketOptions(growthState.market)}</select>
+        ${sel('sort', [['composite', '综合：销量和 GMV 都涨得快'], ['units', '销量增量最大'], ['gmv', 'GMV 增量最大'], ['rate', '销量增长率最高'], ['gmvRate', 'GMV 增长率最高']])}
+        <input class="input num" id="g-min" type="number" min="0" placeholder="${W} 天销量≥" value="${esc(growthState.minUnits)}" aria-label="最低销量">
+        ${d.items.length ? `<button class="btn sm" id="g-ai">${icon('sparkles', 14)}AI 研判前 20 个</button>` : ''}
+      </div>
+      ${hint}
+      <p class="muted small" style="margin:0 0 10px">共 ${d.total} 个商品：实测 ${d.grades.daily + d.grades.snapshot} 个，估算 ${d.grades.estimate} 个${d.excluded ? `；另有 ${d.excluded} 个数据可疑（疑似刷单），已排除` : ''}。「前期」是再往前 ${W} 天。不同币种的 GMV 按人民币比较。</p>
+      ${d.items.length ? `<div class="table-wrap"><table class="ptable growth"><thead><tr><th>#</th><th>商品</th><th class="r">${W} 天销量<div class="p-sub">前期</div></th><th class="r">销量增长</th><th class="r">${W} 天 GMV<div class="p-sub">前期</div></th><th class="r">GMV 增长</th><th title="达人和视频增量通常比销量早一周左右动（FastMoss 的判断方法）">达人 · 视频增量</th><th>数据</th><th>结论</th></tr></thead><tbody>
+        ${d.items.map((r, i) => `<tr class="prow" data-id="${r.id}"><td class="muted">${i + 1}</td>
+          <td><div class="pcell">${r.image ? `<img class="pthumb" src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="pthumb ph">${esc((r.type || '?').slice(0, 1))}</span>`}<div style="min-width:0"><b class="pname">${esc(r.name)}</b><div class="p-sub"><span class="tag-type">${esc(r.type)}</span>${esc(r.shop || '')}</div>${r.spark?.length ? sparkline(r.spark, { w: 110, h: 24 }) : ''}</div></div></td>
+          <td class="r">${fmtNum(r.units.cur)}<div class="p-sub">${r.units.prev == null ? '—' : fmtNum(r.units.prev)}</div></td><td class="r">${pct(r.units.rate)}<div class="p-sub">${r.units.gain == null ? '' : `${r.units.gain >= 0 ? '+' : ''}${fmtNum(r.units.gain)} 件`}</div></td>
+          <td class="r money">${r.gmv.cur == null ? '—' : esc(r.currency) + fmtNum(r.gmv.cur)}<div class="p-sub">${r.gmv.prev == null ? '—' : esc(r.currency) + fmtNum(r.gmv.prev)}</div></td><td class="r">${pct(r.gmv.rate)}<div class="p-sub">${r.gmv.gainCny == null ? '' : `${r.gmv.gainCny >= 0 ? '+' : '-'}¥${fmtNum(Math.abs(r.gmv.gainCny))}`}</div></td>
+          <td class="small">${r.lead && (r.lead.creators != null || r.lead.videos != null) ? `达人 ${r.lead.creators > 0 ? '+' : ''}${r.lead.creators ?? '—'}<div class="p-sub">视频 ${r.lead.videos > 0 ? '+' : ''}${r.lead.videos ?? '—'}</div>` : '<span class="muted">要两次数据</span>'}</td>
+          <td title="${esc(r.note)}"><span class="verdict ${GRADE[r.grade][1]}" style="font-size:11px">${GRADE[r.grade][0]}</span></td>
+          <td class="vcell">${verdict(r.verdict)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="card">${empty('这个条件下没有商品，放宽筛选或先导入数据', 'search')}</div>`}`;
+    $$('[data-g]', box).forEach((s) => (s.onchange = () => { growthState[s.dataset.g] = s.value; loadGrowth(); }));
+    $('#g-cat', box).onchange = (e) => { const v = e.target.value; growthState.group = v.startsWith('group:') ? v.slice(6) : ''; growthState.category = v.startsWith('group:') ? '' : v; loadGrowth(); };
+    $('#g-min', box).onchange = (e) => { growthState.minUnits = e.target.value; loadGrowth(); };
+    const ai = $('#g-ai', box);
+    if (ai) ai.onclick = async () => { await startReport(d.items.slice(0, 20).map((x) => x.id)); $('#report', view).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    $$('.prow', box).forEach((tr) => tr.addEventListener('click', () => openDetail(tr.dataset.id)));
+  }
+  $$('#panes button', view).forEach((b) => (b.onclick = () => {
+    $$('#panes button', view).forEach((x) => x.classList.toggle('on', x === b));
+    const growth = b.dataset.p === 'growth';
+    $('#lib-pane', view).hidden = growth;
+    $('#growth-pane', view).hidden = !growth;
+    if (growth) loadGrowth();
+  }));
+
+  // ---------- FastMoss 开放接口拉取 ----------
+  async function pullDialog() {
+    let cats = null, problem = '';
+    try {
+      cats = (await api('/fastmoss/categories')).items;
+    } catch (e) {
+      problem = e.message;
+    }
+    if (!cats) {
+      modal({ title: 'FastMoss 接口拉取', body: `<p>${esc(problem)}</p><p class="muted small">FastMoss 现在有官方开放接口：按类目拉商品、还能拿每天的销量，<b>不占每周的导出次数</b>。按调用次数计费，官网写每次 $0.01 起（空结果不收费，以控制台账单为准），可以先申请试用额度。</p>`, footer: `<a class="btn ghost" href="https://developers.fastmoss.com/api/overview" target="_blank" rel="noopener">去开通 ↗</a><a class="btn" href="#/providers" data-close>去接入配置填密钥</a>` });
+      return;
+    }
+    const flat = [];
+    const walk = (nodes, depth) => { for (const n of nodes || []) { flat.push({ ...n, depth }); if (depth < 2) walk(n.sub, depth + 1); } };
+    walk(cats, 0);
+    modal({
+      title: 'FastMoss 接口拉取', wide: true,
+      body: `<form class="grid g3" id="pf">
+        <label class="field">站点<select class="input" name="region">${['US', 'MY', 'ID', 'TH', 'VN', 'PH', 'SG', 'GB', 'MX', 'ES', 'DE', 'FR', 'IT', 'JP', 'BR'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+        <label class="field" style="grid-column:span 2">类目<select class="input" name="cat"><option value="">不限类目</option>${flat.map((c) => `<option value="${c.id}|${c.level}|${esc(c.name)}" ${/珠宝|首饰/.test(c.name) && !c.depth ? 'selected' : ''}>${'　'.repeat(c.depth)}${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="field">关键词（可选）<input class="input" name="keywords" placeholder="earrings"></label>
+        <label class="field">候选来源<select class="input" name="source"><option value="search">近 7 天销量最高</option><option value="rank">热销榜：按增长率</option></select></label>
+        <label class="field">拉多少个商品<select class="input" name="limit"><option>20</option><option selected>50</option><option>100</option><option>200</option></select></label>
+        <label class="field">近 7 天销量至少<input class="input" name="minSales7d" type="number" min="0" placeholder="不限"></label>
+        <label class="field">算增长的时间窗<select class="input" name="window"><option value="7">7 天</option><option value="10" selected>10 天</option><option value="14">14 天</option></select></label>
+        <label class="switch" style="align-self:end"><input type="checkbox" name="withTrend" checked><span></span>同时拉逐日销量</label></form>
+        <p class="small" id="cost" style="margin:14px 0 0"></p><div id="pull-progress"></div>`,
+      footer: `<button class="btn ghost" data-close>关闭</button><button class="btn primary-glow" id="go" data-loading="拉取中…">${icon('zap', 15)}开始拉取</button>`,
+      onMount(el) {
+        const f = $('#pf', el);
+        const est = () => {
+          const n = Number(f.limit.value);
+          const calls = Math.ceil(n / Math.min(100, n)) + (f.withTrend.checked ? n : 0);
+          $('#cost', el).innerHTML = `预计调用 <b>${calls} 次</b>（官网写 $0.01/次起，大约 <b>$${(calls * 0.01).toFixed(2)} 起</b>，以 FastMoss 控制台账单为准）。逐日销量每个商品多调 1 次，算出来的增长才是实测。`;
+        };
+        f.onchange = est;
+        est();
+        $('#go', el).onclick = (e) => withLoading(e.currentTarget, async () => {
+          const [categoryId, categoryLevel, categoryName] = (f.cat.value || '').split('|');
+          await api('/fastmoss/pull', { method: 'POST', body: { region: f.region.value, categoryId, categoryLevel, categoryName, keywords: f.keywords.value, source: f.source.value, limit: Number(f.limit.value), minSales7d: Number(f.minSales7d.value) || 0, window: Number(f.window.value), withTrend: f.withTrend.checked, today: today() } });
+          for (;;) {
+            const j = await api('/fastmoss/jobs/latest');
+            $('#pull-progress', el).innerHTML = `<p class="small mt">${esc(j.step || '')}：候选 ${j.fetched || 0} 个${j.trendDone != null ? `，逐日销量 ${j.trendDone}/${j.count}` : ''}</p>`;
+            if (j.status === 'error') throw new Error(j.error);
+            if (j.status === 'done') {
+              toast(`拉取完成：新增 ${j.created}，更新 ${j.updated}${j.warning ? `。${j.warning}` : ''}`, 'success');
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          await load();
+          remountTerrain();
+        });
+      },
+    });
   }
 
   function countAll(items) {
@@ -88,6 +267,7 @@ export async function render(view, [openId, openTab]) {
     const range = p.priceMin != null && p.priceMax != null && p.priceMax > p.priceMin ? `<div class="p-sub">标价 ${c}${p.priceMin}–${p.priceMax}</div>` : '';
     const ai = p.ai;
     return `<tr class="prow" data-id="${p.id}">
+      <td class="chk" data-stop><input type="checkbox" data-chk="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="选择这个商品"></td>
       <td><div class="pcell">${thumb(p)}<div style="min-width:0"><b class="pname">${esc(p.name)}</b>
         <div class="p-sub"><span class="tag-type">${esc(m.type)}</span>${esc([p.shop, STATUS[p.status] && p.status !== 'candidate' ? STATUS[p.status] : ''].filter(Boolean).join(' · '))} <a class="mini-link" data-stop href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">FastMoss ↗</a></div>
         ${flags.length ? `<div class="flags-inline">${flags.slice(0, 3).map((f) => `<span class="flag ${f.level}">${esc(f.title)}</span>`).join('')}</div>` : ''}</div></div></td>
@@ -111,7 +291,7 @@ export async function render(view, [openId, openTab]) {
         <li>点列表右上角「导出」，得到 Excel 文件（直接用，不用改表头）；</li>
         <li>点「导入 FastMoss 数据」拖进来，系统自动识别全部字段，并开始 AI 选品研判。</li>
       </ol>
-      <p class="muted small">建议一次导出同一个站点、同一个类目的 50–200 个商品：同批对比，排名和品型分析才有意义。</p>
+      <p class="muted small">导出次数有限：每次按大类目多导一些（不用细分筛选），导进来以后在这里随便筛。隔 7–10 天再导一次同一类目，「增长榜」就能算出真实增长。</p>
       <button class="btn" id="import2">${icon('upload', 15)}导入 FastMoss 数据</button></div>`;
   }
 
@@ -198,12 +378,14 @@ export async function render(view, [openId, openTab]) {
   function importDialog() {
     const m = modal({
       title: '导入 FastMoss 数据', wide: true,
-      body: `<div id="imp"><div class="grid g2">
+      body: `<div id="imp"><div class="quota-line small">${quota ? `本周已导入 <b>${quota.used}</b> 个文件，你填的每周额度 <input class="input num" id="quota" type="number" min="1" value="${quota.limit}" aria-label="每周导出额度"> 次（按导入的文件数估算，FastMoss 的实际次数以它页面为准）` : ''}</div><div class="grid g2">
         <div class="dropzone" id="dz">${icon('upload', 30)}<p><b>拖入 FastMoss 导出的 Excel / CSV</b><br><span class="small">商品搜索 → 导出，原文件直接拖进来</span></p><input type="file" id="file" accept=".xlsx,.csv,text/csv" hidden></div>
         <div class="field">或者粘贴表格（在 FastMoss 页面选中表格 → Ctrl+C）<textarea class="input" id="paste" rows="7" placeholder="商品名称	售价	7天销量	28天销量	带货达人总数 …"></textarea><button class="btn sm ghost" id="parse" data-loading="识别中…" style="align-self:flex-start">识别粘贴内容</button></div>
       </div></div>`,
       onMount(el) {
         const dz = $('#dz', el), file = $('#file', el);
+        const qi = $('#quota', el);
+        if (qi) qi.onchange = () => api('/selection', { method: 'PUT', body: { exportQuota: Number(qi.value) || 5 } }).catch((e) => toast(e.message, 'error'));
         const go = (form, body) => withLoading($('#parse', el), async () => showMapping(await api('/products/import/preview', form ? { method: 'POST', form } : { method: 'POST', body })));
         const sendFile = (f) => { if (!f) return; const form = new FormData(); form.append('file', f); dz.innerHTML = `<span class="spinner"></span><p>正在读取 ${esc(f.name)}…</p>`; go(form); };
         dz.onclick = () => file.click();
@@ -219,13 +401,14 @@ export async function render(view, [openId, openTab]) {
             <details class="map-details"><summary>查看 / 调整列对应关系</summary><div class="map-grid">${Object.entries(pv.fields).map(([k, label]) => `<label class="field">${esc(label)}${k === 'name' ? ' *' : ''}<select class="input" data-f="${k}">${opts(pv.mapping[k])}</select></label>`).join('')}</div></details>
             <div class="section-title"><h3 style="font-size:14px">前 ${pv.sample.length} 行预览</h3></div>
             <div class="table-wrap"><table><thead><tr>${pv.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${pv.sample.map((r) => `<tr>${pv.headers.map((_, i) => `<td>${esc(String(r[i] ?? '').slice(0, 60))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+            <label class="field mt" style="max-width:320px">这份数据是哪天导出的<input class="input" id="data-date" type="date" value="${today()}" max="${today()}"><span class="muted small">以前导出的文件选当时的日期：不覆盖最新数据，只用来算增长</span></label>
             <label class="row mt small" style="gap:8px"><input type="checkbox" id="autoai" checked> 导入后自动生成 AI 选品报告（需要已接入大模型）</label>
             <div class="row mt" style="justify-content:flex-end"><button class="btn lg primary-glow" id="commit" data-loading="导入中…">${icon('check')}确认导入 ${pv.total} 个商品</button></div>`;
           $('#commit', el).onclick = (e) => withLoading(e.currentTarget, async () => {
             const mapping = Object.fromEntries($$('[data-f]', el).map((s) => [s.dataset.f, s.value === '' ? '' : Number(s.value)]));
-            const r = await api('/products/import/commit', { method: 'POST', body: { token: pv.token, mapping } });
-            const auto = $('#autoai', el).checked;
-            toast(`新增 ${r.created} 个，更新 ${r.updated} 个，已完成六维评分`, 'success');
+            const r = await api('/products/import/commit', { method: 'POST', body: { token: pv.token, mapping, dataDate: $('#data-date', el).value, today: today() } });
+            const auto = $('#autoai', el).checked && r.created + r.updated > 0;
+            toast(`新增 ${r.created} 个，更新 ${r.updated} 个${r.history ? `，补了 ${r.history} 个商品的历史数据` : ''}`, 'success');
             m.close();
             await load();
             remountTerrain();
@@ -545,6 +728,7 @@ export async function render(view, [openId, openTab]) {
   }));
   $('#sort', view).onchange = (e) => ((state.sort = e.target.value), (shown = PAGE), load());
   $('#import', view).onclick = importDialog;
+  $('#pull', view).onclick = pullDialog;
   $('#add', view).onclick = addDialog;
   $('#assume', view).onclick = assumeDialog;
   $('#method', view).onclick = methodDialog;

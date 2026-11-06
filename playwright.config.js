@@ -20,6 +20,6 @@ module.exports = defineConfig({
     url: `http://localhost:${PORT}/api/auth/me`,
     reuseExistingServer: false,
     timeout: 30000,
-    env: { PORT: String(PORT), DATA_DIR: path.join(__dirname, 'test-results', 'data') },
+    env: { PORT: String(PORT), DATA_DIR: path.join(__dirname, 'test-results', 'data'), VIDEO_POLL_MS: '200' },
   },
 });

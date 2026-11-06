@@ -54,14 +54,13 @@ async function execute(id) {
   try {
     // ① 选品数据
     stage(id, 'fetch', 'running');
-    const fm = connectors.active('product')[0];
     const all = db.products.all().filter((p) => p.status !== 'dropped');
     const last = all.filter((p) => p.batchId).sort((a, b) => String(b.dataAt).localeCompare(String(a.dataAt)))[0];
     if (!all.length) throw err('选品库还没有数据：先在「智能选品」导入 FastMoss 导出文件');
     const batch = cfg.scope === 'all' || !last ? all : all.filter((p) => p.batchId === last.batchId);
     const inBatch = new Set(batch.map((p) => p.id));
     const scopeText = cfg.scope === 'all' || !last ? `整个选品库 ${batch.length} 个商品` : `最近一次导入的 ${batch.length} 个商品（${String(last.dataAt).slice(0, 10)}）`;
-    stage(id, 'fetch', 'done', `${fm ? 'FastMoss 接口待文档，' : ''}使用${scopeText}`);
+    stage(id, 'fetch', 'done', `使用${scopeText}`);
     log(id, `选品数据：${scopeText}`);
 
     // ② AI 研判：这批商品还没研判过才重新跑

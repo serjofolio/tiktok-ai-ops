@@ -149,7 +149,10 @@ test('智能选品：商品详情 → 六维证据 → 人民币利润测算 →
   await page.locator('#pf a', { hasText: '生成视频脚本' }).click();
   await expect(page).toHaveURL(/#\/scripts\/new\//);
   await expect(page.locator('#pid option:checked')).toContainText('Mini Sleep Earbuds');
+  await expect(page.locator('#manual')).toBeHidden();
+  await page.locator('details.more summary').click();
   await page.fill('#bench', 'POV: you finally sleep on your side...');
+  await page.locator('#count').selectOption('1');
   await page.click('#gen');
   await expect(page.locator('.scene2')).toHaveCount(3);
   await expect(page.locator('.hook-box')).toContainText('Stop sweating');

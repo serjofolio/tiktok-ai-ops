@@ -55,7 +55,27 @@ const match = (text) => ({ items: [...text.matchAll(/"i":(\d+),"标题":"([^"]*)
   return { i: Number(m[1]), match: score, note: score >= 90 ? '外观和规格一致' : score >= 70 ? '同类可替代' : '不是同一类商品' };
 }) });
 
+// 爆款拆解（字段和真实模型的返回一致）
+const VIRAL_REPORT = {
+  summary: '这条视频卖一款金色耳环，用「大家都问我多少钱」开场，真实上身特写证明质感。', keyReason: '别人的反应 + 上身特写，不用自夸就显得贵',
+  takeaways: ['第一帧就是耳环上身', '把价格留到后面报', '只说自己真实用过的感受'],
+  basics: { product: '金色耳环', category: '首饰', audience: '25-35 岁女性', format: 'ugc', formatName: '真人测评', presenter: '真人出镜', tone: '随意', language: 'English' },
+  hook: { type: 'others_react', typeName: '别人的反应', firstFrame: '耳环上身特写', spokenLine: 'Everyone keeps asking me about these', onScreenText: 'Everyone asks', sound: '原声', aligned: '画面和话都在说这副耳环', whyStops: '好奇是什么耳环', whoItFilters: '喜欢首饰的女性', score: 82, improve: '屏幕字可以再短一点' },
+  timeline: [{ start: 0, end: 3, part: 'Hook', visual: '耳环上身', camera: '特写', spoken: 'Everyone keeps asking me about these', onScreenText: 'Everyone asks', audio: '原声', purpose: '抓住注意力', retention: '留下悬念：到底是什么', emotion: '好奇' }, { start: 3, end: 12, part: 'CTA', visual: '手指向购物车', camera: '近景', spoken: 'Tap the cart', onScreenText: '', audio: '原声', purpose: '成交', retention: '报价', emotion: '满足' }],
+  structure: { formula: '别人的反应 → 上身证明 → 报价 → 行动号召', pacing: '切镜不多，靠讲话推进', productFirstAt: '第 0 秒', priceAt: '第 8 秒', openLoops: ['这是什么耳环 → 第 3 秒揭晓'], payoff: '报价那一刻', rewatch: '无' },
+  painAndDesire: { pain: '怕戴着显廉价', agitation: '无', desire: '被人夸', moment: '出门前' },
+  sellingPoints: [{ point: '看着贵', how: '自然光特写', proof: '他人反应' }], trust: ['真人上身'],
+  conversion: { offer: '无', cta: 'Tap the cart', urgency: '无', objections: ['会不会廉价'], commentBait: '无' },
+  emotionCurve: [{ t: '0-3s', emotion: '好奇', intensity: 8 }, { t: '3-12s', emotion: '满足', intensity: 6 }],
+  scores: { hook: { score: 82, why: '开头明确' }, retention: { score: 70, why: '中段平' }, proof: { score: 65, why: '只有上身' }, conversion: { score: 72, why: 'CTA 明确' }, shareability: { score: 50, why: '转发理由弱' } },
+  reusable: { template: '[别人的反应] → [上身证明] → [价格] → [行动号召]', slots: [{ slot: '[别人的反应]', how: '换成真实评论' }], mustKeep: ['第一帧上身'], canChange: ['场景'] },
+  doNotCopy: ['原视频台词和人物'], compliance: ['不要说防过敏'], limits: '只看了抽帧',
+};
+const PAINS = { audience: '25-35 岁通勤女性', pains: [{ pain: '戴两周就变色', level: '功能', moment: '洗澡时', evidence: '推断', hookSpoken: 'I showered in these for 30 days', hookText: 'Day 30', hookFrame: '耳环泡水特写', proof: '按日期连续拍', caution: '只说实测结果' }, { pain: '想被夸', level: '身份', moment: '聚会', evidence: '推断', hookSpoken: 'Everyone asks where I got these', hookText: 'Everyone asks', hookFrame: '上身特写', proof: '朋友反应', caution: '不要虚构对话' }] };
+
 function answerFor(text) {
+  if (/挖掘拍视频用的痛点和渴望/.test(text)) return JSON.stringify(PAINS);
+  if (/TikTok 带货内容拆解专家/.test(text)) return JSON.stringify(VIRAL_REPORT);
   if (/带货短视频脚本/.test(text)) return JSON.stringify(SCRIPT);
   if (/逐个研判下面/.test(text)) return JSON.stringify(judge(text));
   if (/做市场研判/.test(text)) return JSON.stringify(OVERVIEW);
@@ -69,9 +89,16 @@ function answerFor(text) {
 
 function readBody(req) {
   return new Promise((r) => {
-    let b = '';
-    req.on('data', (c) => (b += c));
-    req.on('end', () => r(b ? JSON.parse(b) : {}));
+    let b = Buffer.alloc(0);
+    req.on('data', (c) => (b = Buffer.concat([b, c])));
+    req.on('end', () => {
+      if (!b.length) return r({});
+      try {
+        r(JSON.parse(b.toString()));
+      } catch {
+        r({ raw: true }); // multipart（语音转写）
+      }
+    });
   });
 }
 
@@ -84,6 +111,108 @@ const OFFERS = [
 ];
 const DETAIL = { 880000001: { priceRange: [[2, '19.50'], [50, '18.50'], [500, '17.20']], num: 26000, weight: '0.045', skus: { sku: [{}, {}, {}] } }, 880000002: { priceRange: [[2, '16.00']], num: 800, weight: '0.06', skus: { sku: [{}] } } };
 const hooks = [];
+const videoTasks = new Map();
+const sent = { video: [], fastmoss: [] };
+const json = (res, data, status = 200) => {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+};
+let sampleClip = null;
+async function clipBytes() {
+  if (sampleClip) return sampleClip;
+  const out = require('path').join(require('os').tmpdir(), `tk-fake-clip-${process.pid}.mp4`);
+  await new Promise((resolve, reject) => require('child_process').execFile(require('ffmpeg-static'), ['-hide_banner', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=360x640:rate=15:duration=6', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', out], (e) => (e ? reject(e) : resolve())));
+  sampleClip = require('fs').readFileSync(out);
+  return sampleClip;
+}
+// 视频模型：第一次查询还在生成，第二次完成
+function nextStatus(id) {
+  const n = (videoTasks.get(id) || 0) + 1;
+  videoTasks.set(id, n);
+  return n >= 2;
+}
+async function fakeVideo(req, res, url, origin) {
+  const p = url.pathname;
+  if (p === '/video/clip.mp4') {
+    res.writeHead(200, { 'Content-Type': 'video/mp4' });
+    return res.end(await clipBytes());
+  }
+  if (req.headers.authorization !== 'Bearer vk-test') return json(res, { error: { message: 'bad key' } }, 401);
+  const clip = `${origin}/video/clip.mp4`;
+  // Seedance
+  if (p === '/video/ark/contents/generations/tasks' && req.method === 'POST') {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'seedance', body });
+    return json(res, { id: `ark-${sent.video.length}` });
+  }
+  if (p.startsWith('/video/ark/contents/generations/tasks/')) {
+    const id = p.split('/').pop();
+    if (id.startsWith('0000')) return json(res, { error: { message: 'not found' } }, 404);
+    if (id.includes('fail')) return json(res, { status: 'failed', error: { message: '内容审核未通过' } });
+    return json(res, nextStatus(id) ? { id, status: 'succeeded', content: { video_url: clip } } : { id, status: 'running' });
+  }
+  // 可灵
+  if (/^\/video\/kling\/(text|image)-to-video\//.test(p)) {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'kling', path: p, body });
+    return json(res, { code: 0, data: { id: `kl-${sent.video.length}`, status: 'submitted' } });
+  }
+  if (p === '/video/kling/tasks') {
+    const id = url.searchParams.get('task_ids');
+    return json(res, { code: 0, data: [nextStatus(id) ? { id, status: 'succeeded', outputs: [{ type: 'video', url: clip }] } : { id, status: 'processing' }] });
+  }
+  // 通义万相
+  if (p === '/video/wan/services/aigc/video-generation/video-synthesis') {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'wan', async: req.headers['x-dashscope-async'], body });
+    return json(res, { output: { task_id: `wan-${sent.video.length}`, task_status: 'PENDING' } });
+  }
+  if (p.startsWith('/video/wan/tasks/')) {
+    const id = p.split('/').pop();
+    return json(res, { output: nextStatus(id) ? { task_status: 'SUCCEEDED', video_url: clip } : { task_status: 'RUNNING' } });
+  }
+  // 海螺
+  if (p === '/video/mm/v1/video_generation') {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'minimax', body });
+    return json(res, { task_id: `mm-${sent.video.length}`, base_resp: { status_code: 0 } });
+  }
+  if (p === '/video/mm/v1/query/video_generation') {
+    const id = url.searchParams.get('task_id');
+    return json(res, nextStatus(id) ? { status: 'Success', file_id: '42', base_resp: { status_code: 0 } } : { status: 'Processing', base_resp: { status_code: 0 } });
+  }
+  if (p === '/video/mm/v1/files/retrieve') return json(res, { file: { download_url: clip }, base_resp: { status_code: 0 } });
+  // 自定义接口
+  if (p === '/video/custom/submit') {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'custom', body });
+    return json(res, { data: { task_id: `c-${sent.video.length}` } });
+  }
+  if (p.startsWith('/video/custom/query/')) {
+    const id = p.split('/').pop();
+    return json(res, nextStatus(id) ? { state: 'SUCCESS', result: { url: clip } } : { state: 'RUNNING' });
+  }
+  json(res, { error: { message: 'NOT_FOUND' } }, 404);
+}
+
+// FastMoss 开放接口（字段按官方文档）
+const fmProduct = (i) => ({ product_id: `19000000000000${100 + i}`, title: `Gold Hoop Earrings ${i} for Women`, region: 'US', cover: '', category: { l1: { id: 200, name: '珠宝配饰及衍生品' }, l2: { id: 201, name: '时尚饰品' } }, commission_rate: '15%', creator_order_rate: '40%', price: '$12.00 - 18.00', floor_price: 12, off_shelves: 0, day7_units_sold: 700 - i * 100, day7_gmv: 9000 - i * 1000, day28_units_sold: 1500, total_units_sold: 8000, total_gmv: 100000, creator_count: 60, video_count: 90, product_rating: 4.8, tiktok_url: '', fastmoss_url: '', shop: { name: `Shop ${i}` }, ctime: 1700000000 });
+async function fakeFastmoss(req, res, url) {
+  if (req.headers.authorization !== 'Bearer fm-test') return json(res, { code: 1002, data: null, message: 'invalid client' });
+  const body = await readBody(req);
+  sent.fastmoss.push({ path: url.pathname, body });
+  const p = url.pathname.replace('/fastmoss', '');
+  if (p === '/product/v1/categoryInfo') return json(res, { code: 0, data: [{ c_code: 200, c_name: '珠宝配饰及衍生品', sub: [{ c_code: 201, c_name: '时尚饰品', sub: [] }] }, { c_code: 10, c_name: '家居', sub: [] }] });
+  if (p === '/product/v1/search' || p === '/product/v1/rank/topSelling') return json(res, { code: 0, data: { total: 3, list: [fmProduct(1), fmProduct(2), fmProduct(3)] } });
+  if (p === '/product/v1/salesTrend') {
+    const days = body.filter.days;
+    const idx = Number(body.filter.product_id.slice(-1));
+    const start = Date.parse('2026-10-16T00:00:00Z');
+    return json(res, { code: 0, data: { list: Array.from({ length: days }, (_, i) => ({ dt: new Date(start + i * 86400e3).toISOString().slice(0, 10), units_sold: i < days / 2 ? 5 : 20 * idx, gmv: i < days / 2 ? 60 : 240 * idx })), overview: {} } });
+  }
+  json(res, { code: 10001, message: 'bad path' });
+}
+
 function fake1688(req, res, url) {
   const q = url.searchParams;
   res.writeHead(q.get('key') === 'k1688' && q.get('secret') === 's1688' ? 200 : 403, { 'Content-Type': 'application/json' });
@@ -102,6 +231,18 @@ function start(port = 3902) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname.startsWith('/1688/')) return fake1688(req, res, url);
+    if (url.pathname.startsWith('/video/')) return fakeVideo(req, res, url, `http://127.0.0.1:${server.address().port}`);
+    if (url.pathname.startsWith('/fastmoss/')) return fakeFastmoss(req, res, url);
+    if (url.pathname === '/sent') return json(res, sent);
+    // 看不见图片的文字模型：收到图片也不报错，只会胡说
+    if (url.pathname === '/blind/v1/chat/completions') {
+      await readBody(req);
+      return json(res, { choices: [{ message: { role: 'assistant', content: '这张图片是一幅美丽的风景画，有绿色的山。' } }] });
+    }
+    if (url.pathname === '/redirect-internal') {
+      res.writeHead(302, { location: '/webhook/last' });
+      return res.end();
+    }
     // 商品主图（插件以图搜测试用）
     if (url.pathname === '/img/product.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
@@ -126,8 +267,20 @@ function start(port = 3902) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ data: [{ id: 'glm-test' }, { id: 'glm-test-air' }] }));
     }
+    if (req.url === '/v1/audio/transcriptions') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ text: 'Everyone keeps asking me about these earrings. Tap the cart.' }));
+    }
     if (req.url === '/v1/chat/completions') {
-      const last = body.messages.at(-1).content;
+      const raw = body.messages.at(-1).content;
+      const imaged = Array.isArray(raw);
+      const last = imaged ? raw.filter((c) => c.type === 'text').map((c) => c.text).join('\n') : raw;
+      if (imaged) {
+        const n = [...last.matchAll(/(\d+(?:\.\d+)?)s/g)].map((m) => Number(m[1]));
+        const reply = /左半边和右半边/.test(last) ? '红色，蓝色' : /开头 3 秒/.test(last) ? JSON.stringify({ firstFrame: '耳环上身特写', person: true, face: false, product: true, productWhat: '金色耳环', onScreenText: 'Everyone asks', motion: '手指捏住耳环', camera: '特写' }) : JSON.stringify({ frames: n.map((t) => ({ t, shot: '特写', person: true, product: true, visual: '手捏住耳环转动', text: '' })) });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: reply } }] }));
+      }
       const text = answerFor(String(last));
       if (!body.stream) {
         res.writeHead(200, { 'Content-Type': 'application/json' });

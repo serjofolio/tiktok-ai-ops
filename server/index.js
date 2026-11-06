@@ -16,6 +16,12 @@ const rag = require('./services/rag');
 const chat = require('./services/chat');
 const report = require('./services/report');
 const selection = require('./services/selection');
+const growth = require('./services/growth');
+const fastmoss = require('./services/fastmoss');
+const media = require('./media');
+const videogen = require('./services/videogen');
+const viral = require('./services/viral');
+const playbook = require('./services/playbook');
 const connectors = require('./connectors');
 const sourcing = require('./services/sourcing');
 const listing = require('./services/listing');
@@ -24,6 +30,13 @@ const seed = require('./seed');
 
 const app = express();
 const upload = multer({ dest: db.UPLOAD_DIR, limits: { fileSize: 30 * 1024 * 1024 } });
+// 视频上传：Cloudflare 免费版单次请求上限 100MB
+const MAX_VIDEO_MB = 95;
+const videoUpload = multer({ dest: db.UPLOAD_DIR, limits: { fileSize: MAX_VIDEO_MB * 1024 * 1024 } });
+const oneFile = (uploader, field, tooBig) => (req, res, next) => uploader.single(field)(req, res, (e) => {
+  if (!e) return next();
+  res.status(e.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? tooBig : e.message });
+});
 // ALLOWED_HOSTS：只接受指定域名访问（如 Cloudflare 隧道域名），拒绝 IP+端口直连；本机地址始终放行用于健康检查
 const ALLOWED_HOSTS = (process.env.ALLOWED_HOSTS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 if (ALLOWED_HOSTS.length) {
@@ -137,8 +150,8 @@ app.get('/api/dashboard', h(async (req, res) => {
 
 // ---------- 智能选品 ----------
 // 列表只带货源和上架包的摘要，详情接口才返回完整数据
-const light = ({ sourcing: s, listing: l, reviewsText, analysis, ...p }) => ({ ...p, analyzed: !!analysis, sourcing: s ? { count: s.offers?.length || 0, chosen: s.chosen || null, keyword: s.keyword } : null, listing: l ? { status: l.status } : null });
-app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query).map(light), categories: products.categories(), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
+const light = ({ sourcing: s, listing: l, reviewsText, analysis, snapshots, daily, pains, ...p }) => ({ ...p, analyzed: !!analysis, sourcing: s ? { count: s.offers?.length || 0, chosen: s.chosen || null, keyword: s.keyword } : null, listing: l ? { status: l.status } : null });
+app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query).map(light), categories: products.categories(), ...(req.query.facets ? { facets: products.facets(), quota: products.exportQuota(req.query.today) } : {}), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
 // AI 选品报告：后台生成，前端轮询
 app.post('/api/reports', h(async (req, res) => res.json(report.start({ ids: req.body?.ids }))));
 app.get('/api/reports/latest', h(async (req, res) => res.json(report.latest() || {})));
@@ -147,12 +160,15 @@ app.get('/api/reports/:id', h(async (req, res) => {
   if (!r) throw notFound('报告');
   res.json(r);
 }));
+// 增长榜：指定时间窗内销量和 GMV 增长最快的商品
+app.get('/api/products/growth', h(async (req, res) => res.json(growth.board(req.query))));
 app.get('/api/products/:id', h(async (req, res) => {
   const p = products.get(req.params.id);
   if (!p) throw notFound('商品');
   res.json(p);
 }));
 app.post('/api/products', h(async (req, res) => res.json(products.createManual(req.body))));
+app.post('/api/products/bulk', h(async (req, res) => res.json(products.bulk(req.body || {}))));
 app.patch('/api/products/:id', h(async (req, res) => res.json(products.patch(req.params.id, req.body))));
 app.delete('/api/products/:id', h(async (req, res) => {
   if (!db.products.get(req.params.id)) throw notFound('商品');
@@ -170,13 +186,13 @@ app.post('/api/products/import/preview', upload.single('file'), h(async (req, re
     }
   } else if (req.body.text) rows = products.parseDelimited(String(req.body.text));
   else throw bad('请上传 FastMoss 导出的文件，或粘贴表格内容');
-  res.json(products.preview(rows));
+  res.json(products.preview(rows, { fileName: req.file ? fileName(req.file) : '', source: req.file ? 'file' : 'paste' }));
 }));
-app.post('/api/products/import/commit', h(async (req, res) => res.json(products.commit(req.body.token, req.body.mapping || {}))));
+app.post('/api/products/import/commit', h(async (req, res) => res.json(products.commit(req.body.token, req.body.mapping || {}, { dataDate: req.body.dataDate, today: req.body.today }))));
 app.put('/api/selection', h(async (req, res) => {
   const b = req.body || {};
   const a = {};
-  for (const k of ['creatorRate', 'returnRate', 'adRate', 'targetMargin']) if (b[k] !== undefined && b[k] !== '') a[k] = Math.max(0, Number(b[k]) || 0);
+  for (const k of ['creatorRate', 'returnRate', 'adRate', 'targetMargin', 'exportQuota']) if (b[k] !== undefined && b[k] !== '') a[k] = Math.max(0, Number(b[k]) || 0);
   if (['crossborder', 'local'].includes(b.storeMode)) a.storeMode = b.storeMode;
   if (b.invited) a.invited = { charger: !!b.invited.charger, powerbank: !!b.invited.powerbank };
   if (b.markets && typeof b.markets === 'object') {
@@ -210,6 +226,11 @@ app.delete('/api/tokens/:id', h(async (req, res) => {
   auth.revokeApiToken(req.user, req.params.id);
   res.json({ ok: true });
 }));
+
+// ---------- FastMoss 开放接口：按类目拉数据，不占用导出次数 ----------
+app.get('/api/fastmoss/categories', h(async (req, res) => res.json(await fastmoss.categories())));
+app.post('/api/fastmoss/pull', h(async (req, res) => res.json(fastmoss.startPull(req.body || {}))));
+app.get('/api/fastmoss/jobs/latest', h(async (req, res) => res.json(fastmoss.latest() || {})));
 
 // ---------- 1688 找货 ----------
 app.post('/api/products/:id/sourcing/search', h(async (req, res) => res.json(await sourcing.search(req.params.id, { keyword: req.body?.keyword }))));
@@ -278,6 +299,13 @@ app.post('/api/ext/debug', h(async (req, res) => {
   for (const f of files.slice(0, Math.max(0, files.length - 30))) fs.rmSync(path.join(dir, f), { force: true });
   res.json({ ok: true });
 }));
+// 插件在 FastMoss 页面发送「当前这一页」的商品：和导入文件走同一套列名识别，不占导出次数
+app.post('/api/ext/fastmoss', h(async (req, res) => {
+  const b = req.body || {};
+  const r = products.importTable({ headers: b.headers, rows: b.rows, source: 'plugin', fileName: String(b.title || '').slice(0, 80) }, { today: b.today });
+  db.activity.insert({ type: 'product', text: `插件发送 FastMoss 商品：新增 ${r.created}，更新 ${r.updated}` });
+  res.json({ ok: true, created: r.created, updated: r.updated, count: r.ids.length, recognized: r.recognized });
+}));
 app.post('/api/ext/offers', h(async (req, res) => {
   const s = await sourcing.addOffers(req.body?.productId, req.body?.offers || [], '浏览器插件');
   // 排名靠前、还没补详情的同款货源：插件接着打开详情页补阶梯价 / 库存 / 重量 / 发货地
@@ -286,14 +314,103 @@ app.post('/api/ext/offers', h(async (req, res) => {
 }));
 
 // ---------- 视频脚本 ----------
+app.get('/api/playbook', h(async (req, res) => res.json(playbook.full())));
 app.get('/api/scripts', h(async (req, res) => res.json({ items: db.scripts.all(), styles: scripts.STYLES })));
+app.post('/api/scripts/pains', h(async (req, res) => res.json(await scripts.pains(req.body || {}))));
 app.get('/api/scripts/:id', h(async (req, res) => {
   const s = db.scripts.get(req.params.id);
   if (!s) throw notFound('脚本');
   res.json(s);
 }));
+app.get('/api/scripts/:id/srt', h(async (req, res) => {
+  const s = db.scripts.get(req.params.id);
+  if (!s) throw notFound('脚本');
+  res.setHeader('Content-Disposition', 'attachment; filename="subtitles.srt"');
+  res.type('text/plain; charset=utf-8').send(scripts.srt(s));
+}));
 app.post('/api/scripts/generate', h(async (req, res) => res.json(await scripts.generate(req.body))));
 app.delete('/api/scripts/:id', h(async (req, res) => res.json({ ok: db.scripts.remove(req.params.id) })));
+
+// ---------- 爆款视频拆解 ----------
+app.get('/api/viral', h(async (req, res) => res.json({ items: viral.list(), capabilities: viral.capabilities(), maxMb: MAX_VIDEO_MB, storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB } })));
+app.post('/api/viral', oneFile(videoUpload, 'video', `视频太大：单个文件最大 ${MAX_VIDEO_MB}MB`), h(async (req, res) => {
+  if (!req.file) throw bad('请选择视频文件');
+  try {
+    res.json(await viral.add(req.file.path, fileName(req.file), req.body || {}));
+  } finally {
+    fs.rm(req.file.path, { force: true }, () => {});
+  }
+}));
+app.get('/api/viral/:id', h(async (req, res) => {
+  const v = viral.get(req.params.id);
+  if (!v) throw notFound('记录');
+  res.json(v);
+}));
+app.post('/api/viral/:id/rerun', h(async (req, res) => res.json(viral.rerun(req.params.id))));
+app.post('/api/viral/:id/scripts', h(async (req, res) => res.json(await viral.learn(req.params.id, req.body || {}))));
+app.delete('/api/viral/:id', h(async (req, res) => res.json({ ok: viral.remove(req.params.id) })));
+app.get('/api/viral/:id/frames/:name', h(async (req, res) => {
+  const file = viral.framePath(req.params.id, req.params.name);
+  if (!file) throw notFound('画面');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.type('image/jpeg').sendFile(file, { dotfiles: 'allow' });
+}));
+
+// ---------- 视频文件：登录后只能看自己的，支持拖动进度和下载 ----------
+app.get('/api/media/:id', h(async (req, res) => {
+  const m = media.records.get(req.params.id);
+  if (!m) throw notFound('视频');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  if (req.query.download) {
+    const ext = path.extname(m.file) || '.mp4';
+    const name = `${m.title || 'video'}${ext}`.replace(/[\\/:*?"<>|\r\n]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="video${ext}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  }
+  res.type(m.mime);
+  await new Promise((resolve, reject) => res.sendFile(media.absPath(m), { dotfiles: 'allow', headers: { 'Content-Type': m.mime } }, (e) => (e && !res.headersSent ? reject(e) : resolve())));
+}));
+// 首帧图：生成视频时用自己拍的商品图
+app.post('/api/media/image', oneFile(upload, 'image', '图片太大：最大 30MB'), h(async (req, res) => {
+  if (!req.file) throw bad('请选择图片');
+  try {
+    const head = fs.readFileSync(req.file.path).subarray(0, 12);
+    const mime = head[0] === 0xff && head[1] === 0xd8 ? 'image/jpeg' : head.toString('latin1', 1, 4) === 'PNG' ? 'image/png' : head.toString('latin1', 8, 12) === 'WEBP' ? 'image/webp' : '';
+    if (!mime) throw bad('只支持 JPG、PNG、WebP 图片');
+    if (req.file.size > 10 * 1024 * 1024) throw bad('首帧图不能超过 10MB');
+    media.assertQuota(req.file.size);
+    const dir = media.newDir('image');
+    const abs = path.join(dir, `first-frame.${mime.split('/')[1]}`);
+    fs.renameSync(req.file.path, abs);
+    res.json(media.register({ abs, kind: 'image', title: fileName(req.file), mime }));
+  } finally {
+    fs.rm(req.file.path, { force: true }, () => {});
+  }
+}));
+
+// ---------- 脚本生成视频 ----------
+const scriptOf = (id) => {
+  const s = db.scripts.get(id);
+  if (!s) throw notFound('脚本');
+  return s;
+};
+app.get('/api/video-jobs', h(async (req, res) => res.json({ items: videogen.list(), models: connectors.active('video').map((c) => ({ id: c.id, name: c.name, vendor: c.vendor })), storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB } })));
+// 提交前的规划：几段、一共多少秒
+app.post('/api/video-jobs/plan', h(async (req, res) => res.json(videogen.publicPlan(videogen.plan({ script: scriptOf(req.body?.scriptId), connectorId: req.body?.connectorId, mode: req.body?.mode, sceneNs: req.body?.sceneNs })))));
+app.post('/api/video-jobs', h(async (req, res) => {
+  const script = scriptOf(req.body?.scriptId);
+  const body = { ...req.body };
+  if (body.imageSource === 'product') body.imageUrl = script.productId ? products.get(script.productId)?.image || '' : '';
+  res.json(await videogen.startJob(body, script));
+}));
+app.get('/api/video-jobs/:id', h(async (req, res) => {
+  const j = videogen.getJob(req.params.id);
+  if (!j) throw notFound('任务');
+  res.json(j);
+}));
+app.post('/api/video-jobs/:id/retry', h(async (req, res) => res.json(videogen.retry(req.params.id))));
+app.delete('/api/video-jobs/:id', h(async (req, res) => res.json({ ok: videogen.removeJob(req.params.id) })));
 
 // ---------- 知识库 ----------
 app.get('/api/kbs', h(async (req, res) => res.json({ items: db.kbs.all().map((k) => ({ ...k, readonly: !db.kbs.canEdit(k.id) })) })));
@@ -427,6 +544,9 @@ async function main() {
   await seed.run();
   report.recover();
   pipeline.recover();
+  fastmoss.recover();
+  viral.recover();
+  videogen.recover(auth.userById);
   const server = app.listen(PORT, HOST, () => {
     const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  TikTok 运营台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);

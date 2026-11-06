@@ -27,7 +27,7 @@ command -v curl >/dev/null || { log "安装 curl"; (apt-get update -qq && apt-ge
 need_node=1
 if command -v node >/dev/null; then
   v=$(node -v | sed 's/^v//; s/\..*//')
-  [ "$v" -ge 18 ] && need_node=0 && log "复用已安装的 Node.js $(node -v)"
+  [ "$v" -ge 20 ] && need_node=0 && log "复用已安装的 Node.js $(node -v)"
 fi
 if [ $need_node = 1 ]; then
   case "$(uname -m)" in
@@ -58,7 +58,8 @@ systemctl stop tkagent 2>/dev/null || true
 # 升级前备份数据目录（保留最近 10 份）
 if [ -n "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
   mkdir -p /var/backups/tkagent
-  tar -czf "/var/backups/tkagent/data-$(date +%Y%m%d-%H%M%S).tar.gz" -C "$DATA_DIR" .
+  # 视频文件很大且部署不会动它，不进备份
+  tar -czf "/var/backups/tkagent/data-$(date +%Y%m%d-%H%M%S).tar.gz" --exclude=./media --exclude=./uploads -C "$DATA_DIR" .
   ls -1t /var/backups/tkagent/data-*.tar.gz | tail -n +11 | xargs -r rm -f
   log "数据已备份到 /var/backups/tkagent"
 fi
@@ -67,6 +68,11 @@ tar -xzf "$BUNDLE" -C "$APP_DIR"
 cd "$APP_DIR"
 log "安装生产依赖"
 npm ci --omit=dev --no-audit --no-fund --loglevel=error || npm install --omit=dev --no-audit --no-fund --loglevel=error
+# 拆解和合并视频要用 ffmpeg：npm 的可选依赖没装上时用系统包
+if [ ! -x "$APP_DIR/node_modules/ffmpeg-static/ffmpeg" ] && ! command -v ffmpeg >/dev/null; then
+  log "安装 ffmpeg"
+  (apt-get update -qq && apt-get install -y -qq ffmpeg) || (dnf -y install ffmpeg || yum -y install ffmpeg) || log "ffmpeg 安装失败：爆款拆解和视频合并不可用"
+fi
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR" "$DATA_DIR"
 chmod 750 "$DATA_DIR"
 # 还没有任何账号时，在服务启动前先创建管理员，避免别人抢先注册成为管理员

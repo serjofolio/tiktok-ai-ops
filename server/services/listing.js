@@ -12,11 +12,11 @@ const LANG = { MY: 'Bahasa Melayu', ID: 'Bahasa Indonesia', TH: 'ภาษาไ
 
 // TikTok Shop 常见的违规用语：绝对化、医疗功效、虚假承诺、引流站外
 const BANNED = [
-  [/\b(best|no\.?\s?1|number one|#1)\b/i, '绝对化用语（best / No.1）'],
-  [/\b(cure|cures|heal|treat|therapy|medical grade)\b/i, '医疗功效用语'],
-  [/100\s?%|\bguarantee[ds]?\b|\bpermanent\b/i, '绝对承诺（100% / guaranteed / permanent）'],
+  [/\b(best|no\.?\s?1|number one|#1)\b|terbaik|nombor satu|nomor satu|tốt nhất|số 1\b|ดีที่สุด|อันดับ\s?1|最好的|第一名|全网第一/i, '绝对化用语（best / No.1 / terbaik / tốt nhất / ดีที่สุด / 最好）'],
+  [/\b(cure|cures|heal|treat|therapy|medical grade)\b|sembuh|menyembuhkan|ubat|chữa bệnh|chữa khỏi|รักษา|หายขาด|治疗|治愈|根治/i, '医疗功效用语'],
+  [/100\s?%|\bguarantee[ds]?\b|\bpermanent\b|dijamin|terjamin|cam kết|รับประกัน|保证|永久/i, '绝对承诺（100% / guaranteed / dijamin / cam kết / รับประกัน）'],
   [/\b(original|authentic|genuine)\b.*\b(apple|samsung|xiaomi|huawei)\b/i, '冒充原装品牌'],
-  [/whatsapp|wechat|telegram|shopee|lazada|\.com\b/i, '引流到站外'],
+  [/whatsapp|wechat|telegram|shopee|lazada|amazon|\.com\b/i, '引流到站外'],
   [/(?<!(for|with|untuk|dengan|fits|serasi)\s)\b(apple|samsung|xiaomi|huawei|oppo|vivo)\b/i, '品牌名需写成「for xxx / compatible with xxx」，不能当作自己的品牌'],
 ];
 

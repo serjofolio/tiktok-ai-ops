@@ -196,3 +196,41 @@ test('浏览器插件自动找货：选商品 → 自动打开 1688 关键词搜
     await ctx.close();
   }
 });
+
+test('浏览器插件：FastMoss 当前页发送到选品库，不走导出', async ({ request, baseURL }) => {
+  test.setTimeout(60000);
+  if ((await request.post('/api/auth/login', { data: ADMIN })).status() === 401) await request.post('/api/auth/register', { data: ADMIN });
+  const { token } = await (await request.post('/api/tokens', { data: { name: 'FastMoss 测试' } })).json();
+  const ctx = await chromium.launchPersistentContext('', { channel: 'chromium', headless: true, args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
+  try {
+    let [sw] = ctx.serviceWorkers();
+    if (!sw) sw = await ctx.waitForEvent('serviceworker');
+    const extId = sw.url().split('/')[2];
+    const pop = await ctx.newPage();
+    await pop.goto(`chrome-extension://${extId}/popup.html`);
+    await pop.fill('#server', baseURL);
+    await pop.fill('#token', token);
+    await pop.click('#save');
+    await expect(pop.locator('#msg')).toHaveText('已连接：admin');
+    // 页面结构是按表格页面写的模拟页，真实 FastMoss 页面要用户实测
+    const row = (id, title, shop, s7, g7) => `<tr><td><img src="https://img.example.com/${id}.jpg" alt=""><a href="/zh/e-commerce/detail/${id}">${title}</a><div>${shop}</div></td><td>$12.99</td><td>${s7}</td><td>${g7}</td><td>1.2万</td><td>88</td></tr>`;
+    const HTML = `<!doctype html><html><head><meta charset="utf-8"><title>商品搜索 - FastMoss</title></head><body><table><thead><tr><th>商品信息</th><th>售价</th><th>近7天销量</th><th>近7天销售额</th><th>总销量</th><th>带货达人数</th></tr></thead><tbody>
+      ${row('1930000000000001', 'Plugin Gold Stud Earrings', 'Shop P', '1,250', '$16.2k')}${row('1930000000000002', 'Plugin Pearl Necklace', 'Shop Q', '320', '$4.1k')}</tbody></table></body></html>`;
+    await ctx.route(/^https:\/\/www\.fastmoss\.com\//, (route) => route.fulfill({ contentType: 'text/html', body: HTML }));
+    await ctx.route(/img\.example\.com/, (route) => route.abort());
+    const page = await ctx.newPage();
+    await page.goto('https://www.fastmoss.com/zh/e-commerce/search?region=US');
+    await page.getByRole('button', { name: '发送本页商品到运营台' }).click();
+    await expect(page.locator('#tkops-fm')).toContainText('新增 2', { timeout: 15000 });
+    const items = (await (await request.get('/api/products?q=Plugin')).json()).items;
+    const stud = items.find((p) => /Stud Earrings/.test(p.name));
+    expect(stud).toMatchObject({ productId: '1930000000000001', sales7d: 1250, salesTotal: 12000, creatorCount: 88, gmv: 16200 });
+    expect(stud.fastmossUrl).toContain('/e-commerce/detail/1930000000000001');
+    expect(stud.evaluation.metrics.group).toBe('首饰');
+    const fac = (await (await request.get('/api/products?facets=1')).json()).facets;
+    expect(fac.batches.find((b) => b.source === 'plugin')).toBeTruthy();
+    for (const p of items) await request.delete(`/api/products/${p.id}`);
+  } finally {
+    await ctx.close();
+  }
+});

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const settings = require('../settings');
+const { safeFetch } = require('../net');
 
 // ---------- 文档解析 ----------
 async function extractText(filePath, originalName) {
@@ -220,8 +221,9 @@ async function importUrl(kbId, url) {
   const lark = /(larkoffice|larksuite|feishu)\.(com|cn)/i.test(url);
   let res;
   try {
-    res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 TikTokOps-KB/1.0', Accept: 'text/html,*/*' } });
+    res = await safeFetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 TikTokOps-KB/1.0', Accept: 'text/html,*/*' } });
   } catch (e) {
+    if (e.status) throw e;
     throw Object.assign(new Error('无法访问该链接：' + (e.cause?.code || e.message)), { status: 400 });
   }
   const loc = res.headers.get('location') || '';

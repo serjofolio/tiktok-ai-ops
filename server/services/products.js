@@ -7,6 +7,9 @@ const ctx = require('../ctx');
 const rag = require('./rag');
 const selection = require('./selection');
 
+const imports = db.collection('imports');
+const STATUSES = ['candidate', 'testing', 'dropped'];
+
 // ---------- 导入：列名识别（以 FastMoss「商品搜索」导出的表头为准，兼容其他工具和手动整理的表格） ----------
 // 顺序有意义：先精确匹配，再按这个顺序做包含匹配
 const FIELDS = {
@@ -122,7 +125,7 @@ async function parseFile(buffer, filename) {
 
 // 预览：找到表头行（前 10 行里非空单元格最多的一行）
 const pending = new Map();
-function preview(rows) {
+function preview(rows, { fileName, source } = {}) {
   if (!rows?.length) throw Object.assign(new Error('没有读到数据'), { status: 400 });
   let hi = 0;
   rows.slice(0, 10).forEach((r, i) => {
@@ -131,7 +134,7 @@ function preview(rows) {
   const headers = rows[hi].map((h) => String(h).trim());
   const data = rows.slice(hi + 1).filter((r) => r.some((c) => String(c).trim()));
   const token = crypto.randomBytes(12).toString('hex');
-  pending.set(token, { headers, data, at: Date.now(), uid: ctx.user()?.id });
+  pending.set(token, { headers, data, at: Date.now(), uid: ctx.user()?.id, fileName: fileName || '', source: source || 'paste' });
   for (const [k, v] of pending) if (Date.now() - v.at > 3600e3) pending.delete(k);
   const mapping = guessMapping(headers);
   return { token, headers, sample: data.slice(0, 5), total: data.length, mapping, fields: Object.fromEntries(Object.entries(FIELDS).map(([k, v]) => [k, v.label])), missing: ['sales7d', 'sales28d', 'gmv', 'creatorCount', 'price'].filter((k) => mapping[k] === undefined).map((k) => FIELDS[k].label) };
@@ -143,14 +146,67 @@ function fastmossLink(p) {
   return `https://www.fastmoss.com/zh/e-commerce/search?words=${encodeURIComponent(p.name || '')}`;
 }
 
-function commit(token, mapping) {
-  const job = pending.get(token);
-  if (!job || job.uid !== ctx.user()?.id) throw Object.assign(new Error('预览已过期，请重新上传'), { status: 400 });
-  if (mapping.name === undefined || mapping.name === '' || mapping.name === null) throw Object.assign(new Error('必须指定「商品名称」对应的列'), { status: 400 });
-  let created = 0, updated = 0;
-  const ids = [];
+// 导入日期按用户所在时区（前端传）；旧数据没有记录时按东八区算
+const localDate = (iso) => new Date(Date.parse(iso) + 8 * 3600e3).toISOString().slice(0, 10);
+const importDates = (p) => p.importDates || [localDate(p.dataAt || p.createdAt || db.now())];
+
+// 销量快照：每次拿到数据记一份，同一天只留最新的；隔几天再导入同一批商品，就能算出真实增长
+const SNAPSHOT_FIELDS = ['sales7d', 'gmv', 'sales28d', 'gmv28d', 'salesTotal', 'gmvTotal', 'creatorCount', 'videoCount', 'liveCount', 'price'];
+function snapshotOf(p, at) {
+  const snap = { at };
+  for (const k of SNAPSHOT_FIELDS) if (p[k] != null) snap[k] = p[k];
+  return snap;
+}
+function withSnapshot(list, snap) {
+  const day = snap.at.slice(0, 10);
+  return [...(list || []).filter((x) => x.at.slice(0, 10) !== day), snap].sort((a, b) => a.at.localeCompare(b.at)).slice(-40);
+}
+
+// 把一批商品写进选品库（文件导入、接口拉取、插件发送都走这里）。dataDate 早于已有数据时只补历史快照，不覆盖最新数据
+function upsert(rows, { source = 'file', fileName = '', dataDate, today } = {}) {
   const now = db.now();
+  const day = today || localDate(now);
+  const date = dataDate && /^\d{4}-\d{2}-\d{2}$/.test(dataDate) && dataDate <= day ? dataDate : day;
+  const dataAt = date === day ? now : `${date}T12:00:00.000Z`;
   const batchId = crypto.randomBytes(5).toString('hex');
+  let created = 0, updated = 0, history = 0;
+  const ids = [];
+  const categories = {};
+  const all = db.products.all();
+  const byProductId = new Map(all.filter((x) => x.productId).map((x) => [x.productId, x]));
+  const byName = new Map(all.map((x) => [x.name, x]));
+  for (const p of rows) {
+    if (!p.name) continue;
+    if (p.category) categories[p.category] = (categories[p.category] || 0) + 1;
+    const exist = (p.productId && byProductId.get(p.productId)) || (!p.productId && byName.get(p.name));
+    const dates = (x) => [...new Set([...(x ? importDates(x) : []), day])].sort();
+    if (exist) {
+      const known = Object.fromEntries(Object.entries(p).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+      const base = exist.snapshots?.length ? exist.snapshots : exist.dataAt ? [snapshotOf(exist, exist.dataAt)] : [];
+      const snapshots = withSnapshot(base, snapshotOf({ ...exist, ...known }, dataAt));
+      const batches = [...new Set([...(exist.batchIds || (exist.batchId ? [exist.batchId] : [])), batchId])];
+      if (exist.dataAt && dataAt < exist.dataAt) {
+        db.products.update(exist.id, { snapshots: withSnapshot(base, snapshotOf(known, dataAt)), batchIds: batches, importDates: dates(exist) });
+        history++;
+      } else {
+        // 数据更新后旧的 AI 结论作废，需要重新研判
+        db.products.update(exist.id, { ...known, dataAt, batchId, batchIds: batches, importDates: dates(exist), snapshots, ai: null });
+        updated++;
+      }
+      ids.push(exist.id);
+    } else {
+      const item = db.products.insert({ ...p, source: 'fastmoss', status: 'candidate', dataAt, batchId, batchIds: [batchId], importDates: [day], snapshots: [snapshotOf(p, dataAt)], judgement: {} });
+      if (item.productId) byProductId.set(item.productId, item);
+      byName.set(item.name, item);
+      ids.push(item.id);
+      created++;
+    }
+  }
+  imports.insert({ batchId, source, fileName, date, importDate: day, count: ids.length, created, updated, history, categories: Object.entries(categories).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k) });
+  return { created, updated, history, ids, batchId, date };
+}
+
+function rowsFromTable(job, mapping) {
   // Excel 的百分比单元格以小数存储（0.86 = 86%）：该列全是数字且都在 ±10 以内、含小数时按比例换算
   const fraction = {};
   for (const field of PERCENT) {
@@ -159,6 +215,7 @@ function commit(token, mapping) {
     const vals = job.data.map((r) => r[Number(idx)]).filter((v) => v !== '' && v != null);
     fraction[field] = vals.length > 0 && vals.every((v) => typeof v === 'number' && Math.abs(v) <= 10) && vals.some((v) => v % 1 !== 0);
   }
+  const rows = [];
   for (const r of job.data) {
     const p = {};
     for (const [field, idx] of Object.entries(mapping)) {
@@ -179,20 +236,53 @@ function commit(token, mapping) {
     if (p.growth == null && p.sales7d != null && p.salesPrev) p.growth = Math.round(((p.sales7d - p.salesPrev) / p.salesPrev) * 1000) / 10;
     // 佣金率 / 出单率可能写成 0.15 这种小数
     for (const f of ['commissionRate', 'creatorConvRate']) if (!fraction[f] && p[f] != null && p[f] > 0 && p[f] < 1) p[f] = Math.round(p[f] * 1000) / 10;
-    const exist = db.products.all().find((x) => (p.productId && x.productId === p.productId) || (!p.productId && x.name === p.name));
-    if (exist) {
-      // 数据更新后旧的 AI 结论作废，需要重新研判
-      db.products.update(exist.id, { ...p, dataAt: now, batchId, ai: null });
-      ids.push(exist.id);
-      updated++;
-    } else {
-      ids.push(db.products.insert({ ...p, source: 'fastmoss', status: 'candidate', dataAt: now, batchId, judgement: {} }).id);
-      created++;
+    rows.push(p);
+  }
+  return rows;
+}
+
+function commit(token, mapping, { dataDate, today } = {}) {
+  const job = pending.get(token);
+  if (!job || job.uid !== ctx.user()?.id) throw Object.assign(new Error('预览已过期，请重新上传'), { status: 400 });
+  if (mapping.name === undefined || mapping.name === '' || mapping.name === null) throw Object.assign(new Error('必须指定「商品名称」对应的列'), { status: 400 });
+  const r = upsert(rowsFromTable(job, mapping), { source: job.source, fileName: job.fileName, dataDate, today });
+  pending.delete(token);
+  db.activity.insert({ type: 'product', text: `导入 FastMoss 数据：新增 ${r.created}，更新 ${r.updated}${r.history ? `，补历史 ${r.history}` : ''}` });
+  return r;
+}
+
+// 插件发送：表头 + 行，和导入文件走同一套列名识别
+function importTable({ headers, rows, source = 'plugin', fileName = '' }, opts = {}) {
+  if (!Array.isArray(headers) || !Array.isArray(rows) || !rows.length) throw Object.assign(new Error('没有读到商品'), { status: 400 });
+  const clean = headers.map((h) => String(h).trim());
+  const mapping = guessMapping(clean);
+  if (mapping.name === undefined) throw Object.assign(new Error('没有识别到商品名称这一列'), { status: 400 });
+  return { ...upsert(rowsFromTable({ data: rows.slice(0, 500) }, mapping), { source, fileName, ...opts }), recognized: Object.keys(mapping).length };
+}
+
+// 本周用了几次 FastMoss 导出额度（按导入的文件数估算，FastMoss 官方的计数和重置时间以它页面为准）
+function exportQuota(today = localDate(db.now())) {
+  const d = new Date(`${today}T00:00:00Z`);
+  const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400e3).toISOString().slice(0, 10);
+  const used = imports.all().filter((x) => x.source === 'file' && x.date >= monday && x.date <= today).length;
+  return { used, limit: Number(settings.get().selection?.exportQuota) || 5, weekStart: monday };
+}
+
+// 导入批次（给选品库筛选用）：新数据有导入记录，早期数据按 batchId 分组补出来
+function batches() {
+  const records = new Map(imports.all().map((x) => [x.batchId, x]));
+  const counts = new Map();
+  for (const p of db.products.all()) {
+    for (const id of p.batchIds || (p.batchId ? [p.batchId] : [])) {
+      const c = counts.get(id) || { count: 0, date: importDates(p).at(-1) };
+      c.count++;
+      counts.set(id, c);
     }
   }
-  pending.delete(token);
-  db.activity.insert({ type: 'product', text: `导入 FastMoss 数据：新增 ${created}，更新 ${updated}` });
-  return { created, updated, ids, batchId };
+  return [...counts.entries()].map(([id, c]) => {
+    const r = records.get(id);
+    return { id, date: r?.importDate || c.date, dataDate: r?.date, count: c.count, source: r?.source || 'file', fileName: r?.fileName || '', categories: r?.categories || [] };
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
 // ---------- 评估 ----------
@@ -206,7 +296,7 @@ function enrich(p, groups) {
 
 const VERDICT_ORDER = { 可以上: 0, 谨慎测试: 1, 数据不足: 2, 不建议上: 3 };
 
-function list({ q, status, verdict, category, sort = 'score', batch } = {}) {
+function list({ q, status, verdict, category, sort = 'score', batch, group, type, market, shop, date, dateFrom, dateTo, priceMin, priceMax, minSales, ids } = {}) {
   const all = db.products.all();
   const groups = selection.population(all);
   let items = all.map((p) => enrich(p, groups));
@@ -217,7 +307,22 @@ function list({ q, status, verdict, category, sort = 'score', batch } = {}) {
   if (status) items = items.filter((p) => (p.status || 'candidate') === status);
   if (verdict) items = items.filter((p) => p.evaluation.verdict === verdict);
   if (category) items = items.filter((p) => p.category === category);
-  if (batch) items = items.filter((p) => p.batchId === batch);
+  if (batch) items = items.filter((p) => (p.batchIds || [p.batchId]).includes(batch));
+  if (group) items = items.filter((p) => p.evaluation.metrics.group === group);
+  if (type) items = items.filter((p) => p.evaluation.metrics.type === type);
+  if (market) items = items.filter((p) => p.evaluation.metrics.market === market);
+  if (shop) items = items.filter((p) => p.shop === shop);
+  if (date) items = items.filter((p) => importDates(p).includes(date));
+  if (dateFrom) items = items.filter((p) => importDates(p).some((d) => d >= dateFrom));
+  if (dateTo) items = items.filter((p) => importDates(p).some((d) => d <= dateTo));
+  const asp = (p) => p.evaluation.metrics.asp ?? p.price;
+  if (priceMin !== undefined && priceMin !== '') items = items.filter((p) => asp(p) >= Number(priceMin));
+  if (priceMax !== undefined && priceMax !== '') items = items.filter((p) => asp(p) <= Number(priceMax));
+  if (minSales !== undefined && minSales !== '') items = items.filter((p) => (p.sales7d ?? 0) >= Number(minSales));
+  if (ids) {
+    const want = new Set(Array.isArray(ids) ? ids : String(ids).split(','));
+    items = items.filter((p) => want.has(p.id));
+  }
   const sc = (p) => p.ai?.score ?? p.evaluation.score ?? -1;
   const by = {
     score: (a, b) => (VERDICT_ORDER[a.evaluation.verdict] ?? 9) - (VERDICT_ORDER[b.evaluation.verdict] ?? 9) || sc(b) - sc(a),
@@ -233,6 +338,45 @@ function list({ q, status, verdict, category, sort = 'score', batch } = {}) {
 function get(id) {
   const p = db.products.get(id);
   return p ? enrich(p, selection.population(db.products.all())) : null;
+}
+
+// 筛选项：只统计整个选品库，选了一个条件后其他下拉框的选项不会消失
+function facets() {
+  const all = list({});
+  const tally = (fn) => {
+    const m = new Map();
+    for (const p of all) {
+      const k = fn(p);
+      if (k) m.set(k, (m.get(k) || 0) + 1);
+    }
+    return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  };
+  const dates = new Map();
+  for (const p of all) for (const d of importDates(p)) dates.set(d, (dates.get(d) || 0) + 1);
+  return {
+    categories: tally((p) => p.category),
+    types: tally((p) => p.evaluation.metrics.type),
+    markets: tally((p) => p.evaluation.metrics.market),
+    groups: tally((p) => p.evaluation.metrics.group),
+    dates: [...dates.entries()].map(([date, count]) => ({ date, count })).sort((a, b) => b.date.localeCompare(a.date)),
+    batches: batches(),
+    total: all.length,
+  };
+}
+
+// 批量操作：删除 / 改状态
+function bulk({ ids, action, status } = {}) {
+  if (!Array.isArray(ids) || !ids.length) throw Object.assign(new Error('请先选择商品'), { status: 400 });
+  let n = 0;
+  for (const id of ids) {
+    if (!db.products.get(id)) continue;
+    if (action === 'delete') db.products.remove(id);
+    else if (action === 'status' && STATUSES.includes(status)) db.products.update(id, { status });
+    else throw Object.assign(new Error('不支持的批量操作'), { status: 400 });
+    n++;
+  }
+  db.activity.insert({ type: 'product', text: `批量${action === 'delete' ? '删除' : '修改'} ${n} 个商品` });
+  return { count: n };
 }
 
 function categories() {
@@ -315,4 +459,4 @@ function removeDemo() {
   if (real.length !== all.length) db.products.replaceAll(real);
 }
 
-module.exports = { FIELDS, preview, parseFile, parseDelimited, commit, list, get, categories, analyze, patch, createManual, removeDemo, parseNum, brief };
+module.exports = { FIELDS, preview, parseFile, parseDelimited, commit, upsert, importTable, exportQuota, facets, bulk, batches, list, get, categories, analyze, patch, createManual, removeDemo, parseNum, parseRange, brief };

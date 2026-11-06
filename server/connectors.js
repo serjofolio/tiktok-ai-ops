@@ -2,19 +2,18 @@
 // 每个厂商一个适配器，统一成同样的输入输出；没有官方接口的环节用浏览器插件或通用 Webhook 兜底
 // status：ready 可直接使用 / beta 已按公开资料实现、拿到接口文档后需核对 / pending 等待厂商开放接口
 const crypto = require('crypto');
-const dns = require('dns').promises;
-const net = require('net');
 const settings = require('./settings');
-const ctx = require('./ctx');
+const { safeFetch } = require('./net');
 
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
 const VENDORS = {
   // ---------- 选品数据 ----------
   fastmoss: {
-    kind: 'product', name: 'FastMoss 开放接口', status: 'pending', link: 'https://www.fastmoss.com/',
-    desc: 'FastMoss 目前没有公开 API 文档，审批通过后按文档接入自动拉取。在此之前：导出 Excel 拖进「智能选品」，或用浏览器插件一键发送。',
-    fields: [['apiKey', 'API Key', true], ['apiSecret', 'API Secret', true]],
+    kind: 'product', name: 'FastMoss 开放接口', status: 'beta', link: 'https://developers.fastmoss.com/api/overview',
+    desc: '官方接口：按类目和站点拉取商品，还能拿到每天的销量和 GMV，不占用每周的导出次数。到 FastMoss 开发者平台注册、在控制台创建密钥（可申请试用额度），按调用次数计费（官网写每次 $0.01 起，空结果不收费，以控制台账单为准）。没开通时：导出 Excel 拖进「智能选品」，或用浏览器插件发送当前页。',
+    fields: [['apiKey', 'API 密钥（控制台的 client_secret）', true]],
+    options: [['baseUrl', '接口地址', 'https://openapi.fastmoss.com']],
   },
   // ---------- 找货 ----------
   ali1688: {
@@ -51,6 +50,75 @@ const VENDORS = {
     kind: 'erp', name: '通用 Webhook（n8n / 影刀 / 自研 ERP）', status: 'ready',
     desc: '上品时把「上架包」（标题、描述、卖点、SKU、定价、1688 货源链接）以 JSON POST 到你的地址，由 n8n、影刀 RPA 或自研系统完成后续操作。请求头带 X-TK-Signature（HMAC-SHA256）。',
     fields: [['url', '接收地址（URL）', false], ['secret', '签名密钥（可选）', true]],
+  },
+  // ---------- 视频模型：从脚本直接生成视频（适配器见 services/videogen.js） ----------
+  seedance: {
+    kind: 'video', name: 'Seedance（字节 · 火山方舟）', status: 'beta', link: 'https://console.volcengine.com/ark',
+    desc: '火山方舟控制台开通 Seedance 后创建 API Key。支持竖屏、首帧图、同步配音；模型也可以填推理接入点 ID。每个任务 4–15 秒（1.0 系列 2–12 秒）。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://ark.cn-beijing.volces.com/api/v3'], ['model', '模型', 'doubao-seedance-2-0-260128', ['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-1-0-pro-250528']], ['resolution', '清晰度', '720p', ['480p', '720p', '1080p']], ['durations', '单段时长范围（秒）', '4-15']],
+  },
+  kling: {
+    kind: 'video', name: '可灵 Kling', status: 'beta', link: 'https://kling.ai/document-api/api/get-started/authentication',
+    desc: '可灵开放平台创建 API Key。支持竖屏、首帧图、多镜头一次生成（最多 6 个镜头）。服务器在中国境外用默认地址。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://api-singapore.klingai.com'], ['model', '模型', 'kling-3.0', ['kling-3.0']], ['resolution', '清晰度', '720p', ['720p', '1080p']], ['durations', '单段时长范围（秒）', '3-15']],
+  },
+  wan: {
+    kind: 'video', name: '通义万相 Wan（阿里云百炼）', status: 'beta', link: 'https://bailian.console.aliyun.com/',
+    desc: '阿里云百炼开通后创建 API Key。地址、模型和 Key 要在同一个地域；控制台给的是工作空间专属地址时，把接口地址换成它（到 /api/v1 为止）。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://dashscope.aliyuncs.com/api/v1'], ['model', '文生视频模型', 'wan2.7-t2v', ['wan2.7-t2v']], ['imageModel', '图生视频模型（用首帧图时）', 'wan2.7-i2v', ['wan2.7-i2v']], ['resolution', '清晰度', '720P', ['720P', '1080P']], ['durations', '单段时长范围（秒）', '2-15']],
+  },
+  minimax: {
+    kind: 'video', name: '海螺 Hailuo（MiniMax）', status: 'beta', link: 'https://platform.minimax.io/docs/api-reference/video-generation-intro',
+    desc: 'MiniMax 开放平台创建 API Key。每段只能 6 秒或 10 秒。注意：文生视频接口没有画面比例参数，要竖屏请给一张竖版首帧图。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://api.minimax.io'], ['model', '模型', 'MiniMax-Hailuo-2.3', ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-2.3-Fast', 'MiniMax-Hailuo-02']], ['resolution', '清晰度', '768P', ['768P', '1080P']], ['durations', '单段可选时长（秒）', '6,10']],
+  },
+  videocustom: {
+    kind: 'video', name: '自定义视频接口（中转站 / 其他模型）', status: 'ready',
+    desc: '异步「提交任务 → 查询任务」形式的接口都能接：填提交地址、请求体模板和结果字段路径。模板里可用 {{prompt}} {{model}} {{duration}} {{ratio}} {{image}} {{audio}}；路径用点号写，例如 data.task_id。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['submitUrl', '提交地址（POST）', ''], ['submitBody', '请求体模板（JSON）', '{"model":"{{model}}","prompt":"{{prompt}}","duration":{{duration}},"aspect_ratio":"{{ratio}}"}'], ['taskIdPath', '任务 ID 字段路径', 'id'], ['queryUrl', '查询地址（GET，用 {{id}} 表示任务 ID）', ''], ['statusPath', '状态字段路径', 'status'], ['doneValues', '成功的状态值（逗号分隔）', 'succeeded,success,completed,done'], ['failValues', '失败的状态值（逗号分隔）', 'failed,fail,error,cancelled,canceled,expired'], ['videoUrlPath', '视频地址字段路径', 'video_url'], ['errorPath', '错误信息字段路径（可选）', 'error.message'], ['authHeader', '鉴权头（用 {{key}} 表示密钥）', 'Authorization: Bearer {{key}}'], ['model', '模型', ''], ['durations', '单段时长范围（秒）', '5-10']],
+  },
+  // ---------- 看画面的模型：拆解爆款视频用（services/understand.js） ----------
+  visionglm: {
+    kind: 'vision', name: '智谱 GLM 视觉模型', status: 'ready', link: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v',
+    desc: '拆解爆款视频时看画面、读字幕。GLM-4.6V-Flash 官方标明免费，先用它就行。Key 和智谱大模型是同一个。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://open.bigmodel.cn/api/paas/v4'], ['model', '模型', 'glm-4.6v-flash', ['glm-4.6v-flash', 'glm-4.6v-flashx', 'glm-4.6v']]],
+  },
+  visionopenai: {
+    kind: 'vision', name: 'OpenAI 兼容的视觉模型（通义 / 豆包 / OpenAI 等）', status: 'ready',
+    desc: '任何支持 image_url 的 OpenAI 兼容模型，例如通义的 qwen-vl 系列、豆包视觉模型、gpt-4.1。保存后点「测试」会真的发一张图，确认模型看得见。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://dashscope.aliyuncs.com/compatible-mode/v1'], ['model', '模型', 'qwen-vl-max']],
+  },
+  visionclaude: {
+    kind: 'vision', name: 'Anthropic Claude', status: 'ready',
+    desc: 'Claude 系列模型都能看图。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://api.anthropic.com'], ['model', '模型', 'claude-sonnet-5-5', ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']]],
+  },
+  // ---------- 语音转写：拆解爆款视频时把口播转成文字 ----------
+  asrsiliconflow: {
+    kind: 'asr', name: '硅基流动语音转写', status: 'ready', link: 'https://docs.siliconflow.cn/docs/api/audio-transcriptions-post',
+    desc: '接口是 /audio/transcriptions，单个文件 1 小时、50MB 以内。Key 和硅基流动大模型是同一个。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://api.siliconflow.cn/v1'], ['model', '模型', 'FunAudioLLM/SenseVoiceSmall', ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR']]],
+  },
+  asrglm: {
+    kind: 'asr', name: '智谱语音转写', status: 'ready', link: 'https://docs.bigmodel.cn/',
+    desc: '模型 glm-asr-2512。接口单次只收 30 秒内的音频，系统会自动切段再拼起来。Key 和智谱大模型是同一个。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://open.bigmodel.cn/api/paas/v4'], ['model', '模型', 'glm-asr-2512'], ['chunkSeconds', '每段秒数', '28']],
+  },
+  asropenai: {
+    kind: 'asr', name: 'OpenAI 兼容语音转写（Whisper / Groq 等）', status: 'ready',
+    desc: '任何 /audio/transcriptions 接口。例如 OpenAI 的 whisper-1，或 Groq（接口地址 https://api.groq.com/openai/v1，模型 whisper-large-v3-turbo）。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://api.openai.com/v1'], ['model', '模型', 'whisper-1']],
   },
 };
 
@@ -97,7 +165,7 @@ function publicOne(c) {
   return { ...c, creds, kind: v.kind, status: v.status, configured: (v.fields || []).filter(required).every(([f]) => c.creds?.[f]) };
 }
 const publicList = () => list().map(publicOne);
-const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d]) => ({ key: f, label: l, default: d })) }]));
+const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
 
 // 当前可用的某类连接器（已启用、已填写凭证）
 function active(kind) {
@@ -106,28 +174,12 @@ function active(kind) {
 const get = (id) => list().find((c) => c.id === id) || null;
 
 // ---------- HTTP ----------
-// 地址由用户填写：普通用户不能请求服务器内网（防止借接口探测内网），管理员可以（自建 n8n 等）
-const PRIVATE = /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|::1$|fc|fd|fe80)/i;
-async function guardUrl(url) {
-  let u;
-  try {
-    u = new URL(url);
-  } catch {
-    throw err('接口地址格式不正确');
-  }
-  if (!/^https?:$/.test(u.protocol)) throw err('接口地址只能是 http(s)');
-  if (ctx.user()?.role === 'admin') return;
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  const ips = net.isIP(host) ? [host] : (await dns.lookup(host, { all: true }).catch(() => [])).map((x) => x.address);
-  if (host === 'localhost' || ips.some((ip) => PRIVATE.test(ip))) throw err('不能请求内网地址');
-}
-
+// 地址由用户填写：普通用户不能请求服务器内网，管理员可以（自建 n8n 等），规则见 net.js
 async function request(url, opts = {}, timeoutMs = 30000) {
-  await guardUrl(url);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...opts, signal: ctrl.signal });
+    const res = await safeFetch(url, { ...opts, signal: ctrl.signal });
     const text = await res.text();
     let data;
     try {
@@ -294,7 +346,24 @@ const miaoshou = {
   },
 };
 
-const ADAPTERS = { onebound1688: onebound, ali1688, webhook, miaoshou };
+// FastMoss：统一 POST + Bearer；业务码 0 才算成功
+const FASTMOSS_ERRORS = { 1002: '密钥无效', 10001: '参数不对', 20001: '数据不存在', 30001: '没有这个接口的权限', 30002: '超出套餐的数据量限制', 30003: '请求太频繁', 40001: 'FastMoss 服务异常' };
+const fastmoss = {
+  async call(c, path, payload = {}) {
+    const base = (c.options?.baseUrl || VENDORS.fastmoss.options[0][2]).replace(/\/+$/, '');
+    const data = await request(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.creds.apiKey}` }, body: JSON.stringify(payload) });
+    if (data.code !== 0) throw Object.assign(err(`FastMoss 接口：${FASTMOSS_ERRORS[data.code] || data.message || data.msg || data.code}`, 424), { fmCode: data.code });
+    return data.data;
+  },
+  async test(c) {
+    const list = await this.call(c, '/product/v1/categoryInfo', { lang: 'ZH_CN' });
+    return `连接成功，读到 ${(list || []).length} 个一级类目`;
+  },
+};
+
+const ADAPTERS = { onebound1688: onebound, ali1688, webhook, miaoshou, fastmoss };
+// 视频模型和看画面 / 语音转写的适配器在各自模块里注册，避免循环依赖
+const register = (vendor, a) => (ADAPTERS[vendor] = a);
 
 function adapter(c) {
   const a = ADAPTERS[c.vendor];
@@ -308,4 +377,4 @@ async function test(id) {
   return { message: await adapter(c).test(c) };
 }
 
-module.exports = { VENDORS, catalog, list, publicList, save, remove, get, active, adapter, test, normalizeOffer };
+module.exports = { VENDORS, catalog, list, publicList, save, remove, get, active, adapter, register, request, test, normalizeOffer };

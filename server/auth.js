@@ -175,6 +175,7 @@ function adminDelete(admin, id) {
   if (u.id === admin.id) throw err('不能删除自己');
   endSessions(id);
   db.purgeUser(id);
+  require('./media').purgeUserFiles(id);
   settings.removeUser(id);
   users.remove(id);
   return { ok: true };
@@ -219,5 +220,5 @@ function userFromApiToken(header) {
 module.exports = {
   createApiToken, listApiTokens, revokeApiToken, userFromApiToken,
   register, login, createSession, userFromToken, endSession, endSessions, changePassword, readToken, setCookie, clientIp, publicUser,
-  listUsers, adminUpdate, adminResetPassword, adminDelete, upsertAdmin, hasUsers, initUserData,
+  listUsers, adminUpdate, adminResetPassword, adminDelete, upsertAdmin, hasUsers, initUserData, userById: (id) => users.get(id) || null,
 };

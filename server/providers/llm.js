@@ -2,6 +2,7 @@
 // 协议：OpenAI 兼容（智谱 GLM / DeepSeek / Kimi / 通义 / 豆包 / OpenAI 等）与 Anthropic（Claude、智谱 Anthropic 兼容端点）
 // 内部统一消息格式：{ role: 'user'|'assistant'|'tool', content, toolCalls?, toolCallId? }
 const settings = require('../settings');
+const { safeFetch } = require('../net');
 
 // 常用供应商预设；models 为上游不提供模型列表时的备选
 const PRESETS = [
@@ -42,7 +43,7 @@ async function http(url, opts, timeoutMs = 120000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...opts, signal: opts?.signal || ctrl.signal });
+    const res = await safeFetch(url, { ...opts, signal: opts?.signal || ctrl.signal });
     if (!res.ok) throw await readError(res);
     const text = await res.text();
     try {
@@ -155,9 +156,10 @@ async function stream(opts, onDelta, { signal, cfg: cfgOverride } = {}) {
   const req = buildRequest(cfg, { ...opts, stream: true });
   let res;
   try {
-    res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+    res = await safeFetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
   } catch (e) {
     if (e.name === 'AbortError') return { text: '', think: '', aborted: true };
+    if (e.status) throw e;
     throw new Error(`无法连接上游（${e.cause?.code || e.message}），请检查 Base URL`);
   }
   if (!res.ok) throw await readError(res);
@@ -215,8 +217,14 @@ async function complete(prompt, { system, temperature } = {}) {
   return (await chat({ system, messages: [{ role: 'user', content: prompt }], temperature })).text;
 }
 
-async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs, noThinking } = {}) {
-  const r = await chat({ system, messages: [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs, noThinking });
+// 带图片的消息：OpenAI 兼容用 image_url，Anthropic 用 base64 块；智谱的 base64 不带 data: 前缀
+function imageMessage(cfg, text, images) {
+  if (cfg.protocol === 'anthropic') return { role: 'user', content: [...images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.b64 } })), { type: 'text', text }] };
+  return { role: 'user', content: [...images.map((i) => ({ type: 'image_url', image_url: { url: isGLM(cfg) ? i.b64 : `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text }] };
+}
+
+async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs, noThinking, cfg, messages } = {}) {
+  const r = await chat({ system, messages: messages || [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs, noThinking }, cfg);
   const parsed = safeJSON(r.text);
   if (!parsed) throw new Error('模型返回的内容不是合法 JSON，请重试或换一个模型：' + r.text.slice(0, 160));
   return parsed;
@@ -266,4 +274,4 @@ async function test(cfg) {
   return { text: text ? text.slice(0, 80) : '连接成功（模型只返回了思考内容）', ms: Date.now() - t0 };
 }
 
-module.exports = { PRESETS, isMock, noLLM, chat, stream, complete, completeJSON, safeJSON, test, http, trimSlash, listModels };
+module.exports = { PRESETS, isMock, noLLM, chat, stream, complete, completeJSON, imageMessage, safeJSON, test, http, trimSlash, listModels };
