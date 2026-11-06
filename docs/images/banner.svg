@@ -56,6 +56,6 @@
     <g class="node n3" transform="translate(366,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">比价同款</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">权重矩阵</text></g>
     <g class="node n4" transform="translate(549,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">AI 上架包</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">本地语言 + 定价</text></g>
     <g class="node n5" transform="translate(732,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">推送 ERP</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">妙手 / Webhook</text></g>
-    <g class="node n6" transform="translate(915,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">带货脚本</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">分镜 + A/B 钩子</text></g>
+    <g class="node n6" transform="translate(915,0)"><rect width="140" height="72" rx="14"/><rect class="lit" width="140" height="72" rx="14"/><text x="70" y="32">测款复盘</text><text x="70" y="54" font-size="12" font-weight="400" fill="#8a8aa3">加码还是止损</text></g>
   </g>
 </svg>

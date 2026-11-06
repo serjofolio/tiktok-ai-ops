@@ -26,6 +26,8 @@ const connectors = require('./connectors');
 const sourcing = require('./services/sourcing');
 const listing = require('./services/listing');
 const pipeline = require('./services/pipeline');
+const launch = require('./services/launch');
+const sample = require('./services/sample');
 const seed = require('./seed');
 
 const app = express();
@@ -147,6 +149,23 @@ app.get('/api/dashboard', h(async (req, res) => {
     store: s.store,
   });
 }));
+
+// ---------- 测款作战室 ----------
+app.get('/api/launch/board', h(async (req, res) => res.json(launch.board())));
+app.get('/api/launch/actions', h(async (req, res) => res.json({ items: launch.actions(/^\d{4}-\d{2}-\d{2}$/.test(req.query.today || '') ? req.query.today : undefined), sample: sample.status() })));
+app.get('/api/launch/:id', h(async (req, res) => res.json(launch.get(req.params.id))));
+app.post('/api/launch/:id/start', h(async (req, res) => res.json(launch.start(req.params.id))));
+app.patch('/api/launch/:id', h(async (req, res) => res.json(launch.configure(req.params.id, req.body || {}))));
+app.post('/api/launch/:id/prepare', h(async (req, res) => res.json(launch.prepare(req.params.id, { force: !!req.body?.force }))));
+app.post('/api/launch/:id/days', h(async (req, res) => res.json(launch.addDay(req.params.id, req.body || {}))));
+app.delete('/api/launch/:id/days/:dayId', h(async (req, res) => res.json(launch.removeDay(req.params.id, req.params.dayId))));
+app.get('/api/launch/:id/export', h(async (req, res) => {
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="launch-plan-${req.params.id}.md"`);
+  res.send(launch.exportMd(req.params.id));
+}));
+app.post('/api/sample', h(async (req, res) => res.json(sample.load())));
+app.delete('/api/sample', h(async (req, res) => res.json(sample.clear())));
 
 // ---------- 智能选品 ----------
 // 列表只带货源和上架包的摘要，详情接口才返回完整数据
@@ -544,6 +563,7 @@ async function main() {
   await seed.run();
   report.recover();
   pipeline.recover();
+  launch.recover();
   fastmoss.recover();
   viral.recover();
   videogen.recover(auth.userById);

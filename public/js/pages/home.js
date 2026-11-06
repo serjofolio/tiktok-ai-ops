@@ -6,7 +6,8 @@ import { scramble, sparkles } from '../fx/ambient.js';
 const WORDS = ['能卖的品', '算清的利润', '可拍的脚本', '清晰的测款方案'];
 const LOGOS = ['TikTok Shop', 'FastMoss', '1688', '智谱 GLM', 'DeepSeek', 'Kimi', '通义千问', 'Claude', 'Cloudflare'];
 const FAQ = [
-  ['需要 FastMoss 会员吗？', '目前通过导入 FastMoss 的导出文件或粘贴表格获取数据，需要你的 FastMoss 账号能导出。FastMoss 开放接口审批通过后，在「接入配置」填写即可改为自动拉取。'],
+  ['需要 FastMoss 会员吗？', '导入 FastMoss 导出文件或粘贴表格需要你的账号能导出。也可以在「接入配置」填 FastMoss 开放接口的密钥直接拉取，按调用次数付费，不占导出次数。'],
+  ['没有数据和模型也能看吗？', '可以。注册后在总览点「载入示例工作区」，用标明「示例」的虚构数据看完整流程，看完一键清除。'],
   ['支持哪些大模型？', '所有 OpenAI 兼容接口和 Anthropic 协议：智谱 GLM（含编码套餐）、DeepSeek、Kimi、通义千问、豆包、OpenAI、Claude 等。可以添加多个，一键切换。'],
   ['数据和 API Key 存在哪里？', '全部保存在你自己的服务器上，不经过第三方。页面只显示脱敏后的 Key。'],
   ['飞书上的 TikTok 官方文档怎么导入？', '飞书文档需要登录才能读取。在飞书里打开文档，右上角「…」→「下载为」Word 或 PDF，再上传到知识库的「TikTok 官方文档」。Agent 回答时会优先依据这些文档并标注出处。'],
@@ -41,7 +42,7 @@ export async function render(view) {
         <a class="btn lg btn-glow" href="#/chat">${icon('bot')}问 Agent</a>
         <a class="btn lg ghost" href="#/dashboard">进入工作台 ${icon('arrow', 16)}</a>
       </div>
-      <div class="note"><span>真实数据，无演示假数据</span><span>多模型一键切换</span><span>密钥只存在你的服务器</span></div>
+      <div class="note"><span>分析只用你导入的数据，示例明确标注</span><span>多模型一键切换</span><span>密钥只存在你的服务器</span></div>
     </div>
     <div class="mock-wrap" id="mockwrap">
       <div class="mock beam-border" id="mock"><div class="mock-inner">

@@ -1,11 +1,12 @@
-// 总览：3D 主视觉 + 选品到脚本的进度 + 快捷入口
-import { api, icon, esc, fmtNum, timeAgo, empty } from '../lib.js';
+// 总览：今日行动 + 3D 主视觉 + 选品到测款的进度 + 快捷入口
+import { api, icon, esc, fmtNum, timeAgo, empty, toast, withLoading, confirmBox, $ } from '../lib.js';
 import { splitText, mountGallery } from '../fx/ambient.js';
 
 const VC = { 可以上: 'v-go', 谨慎测试: 'v-watch', 不建议上: 'v-drop', 数据不足: 'v-na' };
 
 export async function render(view) {
-  const d = await api('/dashboard');
+  const localDay = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const [d, act] = await Promise.all([api('/dashboard'), api(`/launch/actions?today=${localDay}`)]);
   const s = d.stats;
   const cats = d.categoryStats;
   const maxSales = Math.max(...cats.map((c) => c.sales || c.count), 1);
@@ -21,15 +22,20 @@ export async function render(view) {
     ['target', '硬指标 + 利润测算', '销量增长、利润、对标视频、价格带', '#/products'],
     ['sparkles', 'AI 选品分析', '为什么选、怎么拍、测款方案', '#/products'],
     ['script', '一键生成视频脚本', '钩子 → 痛点 → 演示 → 证明 → CTA', '#/scripts'],
+    ['zap', '测款作战室', '算保本线，判断加码还是止损', '#/launch'],
   ];
   const cards = d.topProducts.slice(0, 9).map((p) => ({ title: p.name, sub: `${p.evaluation.verdict} · ${p.evaluation.metrics.momentum != null ? '趋势 ' + p.evaluation.metrics.momentum + '×' : '—'}`, href: `#/products/${p.id}` }));
 
+  const today_ = act.items.length ? `<section class="today"><div class="today-head"><h3>今天先做这 ${act.items.length} 件事</h3><span class="muted small">按真实账本和数据算出来的，不是模型猜的</span><div class="spacer"></div><a class="btn sm ghost" href="#/launch">${icon('zap', 14)}作战室</a></div>${act.items.map((a) => `<a class="today-row ${a.level}" href="${a.href}"><i></i><div><b>${esc(a.title)}</b><p>${esc(a.why)}</p></div><em>${esc(a.cta)} →</em></a>`).join('')}</section>` : '';
+  const sampleBar = act.sample.products ? `<div class="sample-bar"><span class="tag-sample">示例</span>现在有 ${act.sample.products} 个示例商品，里面的销量、订单和报告都是虚构的，只用来看流程。<div class="spacer"></div><button class="btn sm ghost" id="sample-clear" data-loading="清除中…">一键清除示例</button></div>` : '';
+  const startCard = !s.products ? `<section class="card start-card mb"><div><h3>先看一遍完整流程</h3><p>载入一组标明「示例」的虚构数据：增长榜、作战室、爆款报告和脚本都能直接看，不用接模型。看完一键清除。</p></div><button class="btn lg primary-glow" id="sample-load" data-loading="载入中…">${icon('play', 16)}载入示例工作区</button></section>` : '';
   view.innerHTML = `
+  ${sampleBar}${startCard}${today_}
   <section class="stage3d" id="stage">
     <div class="copy">
       <div class="eyebrow">${today} · ${esc(d.store.market)} 站</div>
       <h2 id="headline">${esc(d.store.name)}，<br>今天选出<em>能卖的品</em></h2>
-      <p>从 FastMoss 真实数据出发：按硬指标筛、算清利润、AI 说明为什么选，再一键生成带货脚本。</p>
+      <p>从数据筛品、算清利润，到写脚本、出视频、测款复盘：每一步都知道该不该继续。</p>
       <div class="row">
         <a class="btn lg primary-glow" href="#/products">${icon('target')}开始选品</a>
         <a class="btn ghost lg" href="#/chat">${icon('bot')}问 Agent</a>
@@ -48,7 +54,7 @@ export async function render(view) {
   ${cats.length ? `<div class="mega" aria-hidden="true"><div class="mega-track">${cats.concat(cats).map((c) => `<span>${esc(c.category)}</span>`).join('')}</div></div>` : ''}
 
   <section data-reveal>
-    <div class="section-title"><h3>从选品到脚本</h3><span class="muted small">点击任一步直接进入</span></div>
+    <div class="section-title"><h3>从选品到测款</h3><span class="muted small">点击任一步直接进入</span></div>
     <div class="pipeline">
       ${flow.map(([ic, t, sub, href], i) => `<div class="pipe-step"><a class="pipe-node done" href="${href}"><div class="n">${icon(ic, 15)}</div><b>${t}</b><small>${sub}</small></a>${i < flow.length - 1 ? '<div class="pipe-arrow"></div>' : ''}</div>`).join('')}
     </div>
@@ -86,6 +92,21 @@ export async function render(view) {
     </div>
   </div>`;
 
+  const sl = $('#sample-load', view);
+  if (sl) sl.onclick = (e) => withLoading(e.currentTarget, async () => {
+    await api('/sample', { method: 'POST' });
+    toast('示例工作区已载入', 'success');
+    dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+  const sc = $('#sample-clear', view);
+  if (sc) sc.onclick = async (e) => {
+    if (!(await confirmBox('清除所有示例商品、脚本和报告？你自己的数据不受影响。'))) return;
+    withLoading(e.target.closest('button'), async () => {
+      await api('/sample', { method: 'DELETE' });
+      toast('示例已清除', 'success');
+      dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+  };
   splitText(view.querySelector('#headline'));
   const cleanups = [];
   const gal = view.querySelector('#gallery');

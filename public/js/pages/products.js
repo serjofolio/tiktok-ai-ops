@@ -268,7 +268,7 @@ export async function render(view, [openId, openTab]) {
     const ai = p.ai;
     return `<tr class="prow" data-id="${p.id}">
       <td class="chk" data-stop><input type="checkbox" data-chk="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="选择这个商品"></td>
-      <td><div class="pcell">${thumb(p)}<div style="min-width:0"><b class="pname">${esc(p.name)}</b>
+      <td><div class="pcell">${thumb(p)}<div style="min-width:0"><b class="pname">${p.sample ? '<span class="tag-sample">示例</span>' : ''}${esc(p.name)}</b>
         <div class="p-sub"><span class="tag-type">${esc(m.type)}</span>${esc([p.shop, STATUS[p.status] && p.status !== 'candidate' ? STATUS[p.status] : ''].filter(Boolean).join(' · '))} <a class="mini-link" data-stop href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">FastMoss ↗</a></div>
         ${flags.length ? `<div class="flags-inline">${flags.slice(0, 3).map((f) => `<span class="flag ${f.level}">${esc(f.title)}</span>`).join('')}</div>` : ''}</div></div></td>
       <td class="r money">${money(c, m.asp)}${range}</td>
@@ -545,7 +545,8 @@ export async function render(view, [openId, openTab]) {
       foot.innerHTML = `<button class="btn ghost danger" id="del">${icon('trash', 14)}删除</button><div class="spacer"></div>
         ${p.status !== 'dropped' ? '<button class="btn ghost" data-st="dropped">放弃</button>' : '<button class="btn ghost" data-st="candidate">恢复为候选</button>'}
         ${p.status !== 'testing' ? `<button class="btn ghost" data-st="testing">${icon('flow', 14)}标记测款中</button>` : ''}
-        <a class="btn primary-glow" href="#/scripts/new/${p.id}" data-close>${icon('script', 15)}生成视频脚本</a>`;
+        <a class="btn ghost" href="#/scripts/new/${p.id}" data-close>${icon('script', 15)}生成视频脚本</a>
+        <a class="btn primary-glow" href="#/launch/${p.id}" data-close>${icon('zap', 15)}进作战室</a>`;
       bind();
     };
 

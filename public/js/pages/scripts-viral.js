@@ -73,7 +73,7 @@ export async function render(view, [openId]) {
     const nearest = (t) => (v.frames || []).reduce((best, f) => (best == null || Math.abs(f.t - t) < Math.abs(best.t - t) ? f : best), null);
     box.innerHTML = `<div class="col viral-report">
       <div class="card"><div class="card-head"><h3>${esc(v.title)}</h3><div class="spacer"></div><a class="btn sm" href="#learn" id="to-learn">${icon('sparkles', 14)}学它写脚本</a><button class="icon-btn" id="rerun" title="重新分析" data-loading="…">${icon('refresh', 15)}</button><button class="icon-btn danger" id="del" title="删除">${icon('trash', 15)}</button></div>
-        <div class="card-pad viral-top"><video src="/api/media/${v.mediaId}" controls preload="metadata" playsinline class="video-el"></video>
+        <div class="card-pad viral-top">${v.mediaId ? `<video src="/api/media/${v.mediaId}" controls preload="metadata" playsinline class="video-el"></video>` : '<div class="viral-nofile">示例报告没有视频文件<br>上传你的视频才会有真实分析</div>'}
           <div class="col" style="min-width:0"><div class="key-reason"><span>最关键的爆点</span><b>${esc(a.keyReason || '')}</b></div><p style="margin:0;line-height:1.75">${esc(a.summary || '')}</p>
             <div class="measure">${[['时长', `${m.duration} 秒`], ['镜头数', m.shotCount], ['平均每镜', fmtT(m.avgShotSeconds)], ['第一次切镜', fmtT(m.firstCutAt)], ['语速', m.speechPerSecond ? `${m.speechPerSecond} 词/秒` : '—']].map(([k, x]) => `<div><small>${k}</small><b>${esc(x)}</b></div>`).join('')}</div>
             <p class="small muted" style="margin:0">上面这些数字是程序测量的（切镜次数用画面变化检测，快速转场可能漏算）。</p></div></div>

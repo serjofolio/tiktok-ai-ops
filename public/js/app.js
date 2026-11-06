@@ -17,6 +17,7 @@ const ROUTES = [
   { path: 'dashboard', title: '总览', icon: 'home' },
   { path: 'products', title: '智能选品', icon: 'target' },
   { path: 'pipeline', title: '自动上品', icon: 'flow' },
+  { path: 'launch', title: '作战室', icon: 'zap' },
   { path: 'scripts', title: '视频脚本', icon: 'script' },
   { path: 'knowledge', title: '知识库', icon: 'book' },
   { path: 'providers', title: '接入配置', icon: 'link' },

@@ -156,6 +156,11 @@ function choose(id, offerId) {
   return products.get(id);
 }
 
+// 自动挑供应商：同款、利润成立、在售都满足的第一个（offers 已按综合分排好序）
+function pick(offers, minMatch = 70) {
+  return (offers || []).find((o) => (o.match ?? 70) >= minMatch && o.profitOk !== false && o.status === 'published') || null;
+}
+
 // 没有 API 时：给出可以直接打开的 1688 搜索链接
 function links(p, kw) {
   return {
@@ -166,4 +171,4 @@ function links(p, kw) {
   };
 }
 
-module.exports = { search, addOffers, choose, score, links, keywordFor, WEIGHTS, DIM_LABEL, shippingCny };
+module.exports = { search, addOffers, choose, pick, score, links, keywordFor, WEIGHTS, DIM_LABEL, shippingCny };

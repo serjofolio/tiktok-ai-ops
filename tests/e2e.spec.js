@@ -26,9 +26,9 @@ const PAGES = [['dashboard', '总览'], ['products', '智能选品'], ['pipeline
 
 test('导航与所有页面', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.nav a')).toHaveCount(7);
+  await expect(page.locator('.nav a')).toHaveCount(8);
   // Agent 位于知识库、接入配置下面
-  await expect(page.locator('.nav a').nth(6)).toHaveText('Agent');
+  await expect(page.locator('.nav a').nth(7)).toHaveText('Agent');
   await expect(page.locator('#style-btn')).toHaveCount(0);
   for (const [p, title] of PAGES) {
     await page.goto(`/#/${p}`);
@@ -358,7 +358,7 @@ test('官网首页：首屏、轮播、集成墙、功能、流程、FAQ', async
   await expect(page.locator('#rot span.on')).not.toHaveText(first, { timeout: 5000 });
   await expect(page.locator('.logo-track span').first()).toBeVisible();
   await expect(page.locator('.bento > div')).toHaveCount(5);
-  await expect(page.locator('.faq details')).toHaveCount(5);
+  await expect(page.locator('.faq details')).toHaveCount(6);
   await page.locator('.lp-hero a', { hasText: '开始选品' }).click();
   await expect(page).toHaveURL(/#\/products/);
   await expect(page.locator('body')).not.toHaveClass(/is-home/);

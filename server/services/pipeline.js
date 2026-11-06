@@ -110,6 +110,9 @@ async function execute(id) {
 async function chooseAndPack(id) {
   const r = runs.get(id);
   const cfg = r.config;
+  // 插件补完货源后，找货环节要能走到完成，否则流水线永远停在「继续」
+  const found = r.items.filter((it) => { const x = db.products.get(it.productId); return x?.sourcing?.chosen || x?.sourcing?.offers?.length; }).length;
+  if (r.stages.find((s) => s.key === 'source')?.status === 'waiting') stage(id, 'source', found === r.items.length ? 'done' : 'waiting', found === r.items.length ? `${found} 个商品都有货源` : `${found}/${r.items.length} 个商品有货源，其余用插件采集后点「继续」`);
   stage(id, 'choose', 'running');
   let chosen = 0;
   for (const it of r.items) {
@@ -121,7 +124,7 @@ async function chooseAndPack(id) {
     }
     const offers = p.sourcing?.offers || [];
     if (!offers.length) continue;
-    const best = offers.find((o) => (o.match ?? 70) >= cfg.minMatch && o.profitOk !== false && o.status === 'published');
+    const best = sourcing.pick(offers, cfg.minMatch);
     if (best) {
       sourcing.choose(p.id, best.offerId || best.url);
       chosen++;
@@ -136,8 +139,10 @@ async function chooseAndPack(id) {
   for (const it of runs.get(id).items) {
     const p = db.products.get(it.productId);
     if (!p?.sourcing?.chosen) continue;
-    if (p.listing && p.listing.status !== 'draft') {
+    // 已有上架包就不重新生成：草稿可能被人改过
+    if (p.listing) {
       packed++;
+      item(id, p.id, { stage: 'review', status: p.listing.status === 'draft' ? 'waiting' : 'done', note: p.listing.status === 'draft' ? '上架包等你确认' : '上架包已确认' });
       continue;
     }
     try {
@@ -191,7 +196,7 @@ async function pushApproved(id) {
 
 function start(config = {}) {
   if ([...active.keys()].some((rid) => runs.get(rid))) throw err('已有一条流水线在运行，请等它结束', 409);
-  const cfg = { scope: config.scope === 'all' ? 'all' : 'latest', topN: Math.min(20, Math.max(1, Number(config.topN) || 5)), minMatch: Math.min(95, Math.max(0, Number(config.minMatch) || 70)), autoApprove: !!config.autoApprove, connectorId: config.connectorId || '' };
+  const cfg = { scope: config.scope === 'all' ? 'all' : 'latest', topN: Math.min(20, Math.max(1, Number(config.topN) || 5)), minMatch: config.minMatch === undefined || config.minMatch === '' || !Number.isFinite(Number(config.minMatch)) ? 70 : Math.min(95, Math.max(0, Number(config.minMatch))), autoApprove: !!config.autoApprove, connectorId: config.connectorId || '' };
   const r = runs.insert({ status: 'running', config: cfg, stages: STAGES.map(([key, label, desc]) => ({ key, label, desc, status: 'pending' })), items: [], logs: [] });
   active.set(r.id, true);
   execute(r.id);

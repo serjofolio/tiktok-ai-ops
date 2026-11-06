@@ -196,6 +196,7 @@ function rerun(id) {
   const doc = items.get(id);
   if (!doc) throw err('记录不存在', 404);
   if (running.has(id)) throw err('正在分析中', 409);
+  if (doc.sample) throw err('示例报告没有视频文件，不能重新分析');
   items.update(id, { status: 'running', step: '准备重新分析', error: '' });
   start(id);
   return items.get(id);
