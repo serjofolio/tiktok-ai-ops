@@ -52,8 +52,24 @@ NODE_BIN=$(command -v node)
 id "$SVC_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$SVC_USER"
 mkdir -p "$APP_DIR" "$DATA_DIR"
 
-# ---------- 3. 部署代码（保留 data 目录，代码整体替换）----------
-log "解压应用到 $APP_DIR"
+# ---------- 3. 部署代码：先在旁边装好新版本，再停服务切换（装依赖失败时旧版本照常运行）----------
+STAGE="$APP_DIR.new"
+OLD="$APP_DIR.old"
+log "解压新版本到 $STAGE"
+rm -rf "$STAGE" && mkdir -p "$STAGE"
+tar -xzf "$BUNDLE" -C "$STAGE"
+# 复用旧版本的依赖，npm 只补差异
+[ -d "$APP_DIR/node_modules" ] && cp -a "$APP_DIR/node_modules" "$STAGE/"
+cd "$STAGE"
+log "安装生产依赖（旧版本还在运行）"
+npm install --omit=dev --no-audit --no-fund --loglevel=error || { rm -rf node_modules; npm ci --omit=dev --no-audit --no-fund --loglevel=error; }
+# 记下版本，自动更新据此判断要不要装
+if [ -n "${DEPLOY_SHA:-}" ]; then echo "$DEPLOY_SHA" > "$STAGE/.deployed-sha"; fi
+# 拆解和合并视频要用 ffmpeg：npm 的可选依赖没装上时用系统包
+if [ ! -x "$STAGE/node_modules/ffmpeg-static/ffmpeg" ] && ! command -v ffmpeg >/dev/null; then
+  log "安装 ffmpeg"
+  (apt-get update -qq && apt-get install -y -qq ffmpeg) || (dnf -y install ffmpeg || yum -y install ffmpeg) || log "ffmpeg 安装失败：爆款拆解和视频合并不可用"
+fi
 systemctl stop tkagent 2>/dev/null || true
 # 升级前备份数据目录（保留最近 10 份）
 if [ -n "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
@@ -63,16 +79,11 @@ if [ -n "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
   ls -1t /var/backups/tkagent/data-*.tar.gz | tail -n +11 | xargs -r rm -f
   log "数据已备份到 /var/backups/tkagent"
 fi
-find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} +
-tar -xzf "$BUNDLE" -C "$APP_DIR"
+# 切换：旧版本留在 $OLD，新版本启动失败时自动换回去
+rm -rf "$OLD"
+if [ -d "$APP_DIR" ]; then mv "$APP_DIR" "$OLD"; fi
+mv "$STAGE" "$APP_DIR"
 cd "$APP_DIR"
-log "安装生产依赖"
-npm ci --omit=dev --no-audit --no-fund --loglevel=error || npm install --omit=dev --no-audit --no-fund --loglevel=error
-# 拆解和合并视频要用 ffmpeg：npm 的可选依赖没装上时用系统包
-if [ ! -x "$APP_DIR/node_modules/ffmpeg-static/ffmpeg" ] && ! command -v ffmpeg >/dev/null; then
-  log "安装 ffmpeg"
-  (apt-get update -qq && apt-get install -y -qq ffmpeg) || (dnf -y install ffmpeg || yum -y install ffmpeg) || log "ffmpeg 安装失败：爆款拆解和视频合并不可用"
-fi
 chown -R "$SVC_USER:$SVC_USER" "$APP_DIR" "$DATA_DIR"
 chmod 750 "$DATA_DIR"
 # 还没有任何账号时，在服务启动前先创建管理员，避免别人抢先注册成为管理员
@@ -164,9 +175,55 @@ for i in $(seq 1 30); do
   [ "$code" = 200 ] && break
   sleep 1
 done
-[ "$code" = 200 ] || { journalctl -u tkagent -n 40 --no-pager; die "服务未能启动"; }
+if [ "$code" != 200 ]; then
+  journalctl -u tkagent -n 40 --no-pager
+  if [ -d "$OLD" ]; then
+    log "新版本没有启动起来，换回旧版本"
+    systemctl stop tkagent || true
+    rm -rf "$APP_DIR.failed" && mv "$APP_DIR" "$APP_DIR.failed" && mv "$OLD" "$APP_DIR"
+    systemctl start tkagent
+  fi
+  die "服务未能启动（失败的版本留在 $APP_DIR.failed 方便排查）"
+fi
 ip_code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: 1.2.3.4:$PORT" "http://127.0.0.1:$PORT/" || true)
 listen=$(ss -tlnp 2>/dev/null | grep ":$PORT " | awk '{print $4}' | head -1)
+
+# ---------- 8. 自动更新：每 5 分钟查一次 GitHub，main 上 CI 全部通过的新提交自动安装 ----------
+# deploy.env 里写 AUTO_UPDATE=0 可以关闭
+mkdir -p /etc/tkagent
+printf 'PORT=%s\nDOMAIN=%s\n' "$PORT" "$DOMAIN" > /etc/tkagent/deploy.conf
+if [ "${AUTO_UPDATE:-1}" != 0 ]; then
+  install -m 755 "$APP_DIR/deploy/autoupdate.sh" /usr/local/sbin/tkagent-autoupdate
+  cat > /etc/systemd/system/tkagent-update.service <<UNIT
+[Unit]
+Description=TikTok AI 运营台自动更新
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tkagent-autoupdate
+TimeoutStartSec=1800
+UNIT
+  cat > /etc/systemd/system/tkagent-update.timer <<UNIT
+[Unit]
+Description=每 5 分钟检查运营台新版本
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now tkagent-update.timer >/dev/null 2>&1
+  log "自动更新已开启：GitHub 上 CI 通过的新版本 5 分钟内自动安装（日志 journalctl -u tkagent-update）"
+else
+  systemctl disable --now tkagent-update.timer >/dev/null 2>&1 || true
+  log "自动更新已关闭（AUTO_UPDATE=0）"
+fi
 
 echo
 log "部署完成"

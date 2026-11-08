@@ -283,8 +283,9 @@ ADMIN_USER=admin
 powershell -ExecutionPolicy Bypass -File .\deploy\deploy.ps1    # Windows
 ```
 
-一条命令完成：打包 → 上传 → 备份旧数据 → 安装 Node 运行时与依赖 → systemd 服务 → Cloudflare 隧道 → 健康检查。
+一条命令完成：打包 → 上传 → 装好新版本依赖 → 备份旧数据 → 切换 → systemd 服务 → Cloudflare 隧道 → 健康检查（失败自动回滚）→ 开启自动更新。
 - 数据目录 `/var/lib/tkagent`，备份在 `/var/backups/tkagent`，日志 `journalctl -u tkagent -f`。
+- **自动更新**：部署时同时装上 `tkagent-update.timer`，服务器每 5 分钟查一次 GitHub，`main` 上测试和密钥扫描都通过的新提交自动下载安装。不需要在 GitHub 上存服务器地址或密钥。新版本先在旁边装好依赖再切换，启动失败自动换回旧版本，换版本前照常备份数据。日志 `journalctl -u tkagent-update`，关闭 `systemctl disable --now tkagent-update.timer`（或在 deploy.env 写 `AUTO_UPDATE=0`）。
 - 忘记管理员密码：停止服务后执行 `node server/cli.js admin <用户名> [新密码]`；`node server/cli.js users` 列出所有账号。
 
 ## 测试

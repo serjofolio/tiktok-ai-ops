@@ -19,4 +19,7 @@ FILES=("$BUNDLE" "$ROOT/deploy/install.sh")
 if [ -f "$ROOT/deploy/deploy.env" ]; then cp "$ROOT/deploy/deploy.env" "$(dirname "$BUNDLE")/tkagent.env"; FILES+=("$(dirname "$BUNDLE")/tkagent.env"); fi
 scp -P "$SSH_PORT" -o StrictHostKeyChecking=accept-new "${FILES[@]}" "$SERVER:/tmp/"
 echo "[3/3] 远程安装"
-ssh -p "$SSH_PORT" -t "$SERVER" "PORT=$APP_PORT DOMAIN=$DOMAIN bash /tmp/install.sh /tmp/tkagent.tar.gz && rm -f /tmp/tkagent.tar.gz"
+# 工作区没有未提交的改动时记下版本号，自动更新就不会把同一版本再装一遍
+SHA=""
+if git -C "$ROOT" diff --quiet HEAD 2>/dev/null; then SHA="$(git -C "$ROOT" rev-parse HEAD)"; fi
+ssh -p "$SSH_PORT" -t "$SERVER" "DEPLOY_SHA=$SHA PORT=$APP_PORT DOMAIN=$DOMAIN bash /tmp/install.sh /tmp/tkagent.tar.gz && rm -f /tmp/tkagent.tar.gz"

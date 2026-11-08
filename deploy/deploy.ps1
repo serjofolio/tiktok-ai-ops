@@ -35,4 +35,10 @@ if (Test-Path $envFile) { $tmpEnv = Join-Path $env:TEMP 'tkagent.env'; Copy-Item
 scp -P $SshPort -o StrictHostKeyChecking=accept-new @files "${Server}:/tmp/"
 
 Write-Host "[3/3] 远程安装（再次输入服务器密码）..." -ForegroundColor Cyan
-ssh -p $SshPort -t $Server "sed -i 's/\r$//' /tmp/install.sh && PORT=$AppPort DOMAIN=$Domain bash /tmp/install.sh /tmp/tkagent.tar.gz && rm -f /tmp/tkagent.tar.gz"
+# 工作区没有未提交的改动时记下版本号，自动更新就不会把同一版本再装一遍
+$sha = ''
+if (Get-Command git -ErrorAction SilentlyContinue) {
+  git -C $root diff --quiet HEAD 2>$null
+  if ($LASTEXITCODE -eq 0) { $sha = (git -C $root rev-parse HEAD).Trim() }
+}
+ssh -p $SshPort -t $Server "sed -i 's/\r$//' /tmp/install.sh && DEPLOY_SHA=$sha PORT=$AppPort DOMAIN=$Domain bash /tmp/install.sh /tmp/tkagent.tar.gz && rm -f /tmp/tkagent.tar.gz"
