@@ -73,7 +73,15 @@ const VIRAL_REPORT = {
 };
 const PAINS = { audience: '25-35 岁通勤女性', pains: [{ pain: '戴两周就变色', level: '功能', moment: '洗澡时', evidence: '推断', hookSpoken: 'I showered in these for 30 days', hookText: 'Day 30', hookFrame: '耳环泡水特写', proof: '按日期连续拍', caution: '只说实测结果' }, { pain: '想被夸', level: '身份', moment: '聚会', evidence: '推断', hookSpoken: 'Everyone asks where I got these', hookText: 'Everyone asks', hookFrame: '上身特写', proof: '朋友反应', caution: '不要虚构对话' }] };
 
+// 批量出片：按分配写每条的画面（模型偶尔会少写一条，程序要能用模板补上）
+function studioBriefs(text) {
+  const n = Number(text.match(/批量策划 (\d+) 条/)[1]);
+  return { briefs: Array.from({ length: n }, (_, i) => ({ n: i + 1, angle: `第 ${i + 1} 种切入`, keyframe: `Vertical 9:16 photo, the first frame of a TikTok product video, a hand holding the product from image 1, angle ${i + 1}`, motion: 'the hand slowly rotates the product toward the camera, handheld slight sway', caption: `Hook ${i + 1}`, voiceover: `Line ${i + 1}`, why: '第一帧就有商品和手' })).slice(0, Math.max(1, n - 1)) };
+}
+let qcCount = 0;
+
 function answerFor(text) {
+  if (/批量策划 \d+ 条/.test(text)) return JSON.stringify(studioBriefs(text));
   if (/挖掘拍视频用的痛点和渴望/.test(text)) return JSON.stringify(PAINS);
   if (/TikTok 带货内容拆解专家/.test(text)) return JSON.stringify(VIRAL_REPORT);
   if (/带货短视频脚本/.test(text)) return JSON.stringify(SCRIPT);
@@ -195,6 +203,29 @@ async function fakeVideo(req, res, url, origin) {
   json(res, { error: { message: 'NOT_FOUND' } }, 404);
 }
 
+// 中转站（new-api 格式）：/v1/models、/v1/images/generations、/v1/videos
+async function fakeRelay(req, res, url, origin) {
+  if (req.headers.authorization !== 'Bearer sk-relay') return json(res, { error: { message: 'invalid token' } }, 401);
+  const p = url.pathname.replace('/relay/v1', '');
+  if (p === '/models') return json(res, { object: 'list', data: [{ id: 'doubao-seedance-2.0-fast-720p' }, { id: 'doubao-seedream-5-0' }, { id: 'wan3.0-video' }] });
+  if (p === '/images/generations' && req.method === 'POST') {
+    const body = await readBody(req);
+    sent.image = sent.image || [];
+    sent.image.push(body);
+    return json(res, { created: 1, data: [{ url: `${origin}/img/product.png` }] });
+  }
+  if (p === '/videos' && req.method === 'POST') {
+    const body = await readBody(req);
+    sent.video.push({ vendor: 'relay', body });
+    return json(res, { task_id: `rv-${sent.video.length}`, status: 'queued' });
+  }
+  if (p.startsWith('/videos/')) {
+    const id = p.split('/').pop();
+    return json(res, nextStatus(id) ? { task_id: id, status: 'completed', video_url: `${origin}/video/clip.mp4` } : { task_id: id, status: 'in_progress' });
+  }
+  json(res, { error: { message: 'NOT_FOUND' } }, 404);
+}
+
 // FastMoss 开放接口（字段按官方文档）
 const fmProduct = (i) => ({ product_id: `19000000000000${100 + i}`, title: `Gold Hoop Earrings ${i} for Women`, region: 'US', cover: '', category: { l1: { id: 200, name: '珠宝配饰及衍生品' }, l2: { id: 201, name: '时尚饰品' } }, commission_rate: '15%', creator_order_rate: '40%', price: '$12.00 - 18.00', floor_price: 12, off_shelves: 0, day7_units_sold: 700 - i * 100, day7_gmv: 9000 - i * 1000, day28_units_sold: 1500, total_units_sold: 8000, total_gmv: 100000, creator_count: 60, video_count: 90, product_rating: 4.8, tiktok_url: '', fastmoss_url: '', shop: { name: `Shop ${i}` }, ctime: 1700000000 });
 async function fakeFastmoss(req, res, url) {
@@ -234,6 +265,10 @@ function start(port = 3902) {
     if (url.pathname.startsWith('/video/')) return fakeVideo(req, res, url, `http://127.0.0.1:${server.address().port}`);
     if (url.pathname.startsWith('/fastmoss/')) return fakeFastmoss(req, res, url);
     if (url.pathname === '/sent') return json(res, sent);
+    if (url.pathname.startsWith('/relay/')) return fakeRelay(req, res, url, `http://127.0.0.1:${server.address().port}`);
+    // new-api 中转站公开的价格表（不需要密钥）
+    if (url.pathname === '/api/pricing') return json(res, { success: true, group_ratio: { default: 1, Doubao: 1 }, data: [{ model_name: 'doubao-seedance-2.0-fast-720p', quota_type: 0, model_price: 0, description: 'Seedance 2.0 Fast 720p | 带视频特惠约 ¥0.396/秒，不带视频约 ¥0.672/秒(5s约¥3.36)', enable_groups: ['auto', 'Doubao'], supported_endpoint_types: ['openai-video'], billing_unit: 'usage' }, { model_name: 'doubao-seedream-5-0', quota_type: 1, model_price: 0.288, enable_groups: ['Doubao'], supported_endpoint_types: ['image-generation'], billing_unit: 'call' }, { model_name: 'wan3.0-video', quota_type: 1, model_price: 0.252, resolution_prices: { '480p': 0.252, '720p': 0.504 }, enable_groups: ['Wan'], supported_endpoint_types: ['openai-video'], billing_unit: 'second' }] });
+    if (url.pathname === '/api/status') return json(res, { data: { quota_display_type: 'CNY', usd_exchange_rate: 1 } });
     // 看不见图片的文字模型：收到图片也不报错，只会胡说
     if (url.pathname === '/blind/v1/chat/completions') {
       await readBody(req);
@@ -277,6 +312,14 @@ function start(port = 3902) {
       const last = imaged ? raw.filter((c) => c.type === 'text').map((c) => c.text).join('\n') : raw;
       if (imaged) {
         const n = [...last.matchAll(/(\d+(?:\.\d+)?)s/g)].map((m) => Number(m[1]));
+        // 质检：每 3 张有 1 张判定商品不像
+        if (/真实商品照片/.test(last)) {
+          qcCount++;
+          const bad = qcCount % 3 === 0;
+          const reply = JSON.stringify(bad ? { sameProduct: 52, stopPower: 70, problems: ['颜色不对'], verdict: 'fail' } : { sameProduct: 86 + (qcCount % 5), stopPower: 78, problems: [], verdict: 'pass' });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: reply } }] }));
+        }
         const reply = /左半边和右半边/.test(last) ? '红色，蓝色' : /开头 3 秒/.test(last) ? JSON.stringify({ firstFrame: '耳环上身特写', person: true, face: false, product: true, productWhat: '金色耳环', onScreenText: 'Everyone asks', motion: '手指捏住耳环', camera: '特写' }) : JSON.stringify({ frames: n.map((t) => ({ t, shot: '特写', person: true, product: true, visual: '手捏住耳环转动', text: '' })) });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: reply } }] }));

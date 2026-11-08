@@ -28,6 +28,8 @@ const seedance = {
   async submit(c, t) {
     const content = [{ type: 'text', text: t.prompt }];
     if (t.image) content.push({ type: 'image_url', image_url: { url: t.image }, role: 'first_frame' });
+    // 没有首帧时可以给参考图（2.0 系列 1–9 张）：商品外形参照它，但画面由模型重新构图。两种不能混用
+    else for (const url of (t.refs || []).slice(0, 9)) content.push({ type: 'image_url', image_url: { url }, role: 'reference_image' });
     const d = await post(`${trim(opt(c, 'baseUrl'))}/contents/generations/tasks`, bearer(c), { model: opt(c, 'model'), content, ratio: t.ratio, duration: t.duration, resolution: opt(c, 'resolution'), generate_audio: !!t.audio, watermark: false });
     if (!d.id) throw err(`Seedance 没有返回任务 ID：${JSON.stringify(d).slice(0, 160)}`, 424);
     return d.id;
@@ -106,6 +108,40 @@ const minimax = {
   },
 };
 
+// 中转站统一格式（new-api 一类）：POST {接口地址}/videos 提交，GET /videos/{id} 查询（也可以换成 /video/generations）
+// 素材放在 images 数组：1 张是首帧，3 张以上是参考图（对象写法显式标 role）。MiniMax 系列用 first_image / referenceImages
+// 各家中转站返回的字段不完全一样：状态和视频地址按常见的几种写法都找一遍
+const relay = {
+  url(c, id) {
+    const b = trim(opt(c, 'baseUrl'));
+    if (!b) throw err('中转站还没有填接口地址');
+    const path = opt(c, 'endpoint') === '/video/generations' ? '/video/generations' : '/videos';
+    return `${b}${path}${id ? `/${encodeURIComponent(id)}` : ''}`;
+  },
+  async submit(c, t) {
+    const model = opt(c, 'model');
+    const body = { model, prompt: t.prompt, duration: t.duration, seconds: String(t.duration), aspect_ratio: t.ratio, ratio: t.ratio, resolution: opt(c, 'resolution') || '720p', generate_audio: !!t.audio, watermark: false };
+    if (/minimax|hailuo/i.test(model)) {
+      if (t.image) body.first_image = t.image;
+      else if (t.refs?.length) body.referenceImages = t.refs.slice(0, 5);
+    } else if (t.image) body.images = [t.image];
+    else if (t.refs?.length) body.images = t.refs.slice(0, 9).map((url) => ({ url, role: 'reference_image' }));
+    const d = await post(this.url(c), bearer(c), body);
+    const id = d.task_id || d.id || d.data?.task_id || d.data?.id;
+    if (!id) throw err(`中转站没有返回任务 ID：${JSON.stringify(d).slice(0, 160)}`, 424);
+    return String(id);
+  },
+  async poll(c, id) {
+    const d = await get(this.url(c, id), bearer(c));
+    const x = d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? { ...d, ...d.data } : d;
+    const s = String(x.status || x.state || x.task_status || '').toLowerCase();
+    const url = x.video_url || x.url || (Array.isArray(x.data) ? x.data[0]?.url : '') || x.metadata?.url || x.result_url || x.content?.video_url || x.output?.video_url;
+    if (['completed', 'succeeded', 'success', 'done'].includes(s)) return { status: 'done', url };
+    if (['failed', 'fail', 'failure', 'error', 'cancelled', 'canceled', 'expired'].includes(s)) return { status: 'failed', error: String(x.error?.message || x.fail_reason || x.error || s) };
+    return { status: 'running' };
+  },
+};
+
 // 自定义接口：按用户填的模板提交，按路径取结果
 const custom = {
   headers(c) {
@@ -143,7 +179,7 @@ const custom = {
   },
 };
 
-const ADAPTERS = { seedance, kling, wan, minimax, videocustom: custom };
+const ADAPTERS = { seedance, kling, wan, minimax, videonewapi: relay, videocustom: custom };
 
 // 测试连接不能真的生成（要花钱）：查一个不存在的任务，密钥不对会报 401 / 403，其他情况说明地址和密钥可用
 const ping = (a) => async (c) => {
@@ -419,4 +455,4 @@ function recover(userById) {
 const list = () => jobs.all();
 const getJob = (id) => jobs.get(id);
 
-module.exports = { plan, publicPlan, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };
+module.exports = { opt, plan, publicPlan, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };

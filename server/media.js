@@ -139,6 +139,42 @@ async function concat(files, out) {
   return out;
 }
 
+// ---------- 图片：批量出片的商品图、关键帧 ----------
+// 只认 JPG / PNG / WebP 的文件头；交给 ffmpeg 时只放行这几种图片格式
+const IMG_INPUT = ['-protocol_whitelist', 'file,pipe', '-format_whitelist', 'image2,jpeg_pipe,png_pipe,webp_pipe,mjpeg'];
+function imageMime(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
+  if (buf.toString('latin1', 1, 4) === 'PNG') return 'image/png';
+  if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
+// 统一转成 JPG，长边不超过 max：发给模型的参考图小一些，请求快也省流量
+async function toJpeg(src, out, { max = 1536 } = {}) {
+  const { code, stderr } = await run([...IMG_INPUT, '-i', src, '-frames:v', '1', '-vf', `scale=w='min(iw,${max})':h='min(ih,${max})':force_original_aspect_ratio=decrease,format=yuvj420p`, '-q:v', '3', out], { timeoutMs: 60000 });
+  if (code !== 0) throw err(`图片处理失败：${stderr.slice(-200)}`, 500);
+  return out;
+}
+
+// 几张图左右排成一张（统一缩放到同样大小，白底留边）：质检时把真实商品和生成图放在一起给看图模型
+async function sideBySide(files, out, { w = 360, h = 640 } = {}) {
+  const args = [...IMG_INPUT];
+  for (const f of files) args.push('-i', f);
+  const chains = files.map((_, i) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:white,setsar=1,format=yuvj420p[v${i}]`);
+  const join = files.length > 1 ? `;${files.map((_, i) => `[v${i}]`).join('')}hstack=inputs=${files.length}[o]` : '';
+  args.push('-filter_complex', chains.join(';') + join, '-map', files.length > 1 ? '[o]' : '[v0]', '-frames:v', '1', '-q:v', '4', out);
+  const { code, stderr } = await run(args, { timeoutMs: 60000 });
+  if (code !== 0) throw err(`拼图失败：${stderr.slice(-200)}`, 500);
+  return out;
+}
+
+// 视频里取一帧（秒）
+async function frameAt(file, sec, out, { width = 720 } = {}) {
+  const { code, stderr } = await run([...SAFE_INPUT, '-ss', String(Math.max(0, sec)), '-i', file, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '3', out], { timeoutMs: 60000 });
+  if (code !== 0 || !fs.existsSync(out)) throw err(`抽帧失败：${stderr.slice(-200)}`, 500);
+  return out;
+}
+
 // ---------- 存储 ----------
 function userDir(uid = ctx.user()?.id) {
   if (!uid) throw err('请先登录', 401);
@@ -205,4 +241,4 @@ async function download(url, dest, { headers, timeoutMs = 600000 } = {}) {
   }
 }
 
-module.exports = { records, run, sniff, probe, sceneCuts, frames, contactSheet, extractAudio, normalizeClip, concat, userDir, newDir, used, assertQuota, register, absPath, remove, purgeUserFiles, download, QUOTA_MB };
+module.exports = { records, run, sniff, imageMime, toJpeg, sideBySide, frameAt, probe, sceneCuts, frames, contactSheet, extractAudio, normalizeClip, concat, userDir, newDir, used, assertQuota, register, absPath, remove, purgeUserFiles, download, QUOTA_MB };

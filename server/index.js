@@ -21,6 +21,7 @@ const fastmoss = require('./services/fastmoss');
 const media = require('./media');
 const videogen = require('./services/videogen');
 const viral = require('./services/viral');
+const studio = require('./services/studio');
 const playbook = require('./services/playbook');
 const connectors = require('./connectors');
 const sourcing = require('./services/sourcing');
@@ -237,6 +238,12 @@ app.delete('/api/connectors/:id', h(async (req, res) => {
   connectors.remove(req.params.id);
   res.json({ ok: true });
 }));
+// 从上游拉模型列表 / 读中转站价格表（表单没保存也能用）
+app.post('/api/connectors/models', h(async (req, res) => res.json({ models: await connectors.listModels(req.body || {}) })));
+app.post('/api/connectors/pricing', h(async (req, res) => {
+  const c = req.body?.id ? connectors.get(req.body.id) : null;
+  res.json({ prices: await connectors.relayPricing(req.body?.baseUrl || c?.options?.baseUrl) });
+}));
 app.post('/api/connectors/:id/test', h(async (req, res) => res.json(await connectors.test(req.params.id))));
 // API 令牌（浏览器插件 / n8n / 影刀）
 app.get('/api/tokens', h(async (req, res) => res.json({ items: auth.listApiTokens(req.user) })));
@@ -431,6 +438,38 @@ app.get('/api/video-jobs/:id', h(async (req, res) => {
 app.post('/api/video-jobs/:id/retry', h(async (req, res) => res.json(videogen.retry(req.params.id))));
 app.delete('/api/video-jobs/:id', h(async (req, res) => res.json({ ok: videogen.removeJob(req.params.id) })));
 
+// ---------- 批量出片 ----------
+app.get('/api/studio', h(async (req, res) => {
+  const pick = (kind) => connectors.active(kind).map((c) => ({ id: c.id, name: c.name, vendor: c.vendor, models: connectors.modelsOf(c), maxSeconds: kind === 'video' ? videogen.durationRule(c).max : undefined }));
+  const virals = viral.list().filter((v) => v.status === 'done').map((v) => ({ id: v.id, title: v.title, keyReason: v.keyReason }));
+  res.json({ items: studio.list(), video: pick('video'), image: pick('image'), formats: Object.entries(studio.FORMATS).map(([id, f]) => ({ id, name: f.name, desc: f.desc })), virals, canSee: !!(connectors.active('vision').length || settings.activeProvider()), storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB }, maxMb: MAX_VIDEO_MB });
+}));
+app.post('/api/studio/estimate', h(async (req, res) => res.json(studio.estimate(req.body || {}))));
+app.post('/api/studio/assets', (req, res, next) => videoUpload.array('files', 12)(req, res, (e) => (e ? res.status(e.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? `文件太大：单个最大 ${MAX_VIDEO_MB}MB` : e.message }) : next())), h(async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) throw bad('请选择图片或视频');
+  try {
+    res.json({ items: await studio.addAssets(files.map((f) => ({ ...f, originalname: fileName(f) }))) });
+  } finally {
+    for (const f of files) fs.rm(f.path, { force: true }, () => {});
+  }
+}));
+app.post('/api/studio', h(async (req, res) => res.json(await studio.create(req.body || {}))));
+app.get('/api/studio/:id', h(async (req, res) => res.json(studio.view(req.params.id))));
+app.post('/api/studio/:id/render', h(async (req, res) => res.json(studio.render(req.params.id))));
+app.post('/api/studio/:id/retry', h(async (req, res) => res.json(studio.retry(req.params.id))));
+app.post('/api/studio/:id/briefs/:n/regen', h(async (req, res) => res.json(await studio.regen(req.params.id, req.params.n, req.body || {}))));
+app.patch('/api/studio/:id/briefs/:n', h(async (req, res) => res.json(studio.updateBrief(req.params.id, req.params.n, req.body || {}))));
+app.get('/api/studio/:id/briefs/:n/srt', h(async (req, res) => {
+  res.setHeader('Content-Disposition', `attachment; filename="video-${Number(req.params.n) || 1}.srt"`);
+  res.type('application/x-subrip').send(studio.srt(req.params.id, req.params.n));
+}));
+app.get('/api/studio/:id/export', h(async (req, res) => {
+  res.setHeader('Content-Disposition', `attachment; filename="studio.md"; filename*=UTF-8''${encodeURIComponent('批量出片清单.md')}`);
+  res.type('text/markdown').send(studio.exportMd(req.params.id));
+}));
+app.delete('/api/studio/:id', h(async (req, res) => res.json({ ok: studio.remove(req.params.id) })));
+
 // ---------- 知识库 ----------
 app.get('/api/kbs', h(async (req, res) => res.json({ items: db.kbs.all().map((k) => ({ ...k, readonly: !db.kbs.canEdit(k.id) })) })));
 app.post('/api/kbs', h(async (req, res) => {
@@ -567,6 +606,7 @@ async function main() {
   fastmoss.recover();
   viral.recover();
   videogen.recover(auth.userById);
+  studio.recover(auth.userById);
   const server = app.listen(PORT, HOST, () => {
     const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  TikTok 运营台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);

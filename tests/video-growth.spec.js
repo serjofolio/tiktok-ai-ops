@@ -249,7 +249,7 @@ test('视频模型：接入配置添加 → 脚本生成视频 → 合并保存 
   // 在接入配置页面添加
   await page.goto('/#/providers');
   await page.click('#add-media');
-  await page.locator('.preset-card', { hasText: 'Seedance' }).click();
+  await page.locator('.preset-card[data-v=seedance]').click();
   await page.fill('[data-cred=apiKey]', 'vk-test');
   await page.fill('[data-opt=baseUrl]', `${UP}/video/ark`);
   await page.click('#ok');

@@ -6,6 +6,7 @@ const products = require('./products');
 const settings = require('../settings');
 const playbook = require('./playbook');
 const listing = require('./listing');
+const craft = require('./promptcraft');
 
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
 const STYLES = Object.fromEntries(playbook.STYLES.map((s) => [s.id, s.name]));
@@ -139,6 +140,9 @@ async function generate(body = {}) {
 
 ${playbook.brief({ styleId: viral ? undefined : st.id, hookId, jewelry: prod.jewelry })}
 
+【屏幕字和口播】
+${craft.COPY_RULES.slice(0, 3).map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
 风格：${viral ? '沿用下面这条爆款的结构' : st.name}
 钩子类型：${hk.name}
 拍摄方式：${MODES[mode]}
@@ -149,7 +153,7 @@ ${pain ? `这一条主打的痛点或渴望：${JSON.stringify(pain)}\n` : ''}${
 1. ${Math.max(3, Math.min(8, Math.round(duration / 4)))} 个左右的镜头，时长加起来等于 ${duration} 秒，每个镜头写清楚拍什么、怎么拍，新手照着就能拍；
 2. 每个镜头写一个留人手法（retention）：这一镜凭什么让人继续看；
 3. 只用商品信息里有的事实，不知道的卖点不要编；需要真实评论或真实经历的地方写成 [占位：说明要填什么]；
-4. videoPrompt 用英文写给视频生成模型：只描述这一镜的画面、动作、景别、光线，不写屏幕文字；
+4. videoPrompt 用英文写给视频生成模型，按「主体 + 一到两个简单动作 + 具体场景 + 一种镜头运动 + 光线」写：竖屏手机实拍感（UGC），第 1 秒就有明显动作，商品保持原样不变形、不新增物体，不写屏幕文字；
 5. 另外给 3 个不同钩子类型的备选开头，用来 A/B 测试。
 
 只输出 JSON：

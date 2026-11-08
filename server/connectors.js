@@ -56,25 +56,38 @@ const VENDORS = {
     kind: 'video', name: 'Seedance（字节 · 火山方舟）', status: 'beta', link: 'https://console.volcengine.com/ark',
     desc: '火山方舟控制台开通 Seedance 后创建 API Key。支持竖屏、首帧图、同步配音；模型也可以填推理接入点 ID。每个任务 4–15 秒（1.0 系列 2–12 秒）。',
     fields: [['apiKey', 'API Key', true]],
+    keyUrl: 'https://console.volcengine.com/ark/region:cn-beijing/apiKey', refs: 9,
     options: [['baseUrl', '接口地址', 'https://ark.cn-beijing.volces.com/api/v3'], ['model', '模型', 'doubao-seedance-2-0-260128', ['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-1-0-pro-250528']], ['resolution', '清晰度', '720p', ['480p', '720p', '1080p']], ['durations', '单段时长范围（秒）', '4-15']],
+    models: [{ label: 'Seedance 2.0', id: 'doubao-seedance-2-0-260128', price: 1, note: '720p 约 46 元/百万 token 折算' }, { label: 'Seedance 2.0 Fast', id: 'doubao-seedance-2-0-fast-260128', price: '' }, { label: 'Seedance 1.0 Pro', id: 'doubao-seedance-1-0-pro-250528', price: '' }],
   },
   kling: {
     kind: 'video', name: '可灵 Kling', status: 'beta', link: 'https://kling.ai/document-api/api/get-started/authentication',
     desc: '可灵开放平台创建 API Key。支持竖屏、首帧图、多镜头一次生成（最多 6 个镜头）。服务器在中国境外用默认地址。',
     fields: [['apiKey', 'API Key', true]],
+    keyUrl: 'https://app.klingai.com/global/dev/api-key',
     options: [['baseUrl', '接口地址', 'https://api-singapore.klingai.com'], ['model', '模型', 'kling-3.0', ['kling-3.0']], ['resolution', '清晰度', '720p', ['720p', '1080p']], ['durations', '单段时长范围（秒）', '3-15']],
+    models: [{ label: '可灵 3.0', id: 'kling-3.0', price: 0.6, note: '官网 720p 无声 $0.084/秒折算' }],
   },
   wan: {
     kind: 'video', name: '通义万相 Wan（阿里云百炼）', status: 'beta', link: 'https://bailian.console.aliyun.com/',
     desc: '阿里云百炼开通后创建 API Key。地址、模型和 Key 要在同一个地域；控制台给的是工作空间专属地址时，把接口地址换成它（到 /api/v1 为止）。',
     fields: [['apiKey', 'API Key', true]],
+    keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
     options: [['baseUrl', '接口地址', 'https://dashscope.aliyuncs.com/api/v1'], ['model', '文生视频模型', 'wan2.7-t2v', ['wan2.7-t2v']], ['imageModel', '图生视频模型（用首帧图时）', 'wan2.7-i2v', ['wan2.7-i2v']], ['resolution', '清晰度', '720P', ['720P', '1080P']], ['durations', '单段时长范围（秒）', '2-15']],
+    models: [{ label: '万相 2.7', id: 'wan2.7-t2v', price: 0.6, note: '官网北京地域 720P 0.6 元/秒' }],
   },
   minimax: {
     kind: 'video', name: '海螺 Hailuo（MiniMax）', status: 'beta', link: 'https://platform.minimax.io/docs/api-reference/video-generation-intro',
     desc: 'MiniMax 开放平台创建 API Key。每段只能 6 秒或 10 秒。注意：文生视频接口没有画面比例参数，要竖屏请给一张竖版首帧图。',
     fields: [['apiKey', 'API Key', true]],
+    keyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
     options: [['baseUrl', '接口地址', 'https://api.minimax.io'], ['model', '模型', 'MiniMax-Hailuo-2.3', ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-2.3-Fast', 'MiniMax-Hailuo-02']], ['resolution', '清晰度', '768P', ['768P', '1080P']], ['durations', '单段可选时长（秒）', '6,10']],
+  },
+  videonewapi: {
+    kind: 'video', name: '中转站（new-api / OpenAI 兼容格式）', status: 'beta', relay: true,
+    desc: 'new-api 一类中转站的统一视频接口：POST /v1/videos 提交、GET /v1/videos/{id} 查询，首帧图放在 images 字段。接口地址填到 /v1 为止，模型名点「获取模型列表」从中转站读取，单价点「读取价格」。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', ''], ['model', '模型', ''], ['endpoint', '提交路径', '/videos', ['/videos', '/video/generations']], ['resolution', '清晰度（模型名里已带清晰度时不用管）', '720p', ['480p', '720p', '1080p']], ['durations', '单段时长范围（秒）', '4-15']],
   },
   videocustom: {
     kind: 'video', name: '自定义视频接口（中转站 / 其他模型）', status: 'ready',
@@ -82,9 +95,29 @@ const VENDORS = {
     fields: [['apiKey', 'API Key', true]],
     options: [['submitUrl', '提交地址（POST）', ''], ['submitBody', '请求体模板（JSON）', '{"model":"{{model}}","prompt":"{{prompt}}","duration":{{duration}},"aspect_ratio":"{{ratio}}"}'], ['taskIdPath', '任务 ID 字段路径', 'id'], ['queryUrl', '查询地址（GET，用 {{id}} 表示任务 ID）', ''], ['statusPath', '状态字段路径', 'status'], ['doneValues', '成功的状态值（逗号分隔）', 'succeeded,success,completed,done'], ['failValues', '失败的状态值（逗号分隔）', 'failed,fail,error,cancelled,canceled,expired'], ['videoUrlPath', '视频地址字段路径', 'video_url'], ['errorPath', '错误信息字段路径（可选）', 'error.message'], ['authHeader', '鉴权头（用 {{key}} 表示密钥）', 'Authorization: Bearer {{key}}'], ['model', '模型', ''], ['durations', '单段时长范围（秒）', '5-10']],
   },
+  // ---------- 生成图片：批量出片先出关键帧（services/imagegen.js） ----------
+  seedream: {
+    kind: 'image', name: 'Seedream（字节 · 火山方舟）', status: 'beta', link: 'https://console.volcengine.com/ark', keyUrl: 'https://console.volcengine.com/ark/region:cn-beijing/apiKey', refs: 10,
+    desc: '按商品图生成关键帧：最多传 10 张参考图，商品外形最稳。Key 和 Seedance 是同一个。按张收费，一张关键帧比一秒视频便宜得多。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', 'https://ark.cn-beijing.volces.com/api/v3'], ['model', '模型', 'doubao-seedream-4-5-251128'], ['size', '竖屏尺寸', '1440x2560']],
+    models: [{ label: 'Seedream 4.5', id: 'doubao-seedream-4-5-251128', price: 0.29, note: '按海外价 $0.04/张折算' }],
+  },
+  imageopenai: {
+    kind: 'image', name: '中转站 / OpenAI 兼容图片接口', status: 'beta', relay: true, refs: 6,
+    desc: '/images/generations 接口，参考图放在 image 字段（中转站的 Seedream、gpt-image 等多数这样转发）。接口地址填到 /v1 为止。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', ''], ['model', '模型', ''], ['size', '竖屏尺寸', '1024x1536']],
+  },
+  imagechat: {
+    kind: 'image', name: '中转站 · 对话接口出图（Gemini 图片模型等）', status: 'beta', relay: true, refs: 6,
+    desc: '用 /chat/completions 出图的模型：把参考图和要求发过去，从回复里取图片（支持 images 字段、图片链接和 base64）。接口地址填到 /v1 为止。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', ''], ['model', '模型', '']],
+  },
   // ---------- 看画面的模型：拆解爆款视频用（services/understand.js） ----------
   visionglm: {
-    kind: 'vision', name: '智谱 GLM 视觉模型', status: 'ready', link: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v',
+    kind: 'vision', name: '智谱 GLM 视觉模型', status: 'ready', link: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
     desc: '拆解爆款视频时看画面、读字幕。GLM-4.6V-Flash 官方标明免费，先用它就行。Key 和智谱大模型是同一个。',
     fields: [['apiKey', 'API Key', true]],
     options: [['baseUrl', '接口地址', 'https://open.bigmodel.cn/api/paas/v4'], ['model', '模型', 'glm-4.6v-flash', ['glm-4.6v-flash', 'glm-4.6v-flashx', 'glm-4.6v']]],
@@ -103,7 +136,7 @@ const VENDORS = {
   },
   // ---------- 语音转写：拆解爆款视频时把口播转成文字 ----------
   asrsiliconflow: {
-    kind: 'asr', name: '硅基流动语音转写', status: 'ready', link: 'https://docs.siliconflow.cn/docs/api/audio-transcriptions-post',
+    kind: 'asr', name: '硅基流动语音转写', status: 'ready', link: 'https://docs.siliconflow.cn/docs/api/audio-transcriptions-post', keyUrl: 'https://cloud.siliconflow.cn/account/ak',
     desc: '接口是 /audio/transcriptions，单个文件 1 小时、50MB 以内。Key 和硅基流动大模型是同一个。',
     fields: [['apiKey', 'API Key', true]],
     options: [['baseUrl', '接口地址', 'https://api.siliconflow.cn/v1'], ['model', '模型', 'FunAudioLLM/SenseVoiceSmall', ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR']]],
@@ -140,14 +173,39 @@ function save(input) {
   }
   const options = {};
   for (const [f, , def] of v.options || []) options[f] = String(input.options?.[f] ?? c?.options?.[f] ?? def ?? '').trim();
-  if (c) Object.assign(c, { name: input.name || c.name, creds, options, enabled: input.enabled !== false, updatedAt: new Date().toISOString() });
+  const models = Array.isArray(input.models) ? cleanModels(input.models) : c?.models || cleanModels(v.models || []);
+  // 默认模型要在映射表里：没选或选的已删掉时用第一个
+  if (models.length && 'model' in options && !models.some((m) => m.id === options.model)) options.model = models[0].id;
+  const extra = { note: String(input.note ?? c?.note ?? '').slice(0, 200), models };
+  if (c) Object.assign(c, { name: input.name || c.name, creds, options, ...extra, enabled: input.enabled !== false, updatedAt: new Date().toISOString() });
   else {
-    c = { id: 'cn_' + crypto.randomBytes(5).toString('hex'), vendor: input.vendor, name: input.name || v.name, creds, options, enabled: input.enabled !== false, createdAt: new Date().toISOString() };
+    c = { id: 'cn_' + crypto.randomBytes(5).toString('hex'), vendor: input.vendor, name: input.name || v.name, creds, options, ...extra, enabled: input.enabled !== false, createdAt: new Date().toISOString() };
     s.connectors.push(c);
   }
   settings.update({});
   return publicOne(c);
 }
+
+// 模型映射：显示名 / 实际请求的模型 / 单价（人民币；单位：秒、条或张，不填时视频按秒、图片按张）
+const UNITS = ['秒', '条', '张'];
+function cleanModels(list) {
+  const out = [];
+  for (const m of list.slice(0, 30)) {
+    const id = String(m?.id || '').trim().slice(0, 120);
+    if (!id || out.some((x) => x.id === id)) continue;
+    const price = m.price === '' || m.price == null ? '' : Number(m.price);
+    out.push({ label: String(m.label || id).trim().slice(0, 60), id, price: Number.isFinite(price) && price >= 0 ? price : '', unit: UNITS.includes(m.unit) ? m.unit : '', note: String(m.note || '').slice(0, 80) });
+  }
+  return out;
+}
+// 某个连接器下可选的模型：映射表为空时用默认模型
+function modelsOf(c) {
+  if (c.models?.length) return c.models;
+  const id = c.options?.model || VENDORS[c.vendor]?.options?.find((o) => o[0] === 'model')?.[2] || '';
+  return id ? [{ label: id, id, price: '' }] : [];
+}
+// 用指定模型请求：复制一份连接器，把默认模型换掉
+const withModel = (c, model) => (model ? { ...c, options: { ...c.options, model } } : c);
 
 function remove(id) {
   const s = settings.get();
@@ -165,7 +223,7 @@ function publicOne(c) {
   return { ...c, creds, kind: v.kind, status: v.status, configured: (v.fields || []).filter(required).every(([f]) => c.creds?.[f]) };
 }
 const publicList = () => list().map(publicOne);
-const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
+const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, keyUrl: v.keyUrl || '', relay: !!v.relay, refs: v.refs || 0, models: v.models || [], builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
 
 // 当前可用的某类连接器（已启用、已填写凭证）
 function active(kind) {
@@ -371,10 +429,61 @@ function adapter(c) {
   return a;
 }
 
+// 从上游拉模型列表（OpenAI 兼容的 GET /models）。没保存的表单也能拉：密钥留空时用已保存的
+async function listModels({ id, vendor, apiKey, baseUrl }) {
+  const c = id ? get(id) : null;
+  const key = apiKey && !String(apiKey).includes('••') ? apiKey : c?.creds?.apiKey;
+  const base = String(baseUrl || c?.options?.baseUrl || '').trim().replace(/\/+$/, '');
+  if (!VENDORS[vendor || c?.vendor]) throw err('不支持的连接器类型');
+  if (!/^https?:\/\//.test(base)) throw err('先填接口地址');
+  if (!key) throw err('先填 API Key');
+  const d = await request(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } }, 20000);
+  const list = (Array.isArray(d.data) ? d.data : Array.isArray(d.models) ? d.models : Array.isArray(d) ? d : []).map((m) => (typeof m === 'string' ? m : m.id || m.name)).filter(Boolean);
+  if (!list.length) throw err('上游没有返回模型列表：这个服务可能不提供 /models 接口，请手动添加');
+  return [...new Set(list)].sort();
+}
+
+// 读 new-api 中转站公开的价格表（/api/pricing，不需要密钥），换算成人民币单价
+// 按秒、按次计费的直接读；按 token 计费的视频读站长写在说明里的「不带视频约 ¥x/秒」，读不到就留空让用户填
+async function relayPricing(baseUrl) {
+  let origin;
+  try {
+    origin = new URL(String(baseUrl || '').trim()).origin;
+  } catch {
+    throw err('先填接口地址');
+  }
+  const [p, st] = await Promise.all([request(`${origin}/api/pricing`, {}, 20000), request(`${origin}/api/status`, {}, 20000).catch(() => ({}))]);
+  if (!Array.isArray(p.data)) throw err('这个中转站没有公开价格表（不是 new-api 一类，或者关掉了价格页），请手动填单价');
+  const status = st.data || {};
+  // new-api 的价格以美元记；站长把显示币种设成人民币时，汇率填在 usd_exchange_rate
+  const cny = String(status.quota_display_type || '').toUpperCase() === 'CNY';
+  const rate = cny ? Number(status.usd_exchange_rate) || 1 : 7.2;
+  const groups = p.group_ratio || {};
+  const out = {};
+  for (const m of p.data) {
+    const g = (m.enable_groups || []).find((x) => x !== 'auto');
+    const gr = Number(groups[g] ?? 1) || 1;
+    const fixed = Number(m.model_price) > 0 && Number(m.quota_type) === 1;
+    let price = '';
+    let unit = '';
+    if (fixed) {
+      // 按清晰度分档的模型取 720p 档（批量出片默认 720p）
+      const base = Number(m.resolution_prices?.["720p"]) || Number(m.model_price);
+      price = Math.round(base * rate * gr * 10000) / 10000;
+      unit = m.billing_unit === 'second' || m.billing_mode === 'per_second' ? '秒' : (m.supported_endpoint_types || []).some((t) => /video/.test(t)) ? '条' : '张';
+    } else {
+      const hit = String(m.description || '').match(/不带视频约\s*¥\s*([\d.]+)\s*\/\s*秒/) || String(m.description || '').match(/约\s*¥\s*([\d.]+)\s*\/\s*秒/);
+      if (hit) { price = Number(hit[1]) * (cny ? 1 : 1); unit = '秒'; }
+    }
+    out[m.model_name] = { price, unit, note: price === '' ? '按 token 计费，没读到单价' : `中转站价格表${m.resolution_prices?.["720p"] ? '（720p 档）' : ''}${cny ? '' : '（按 $1≈¥7.2 折算）'}${gr !== 1 ? `，含分组倍率 ${gr}` : ''}` };
+  }
+  return out;
+}
+
 async function test(id) {
   const c = get(id);
   if (!c) throw err('连接器不存在', 404);
   return { message: await adapter(c).test(c) };
 }
 
-module.exports = { VENDORS, catalog, list, publicList, save, remove, get, active, adapter, register, request, test, normalizeOffer };
+module.exports = { VENDORS, catalog, list, publicList, save, remove, get, active, adapter, register, request, test, normalizeOffer, modelsOf, withModel, listModels, relayPricing, UNITS };
