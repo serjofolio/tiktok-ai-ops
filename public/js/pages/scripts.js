@@ -3,6 +3,7 @@ import { icon } from '../lib.js';
 
 const TABS = [
   ['', '写脚本', 'script'],
+  ['create', 'AI 出片', 'video'],
   ['studio', '批量出片', 'layers'],
   ['viral', '爆款拆解', 'search'],
   ['videos', '视频库', 'video'],
@@ -10,7 +11,7 @@ const TABS = [
 ];
 
 export async function render(view, [first, second]) {
-  const tab = ['studio', 'viral', 'videos', 'playbook'].includes(first) ? first : '';
+  const tab = ['create', 'studio', 'viral', 'videos', 'playbook'].includes(first) ? first : '';
   view.innerHTML = `
   <section class="page-hero">
     <div class="kicker">视频脚本 · 爆款方法 × AI × 视频模型</div>

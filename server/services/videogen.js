@@ -7,6 +7,7 @@ const ctx = require('../ctx');
 const media = require('../media');
 const connectors = require('../connectors');
 const { safeFetch } = require('../net');
+const craft = require('./promptcraft');
 
 const jobs = db.collection('video_jobs');
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -272,7 +273,7 @@ async function startJob(body, script) {
   const p = plan({ script, connectorId: body.connectorId, mode: body.mode, sceneNs: body.sceneNs });
   media.assertQuota();
   const c = p.connector;
-  if (![...active].every((id) => !jobs.get(id))) throw err('已有一个视频任务在运行，等它结束再开始', 409);
+  assertSlots(1);
   const ratio = ['9:16', '1:1', '16:9'].includes(body.ratio) ? body.ratio : '9:16';
   const audio = !!body.audio;
   const hasImage = !!body.imageUrl || !!body.imageMediaId;
@@ -291,6 +292,84 @@ async function startJob(body, script) {
   });
   run(job.id);
   return job;
+}
+
+// 每个账号同时最多跑 3 个视频任务
+const MAX_RUNNING = 3;
+function assertSlots(n) {
+  const mine = [...active].filter((id) => jobs.get(id)).length;
+  if (mine + n > MAX_RUNNING) throw err(`同时最多跑 ${MAX_RUNNING} 个视频任务，现在有 ${mine} 个在跑，等它们结束再开始`, 409);
+}
+
+// ---------- 自由创作：不依赖脚本，自己写分镜 ----------
+// shots：[{ prompt, duration, voiceover, imageMediaId }]，每个镜头可以有自己的首帧图；没有首帧时把商品参考图交给支持参考图的模型
+const ownImage = (id) => {
+  const m = id ? media.records.get(id) : null;
+  return m && /^image\//.test(m.mime) ? m : null;
+};
+function freeScript(body) {
+  const shots = (Array.isArray(body.shots) ? body.shots : []).slice(0, 12).map((x, i) => ({
+    n: i + 1,
+    videoPrompt: String(x.prompt || '').trim().slice(0, 3000),
+    duration: Math.max(1, Math.min(30, Math.round(Number(x.duration) || 5))),
+    voiceover: String(x.voiceover || '').trim().slice(0, 400),
+    imageMediaId: ownImage(x.imageMediaId)?.id || '',
+  }));
+  if (!shots.length) throw err('至少写一个镜头');
+  const empty = shots.find((x) => !x.videoPrompt);
+  if (empty) throw err(`第 ${empty.n} 个镜头还没写画面`);
+  return { id: '', title: String(body.title || '').trim().slice(0, 80) || shots[0].videoPrompt.slice(0, 40), language: body.language || 'English', scenes: shots };
+}
+function freePrompt(scenes, durations, { vendor, audio, language, guard, hasImage }) {
+  const say = (x) => (audio && x.voiceover ? ` The person says in ${language}: "${x.voiceover}".` : '');
+  const tail = guard ? ` ${hasImage ? REF : ''} ${craft.MOTION_GUARD}`.replace(/\s+/g, ' ') : '';
+  if (scenes.length === 1) return `${scenes[0].videoPrompt}${say(scenes[0])}${tail}`;
+  if (vendor === 'kling') return scenes.map((x, i) => `shot ${i + 1}, ${durations[i]}, ${`${x.videoPrompt}${say(x)}`.slice(0, 480)}`).join('; ') + (tail ? `;${tail}` : '');
+  return scenes.map((x, i) => `${i ? 'Cut to ' : ''}Shot ${i + 1} (${durations[i]}s): ${x.videoPrompt}${say(x)}`).join(' ') + tail;
+}
+function freeCost(c, model, seconds, tasks) {
+  const m = connectors.modelsOf(c).find((x) => x.id === model);
+  if (!m || m.price === '' || m.price == null) return null;
+  return Math.round((m.unit === '条' ? m.price * tasks : m.price * seconds) * 100) / 100;
+}
+function planFree(body) {
+  const script = freeScript(body);
+  const c0 = body.connectorId ? connectors.get(body.connectorId) : connectors.active('video')[0];
+  if (!c0 || connectors.VENDORS[c0.vendor]?.kind !== 'video') throw err('还没有接入视频模型：到「接入配置 → 视频与图片模型」添加，你的中转站也可以');
+  const model = connectors.modelsOf(c0).find((x) => x.id === body.model)?.id || c0.options?.model || '';
+  const c = connectors.withModel(c0, model);
+  const p = plan({ script, connectorId: c0.id, mode: body.mode === 'whole' ? 'whole' : 'scenes' });
+  const variants = Math.max(1, Math.min(4, Number(body.variants) || 1));
+  return { script, c, model, p, variants, yuan: freeCost(c0, model, p.seconds * variants, p.clips.length * variants) };
+}
+const publicFreePlan = (x) => ({ ...publicPlan(x.p), model: x.model, variants: x.variants, totalTasks: x.p.clips.length * x.variants, totalSeconds: x.p.seconds * x.variants, yuan: x.yuan });
+
+function startFree(body = {}) {
+  const x = planFree(body);
+  media.assertQuota();
+  assertSlots(x.variants);
+  const { script, c, p } = x;
+  const ratio = ['9:16', '1:1', '16:9', '3:4', '4:3'].includes(body.ratio) ? body.ratio : '9:16';
+  const audio = !!body.audio;
+  const guard = body.guard !== false;
+  const refs = (body.refAssetIds || []).map(ownImage).filter(Boolean).map((m) => m.id).slice(0, 9);
+  const out = [];
+  for (let v = 0; v < x.variants; v++) {
+    const clips = p.clips.map((cl) => {
+      const imageMediaId = cl.scenes[0].imageMediaId || '';
+      return {
+        scenes: cl.scenes.map((sc) => sc.n), duration: cl.duration, target: cl.target, status: 'pending', imageMediaId,
+        prompt: freePrompt(cl.scenes, cl.durations, { vendor: c.vendor, audio, language: script.language, guard, hasImage: !!imageMediaId || refs.length > 0 }),
+        multiShot: cl.scenes.length > 1,
+      };
+    });
+    out.push(jobs.insert({
+      status: 'running', step: '提交任务', free: true, scriptId: body.scriptId || '', title: x.variants > 1 ? `${script.title} · 版本 ${v + 1}` : script.title, productId: '', productName: '',
+      connectorId: c.id, vendor: c.vendor, connectorName: c.name, model: x.model, mode: p.mode, ratio, audio, imageUrl: '', imageMediaId: '', refs, clips, seconds: p.seconds, aiLabelReminder: true,
+    }));
+  }
+  for (const j of out) run(j.id);
+  return out;
 }
 
 async function imageFor(job) {
@@ -314,12 +393,15 @@ async function run(id) {
   const failJob = (message) => jobs.update(id, { status: 'error', error: message, finishedAt: db.now() });
   try {
     const job = jobs.get(id);
-    const c = connectors.get(job.connectorId);
+    const c0 = connectors.get(job.connectorId);
+    const c = c0 && job.free && job.model ? connectors.withModel(c0, job.model) : c0;
     if (!c) return failJob('这个视频模型的连接已被删除');
     const adapter = ADAPTERS[c.vendor];
     const dir = job.dir ? path.join(db.MEDIA_DIR, job.dir) : media.newDir('job');
     if (!job.dir) jobs.update(id, { dir: path.relative(db.MEDIA_DIR, dir) });
     const image = job.clips.some((x) => x.status === 'pending') ? await imageFor(job) : '';
+    const dataOf = (m) => `data:${m.mime};base64,${fs.readFileSync(media.absPath(m)).toString('base64')}`;
+    const refs = (job.refs || []).map(ownImage).filter(Boolean).map(dataOf);
     const errorsInARow = new Map();
     for (;;) {
       const cur = jobs.get(id);
@@ -330,7 +412,9 @@ async function run(id) {
         if (clip.status !== 'pending' || slots <= 0) continue;
         slots--;
         try {
-          const taskId = await adapter.submit(c, { prompt: clip.prompt, duration: clip.duration, ratio: cur.ratio, audio: cur.audio, image, multiShot: clip.multiShot });
+          const own = ownImage(clip.imageMediaId);
+          const first = own ? dataOf(own) : image;
+          const taskId = await adapter.submit(c, { prompt: clip.prompt, duration: clip.duration, ratio: cur.ratio, audio: cur.audio, image: first, refs: first ? [] : refs, multiShot: clip.multiShot });
           patchClip(id, i, { status: 'running', taskId, submittedAt: db.now() });
         } catch (e) {
           patchClip(id, i, { status: 'failed', error: e.message });
@@ -455,4 +539,4 @@ function recover(userById) {
 const list = () => jobs.all();
 const getJob = (id) => jobs.get(id);
 
-module.exports = { opt, plan, publicPlan, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };
+module.exports = { opt, planFree, publicFreePlan, startFree, plan, publicPlan, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };

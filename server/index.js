@@ -22,6 +22,7 @@ const media = require('./media');
 const videogen = require('./services/videogen');
 const viral = require('./services/viral');
 const studio = require('./services/studio');
+const create = require('./services/create');
 const playbook = require('./services/playbook');
 const connectors = require('./connectors');
 const sourcing = require('./services/sourcing');
@@ -355,6 +356,9 @@ app.get('/api/scripts/:id/srt', h(async (req, res) => {
   res.type('text/plain; charset=utf-8').send(scripts.srt(s));
 }));
 app.post('/api/scripts/generate', h(async (req, res) => res.json(await scripts.generate(req.body))));
+// 自己写或改过的分镜存成脚本
+app.post('/api/scripts/manual', h(async (req, res) => res.json(create.saveScript(req.body || {}))));
+app.put('/api/scripts/:id', h(async (req, res) => res.json(create.saveScript(req.body || {}, req.params.id))));
 app.delete('/api/scripts/:id', h(async (req, res) => res.json({ ok: db.scripts.remove(req.params.id) })));
 
 // ---------- 爆款视频拆解 ----------
@@ -430,6 +434,11 @@ app.post('/api/video-jobs', h(async (req, res) => {
   if (body.imageSource === 'product') body.imageUrl = script.productId ? products.get(script.productId)?.image || '' : '';
   res.json(await videogen.startJob(body, script));
 }));
+// AI 出片创作台：不依赖脚本，自己写分镜
+app.post('/api/video-jobs/free/plan', h(async (req, res) => res.json(videogen.publicFreePlan(videogen.planFree(req.body || {})))));
+app.post('/api/video-jobs/free', h(async (req, res) => res.json({ items: videogen.startFree(req.body || {}) })));
+app.post('/api/video-jobs/polish', h(async (req, res) => res.json(await create.polish(req.body || {}))));
+app.post('/api/video-jobs/keyframe', h(async (req, res) => res.json(await create.keyframe(req.body || {}))));
 app.get('/api/video-jobs/:id', h(async (req, res) => {
   const j = videogen.getJob(req.params.id);
   if (!j) throw notFound('任务');

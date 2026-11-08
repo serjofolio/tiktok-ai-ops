@@ -82,6 +82,7 @@ let qcCount = 0;
 
 function answerFor(text) {
   if (/批量策划 \d+ 条/.test(text)) return JSON.stringify(studioBriefs(text));
+  if (/改写成给.*提示词/.test(text)) return JSON.stringify({ prompt: 'A young woman in front of a mirror fastens the necklace, fingers gently touch the pendant, slow push-in, morning window light.', note: '改成英文，只保留一个动作和一种镜头运动' });
   if (/挖掘拍视频用的痛点和渴望/.test(text)) return JSON.stringify(PAINS);
   if (/TikTok 带货内容拆解专家/.test(text)) return JSON.stringify(VIRAL_REPORT);
   if (/带货短视频脚本/.test(text)) return JSON.stringify(SCRIPT);

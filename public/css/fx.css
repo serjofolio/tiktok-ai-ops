@@ -691,3 +691,23 @@ tr.chosen { background: color-mix(in srgb, var(--ok) 7%, transparent); }
   .studio-why { grid-template-columns: 1fr; gap: 10px; }
   .studio-split { grid-template-columns: 1fr; }
 }
+
+/* ---------- AI 出片创作台 ---------- */
+.create-top { gap: 12px; }
+.shot { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.shot-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.shot-h [data-act=up] svg { transform: rotate(-90deg); }
+.shot-h [data-act=down] svg { transform: rotate(90deg); }
+.shot-b { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; align-items: start; }
+.shot-frame { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; text-align: center; }
+.shot-frame > img, .shot-frame > .small { width: 132px; aspect-ratio: 9 / 16; border-radius: 8px; border: 1px dashed var(--line-2); object-fit: cover; display: grid; place-items: center; background: var(--panel-2); }
+.shot-frame > img { border-style: solid; }
+.shot-frame > .icon-btn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; background: var(--panel); }
+.shot-frame .btn { justify-content: center; }
+.create-bar { position: sticky; bottom: 12px; z-index: 5; margin-top: 16px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 8px 28px rgb(0 0 0 / 0.18); }
+@media (max-width: 640px) {
+  .shot-b { grid-template-columns: 1fr; }
+  .shot-frame { flex-direction: row; align-items: flex-start; }
+  .shot-frame > img, .shot-frame > .small { width: 96px; flex: none; }
+  .shot-frame > .icon-btn { left: 70px; right: auto; }
+}
