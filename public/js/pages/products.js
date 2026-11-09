@@ -1,5 +1,5 @@
 // 智能选品：导入 FastMoss 数据 → 六维评估（需求 / 趋势 / 达人 / 竞争 / 利润 / 风险）→ AI 选品报告与逐个研判 → 单品深度分析 → 测款 → 视频脚本
-import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox, sparkline } from '../lib.js';
+import { api, icon, esc, fmtNum, fmtTime, modal, toast, withLoading, $, $$, empty, confirmBox, sparkline } from '../lib.js';
 import { zhName } from '../picker.js';
 
 const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
@@ -102,6 +102,9 @@ export async function render(view, [openId, openTab]) {
 
   // ---------- 筛选 ----------
   const SOURCE = { file: '文件导入', paste: '粘贴导入', api: '接口拉取', plugin: '插件发送' };
+  // 导入批次：导入时间精确到秒；补传的旧文件标出数据日期
+  const batchLabel = (b) => `${fmtTime(b.at) || b.date} · ${b.fileName || SOURCE[b.source] || '导入'} · ${b.count} 个${b.dataDate && b.dataDate !== b.date ? `（数据日期 ${b.dataDate}）` : ''}`;
+  const batchOptions = (cur) => `<option value="">导入批次：全部</option>${facets.batches.map((b) => `<option value="${esc(b.id)}" ${cur === b.id ? 'selected' : ''}>${esc(batchLabel(b))}</option>`).join('')}`;
   const categoryOptions = (cat, grp) => `<option value="">商品分类：全部</option>
     ${facets.groups.map((g) => `<option value="group:${esc(g.name)}" ${grp === g.name ? 'selected' : ''}>${esc(g.name)}（按类目和标题识别，${g.count}）</option>`).join('')}
     ${facets.categories.map((c) => `<option value="${esc(c.name)}" ${cat === c.name ? 'selected' : ''}>${esc(c.name)}（${c.count}）</option>`).join('')}`;
@@ -112,7 +115,7 @@ export async function render(view, [openId, openTab]) {
     if (!facets.total) return (box.innerHTML = '');
     const pick = (k, label, opts) => `<select class="input" data-f="${k}" aria-label="${label}"><option value="">${label}：全部</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${state[k] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
     box.innerHTML = `${pick('date', '导入日期', facets.dates.map((d) => [d.date, `${d.date}（${d.count}）`]))}
-      ${pick('batch', '导入批次', facets.batches.map((b) => [b.id, `${b.date} · ${b.fileName || SOURCE[b.source] || '导入'} · ${b.count} 个`]))}
+      ${pick('batch', '导入批次', facets.batches.map((b) => [b.id, batchLabel(b)]))}
       <select class="input" id="f-cat" aria-label="商品分类">${categoryOptions(state.category, state.group)}</select>
       ${pick('type', '品型', facets.types.map((t) => [t.name, `${t.name}（${t.count}）`]))}
       <select class="input" data-f="market" aria-label="站点">${marketOptions(state.market)}</select>
@@ -156,7 +159,7 @@ export async function render(view, [openId, openTab]) {
   }
 
   // ---------- 增长榜 ----------
-  const growthState = { window: '10', sort: 'composite', category: '', group: '', market: '', minUnits: '', rising: '' };
+  const growthState = { window: '10', sort: 'composite', category: '', group: '', market: '', batch: '', verdict: '', minUnits: '', rising: '' };
   const GRADE = { daily: ['实测·逐日', 'v-go'], snapshot: ['实测·两次导入', 'v-go'], estimate: ['估算', 'v-na'] };
   const pct = (v) => (v == null ? '<span class="muted">—</span>' : `<b class="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v}%</b>`);
   async function loadGrowth() {
@@ -171,6 +174,8 @@ export async function render(view, [openId, openTab]) {
         ${sel('window', d.windows.map((x) => [String(x), `近 ${x} 天`]))}
         <select class="input" id="g-cat" aria-label="商品分类">${categoryOptions(growthState.category, growthState.group)}</select>
         <select class="input" data-g="market" aria-label="站点">${marketOptions(growthState.market)}</select>
+        <select class="input" data-g="batch" aria-label="导入批次">${batchOptions(growthState.batch)}</select>
+        ${sel('verdict', [['', '结论：全部'], ['可以上', '只看可以上'], ['谨慎测试', '只看谨慎测试'], ['不建议上', '只看不建议上']])}
         ${sel('sort', [['composite', '综合：销量和 GMV 都涨得快'], ['units', '销量增量最大'], ['gmv', 'GMV 增量最大'], ['rate', '销量增长率最高'], ['gmvRate', 'GMV 增长率最高']])}
         <input class="input num" id="g-min" type="number" min="0" placeholder="${W} 天销量≥" value="${esc(growthState.minUnits)}" aria-label="最低销量">
         <label class="switch" title="销量增长率和 GMV 增长率都大于 0 才显示"><input type="checkbox" id="g-rising" ${growthState.rising ? 'checked' : ''}><span></span>只看销量和 GMV 都在涨</label>
@@ -185,7 +190,7 @@ export async function render(view, [openId, openTab]) {
           <td class="r money">${r.gmv.cur == null ? '—' : esc(r.currency) + fmtNum(r.gmv.cur)}<div class="p-sub">${r.gmv.prev == null ? '—' : esc(r.currency) + fmtNum(r.gmv.prev)}</div></td><td class="r">${pct(r.gmv.rate)}<div class="p-sub">${r.gmv.gainCny == null ? '' : `${r.gmv.gainCny >= 0 ? '+' : '-'}¥${fmtNum(Math.abs(r.gmv.gainCny))}`}</div></td>
           <td class="small">${r.lead && (r.lead.creators != null || r.lead.videos != null) ? `达人 ${r.lead.creators > 0 ? '+' : ''}${r.lead.creators ?? '—'}<div class="p-sub">视频 ${r.lead.videos > 0 ? '+' : ''}${r.lead.videos ?? '—'}</div>` : '<span class="muted">要两次数据</span>'}</td>
           <td title="${esc(r.note)}"><span class="verdict ${GRADE[r.grade][1]}" style="font-size:11px">${GRADE[r.grade][0]}</span></td>
-          <td class="vcell">${verdict(r.verdict)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="card">${empty('这个条件下没有商品，放宽筛选或先导入数据', 'search')}</div>`}`;
+          <td class="vcell">${verdict(r.verdict)}${r.reason && r.verdict !== '可以上' ? `<div class="v-reason">${esc(r.reason)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<div class="card">${empty('这个条件下没有商品，放宽筛选或先导入数据', 'search')}</div>`}`;
     $$('[data-g]', box).forEach((s) => (s.onchange = () => { growthState[s.dataset.g] = s.value; loadGrowth(); }));
     $('#g-cat', box).onchange = (e) => { const v = e.target.value; growthState.group = v.startsWith('group:') ? v.slice(6) : ''; growthState.category = v.startsWith('group:') ? '' : v; loadGrowth(); };
     $('#g-min', box).onchange = (e) => { growthState.minUnits = e.target.value; loadGrowth(); };

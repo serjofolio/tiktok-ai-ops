@@ -835,3 +835,5 @@ tr.chosen { background: color-mix(in srgb, var(--ok) 7%, transparent); }
 /* 自定义接口顶部：一般中转站改用中转站类型 */
 .cc-switch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
 .cc-switch > div { flex: 1; min-width: 220px; font-size: 13px; line-height: 1.6; }
+/* 增长榜：结论下面的主要原因 */
+.v-reason { margin-top: 4px; max-width: 150px; font-size: 11px; line-height: 1.4; color: var(--text-2); white-space: normal; }

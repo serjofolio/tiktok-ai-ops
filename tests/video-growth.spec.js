@@ -125,6 +125,25 @@ test('增长榜：两次导入算实测增长，只有一次数据的标估算',
   await expect(page.locator('#g-rising')).toBeChecked();
   await risingSwitch.click();
   await expect(page.locator('#growth-pane .prow', { hasText: 'Beta' })).toHaveCount(1);
+  // 导入批次精确到秒（补传的旧文件标出数据日期）；按批次和结论筛；不建议上的直接写原因
+  const delta = await importCsv(page, [row('PAVOI Four Leaf Clover Earrings Delta', '19100000000000009', '珠宝配饰', 400, 4800, 600, 7200, 900, 10800)], undefined, 'delta.csv');
+  const dRow = (await json(await page.request.get('/api/products/growth?window=10&q=Clover Earrings Delta'))).items[0];
+  expect(dRow.verdict).toBe('不建议上');
+  expect(dRow.reason).toContain('品牌商品');
+  await page.reload();
+  await page.click('#panes [data-p=growth]');
+  const batchSel = page.locator('#growth-pane [data-g=batch]');
+  await expect(batchSel.locator('option', { hasText: 'delta.csv' })).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} · delta\.csv · 1 个$/);
+  await expect(batchSel.locator('option', { hasText: 'older.csv' })).toContainText(`数据日期 ${daysAgo(20)}`);
+  await batchSel.selectOption({ label: (await batchSel.locator('option', { hasText: 'new.csv' }).textContent()).trim() });
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Alpha' })).toHaveCount(1);
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Delta' })).toHaveCount(0);
+  await page.locator('#growth-pane [data-g=batch]').selectOption('');
+  await page.locator('#growth-pane [data-g=verdict]').selectOption('不建议上');
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Delta' }).locator('.v-reason')).toContainText('品牌商品');
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Alpha' })).toHaveCount(0);
+  await page.locator('#growth-pane [data-g=verdict]').selectOption('');
+  await json(await page.request.delete(`/api/products/${delta.ids[0]}`));
   await page.locator('#g-cat').selectOption({ index: 1 });
   await expect(page.locator('#growth-pane .prow', { hasText: 'Gamma' })).toHaveCount(0);
 });

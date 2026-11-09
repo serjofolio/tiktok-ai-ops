@@ -273,16 +273,19 @@ function batches() {
   const records = new Map(imports.all().map((x) => [x.batchId, x]));
   const counts = new Map();
   for (const p of db.products.all()) {
-    for (const id of p.batchIds || (p.batchId ? [p.batchId] : [])) {
-      const c = counts.get(id) || { count: 0, date: importDates(p).at(-1) };
+    const ids = p.batchIds || (p.batchId ? [p.batchId] : []);
+    for (const id of ids) {
+      const c = counts.get(id) || { count: 0, date: importDates(p).at(-1), at: '' };
       c.count++;
+      // 早期导入没有导入记录：用这批新建的商品的创建时间当导入时间
+      if (id === ids[0] && p.createdAt && (!c.at || p.createdAt < c.at)) c.at = p.createdAt;
       counts.set(id, c);
     }
   }
   return [...counts.entries()].map(([id, c]) => {
     const r = records.get(id);
-    return { id, date: r?.importDate || c.date, dataDate: r?.date, count: c.count, source: r?.source || 'file', fileName: r?.fileName || '', categories: r?.categories || [] };
-  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return { id, at: r?.createdAt || c.at || '', date: r?.importDate || c.date, dataDate: r?.date, count: c.count, created: r?.created, updated: r?.updated, source: r?.source || 'file', fileName: r?.fileName || '', categories: r?.categories || [] };
+  }).sort((a, b) => String(b.at || b.date).localeCompare(String(a.at || a.date)));
 }
 
 // ---------- 评估 ----------

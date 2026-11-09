@@ -105,6 +105,8 @@ function percentile(values) {
 }
 
 const WINDOWS = [3, 7, 10, 14, 30];
+// 结论旁边直接写主要原因：先看硬伤，再看严重问题
+const topFlag = (p) => (p.evaluation.flags.find((f) => f.level === 'block') || p.evaluation.flags.find((f) => f.level === 'major'))?.title || '';
 
 // filters：group / category / type / market / batch / date / q（和选品库同一套）
 // rising：只留销量和 GMV 都比前期涨的（两个增长率都算得出来、都大于 0）
@@ -127,7 +129,7 @@ function board({ window: win, sort = 'composite', minUnits, limit, includeSuspic
     const cur = (x) => (x == null ? null : x * cny);
     rows.push({
       id: p.id, name: p.name, nameZh: p.nameZh || '', image: p.image, shop: p.shop, category: p.category, market: p.evaluation.metrics.market, currency: p.evaluation.metrics.currency,
-      type: p.evaluation.metrics.type, verdict: p.evaluation.verdict, stage: p.evaluation.stage, fastmossLink: p.fastmossLink, asp: p.evaluation.metrics.asp,
+      type: p.evaluation.metrics.type, verdict: p.evaluation.verdict, reason: topFlag(p), stage: p.evaluation.stage, fastmossLink: p.fastmossLink, asp: p.evaluation.metrics.asp,
       grade: g.grade, note: g.note, spark: g.spark, lead: g.lead || null,
       units: { cur: round(g.units.cur), prev: round(g.units.prev), gain: g.units.cur == null ? null : round(g.units.cur - (g.units.prev ?? 0)), rate: rate(g.units.cur, g.units.prev) },
       gmv: { cur: round(g.gmv.cur), prev: round(g.gmv.prev), gainCny: g.gmv.cur == null ? null : round(cur(g.gmv.cur) - (cur(g.gmv.prev) ?? 0)), rate: rate(g.gmv.cur, g.gmv.prev) },
