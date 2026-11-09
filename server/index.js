@@ -22,6 +22,7 @@ const media = require('./media');
 const videogen = require('./services/videogen');
 const viral = require('./services/viral');
 const studio = require('./services/studio');
+const tiktok = require('./services/tiktok');
 const zhnames = require('./services/zhnames');
 const create = require('./services/create');
 const playbook = require('./services/playbook');
@@ -190,10 +191,17 @@ app.get('/api/products/:id', h(async (req, res) => {
   res.json(p);
 }));
 app.post('/api/products', h(async (req, res) => res.json(products.createManual(req.body))));
-app.post('/api/products/bulk', h(async (req, res) => res.json(products.bulk(req.body || {}))));
+// 删除商品时一起删掉它的爆款视频（视频和封面文件）
+const dropVideos = (ids) => { for (const id of ids) for (const v of tiktok.list(id)) tiktok.remove(v.id); };
+app.post('/api/products/bulk', h(async (req, res) => {
+  const out = products.bulk(req.body || {});
+  if (req.body?.action === 'delete') dropVideos(req.body.ids || []);
+  res.json(out);
+}));
 app.patch('/api/products/:id', h(async (req, res) => res.json(products.patch(req.params.id, req.body))));
 app.delete('/api/products/:id', h(async (req, res) => {
   if (!db.products.get(req.params.id)) throw notFound('商品');
+  dropVideos([req.params.id]);
   res.json({ ok: db.products.remove(req.params.id) });
 }));
 app.post('/api/products/:id/analyze', h(async (req, res) => res.json(await products.analyze(req.params.id))));
@@ -363,6 +371,26 @@ app.put('/api/scripts/:id', h(async (req, res) => res.json(create.saveScript(req
 app.delete('/api/scripts/:id', h(async (req, res) => res.json({ ok: db.scripts.remove(req.params.id) })));
 
 // ---------- 爆款视频拆解 ----------
+// 商品的爆款视频：粘贴 TikTok 链接读数据，存视频文件，一键拆解
+app.get('/api/products/:id/videos', h(async (req, res) => {
+  if (!products.get(req.params.id)) throw notFound('商品');
+  res.json({ items: tiktok.list(req.params.id) });
+}));
+app.post('/api/products/:id/videos', h(async (req, res) => {
+  if (!products.get(req.params.id)) throw notFound('商品');
+  res.json(await tiktok.addLinks(req.params.id, req.body?.text));
+}));
+app.get('/api/tt-videos/:id', h(async (req, res) => {
+  const x = tiktok.get(req.params.id);
+  if (!x) throw notFound('视频');
+  res.json(x);
+}));
+app.post('/api/tt-videos/:id/refresh', h(async (req, res) => res.json(await tiktok.refresh(req.params.id))));
+app.post('/api/tt-videos/:id/download', h(async (req, res) => res.json(await tiktok.download(req.params.id))));
+app.post('/api/tt-videos/:id/analyze', h(async (req, res) => res.json(await tiktok.analyze(req.params.id))));
+app.delete('/api/tt-videos/:id', h(async (req, res) => res.json({ ok: tiktok.remove(req.params.id) })));
+app.post('/api/viral/link', h(async (req, res) => res.json(await tiktok.analyzeLink(req.body?.url))));
+
 app.get('/api/viral', h(async (req, res) => res.json({ items: viral.list(), capabilities: viral.capabilities(), maxMb: MAX_VIDEO_MB, storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB } })));
 app.post('/api/viral', oneFile(videoUpload, 'video', `视频太大：单个文件最大 ${MAX_VIDEO_MB}MB`), h(async (req, res) => {
   if (!req.file) throw bad('请选择视频文件');
@@ -617,6 +645,7 @@ async function main() {
   viral.recover();
   videogen.recover(auth.userById);
   studio.recover(auth.userById);
+  tiktok.recover();
   const server = app.listen(PORT, HOST, () => {
     const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : 'localhost'}:${PORT}`;
     console.log(`\n  TikTok 运营台已启动：${url}\n  数据目录：${db.DATA_DIR}\n`);

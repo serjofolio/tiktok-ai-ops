@@ -1,6 +1,7 @@
 // 智能选品：导入 FastMoss 数据 → 六维评估（需求 / 趋势 / 达人 / 竞争 / 利润 / 风险）→ AI 选品报告与逐个研判 → 单品深度分析 → 测款 → 视频脚本
 import { api, icon, esc, fmtNum, fmtTime, modal, toast, withLoading, $, $$, empty, confirmBox, sparkline } from '../lib.js';
 import { zhName } from '../picker.js';
+import { mountVideos } from './product-videos.js';
 
 const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
 const LISTING_STATUS = { draft: '待确认', approved: '已确认', pushed: '已上品' };
@@ -516,8 +517,8 @@ export async function render(view, [openId, openTab]) {
             <div class="pd-facts"><span>${esc(mt.type)}</span><span>${esc(p.shop || '—')}</span><span>${esc(mt.market)} 站</span>${mt.ageDays != null ? `<span>上架 ${mt.ageDays} 天</span>` : ''}${p.commissionRate != null ? `<span>佣金 ${p.commissionRate}%</span>` : ''}</div>
             <div class="ext-links"><a href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">${icon('link', 13)}FastMoss 详情</a>${p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener" data-tt title="TikTok 只对当地网络开放：国内网络打开会显示 403 Forbidden，需要马来西亚网络（店铺环境 / 马来西亚节点）">${icon('link', 13)}TikTok 商品页</a>` : ''}${p.shopUrl ? `<a href="${esc(p.shopUrl)}" target="_blank" rel="noopener">${icon('link', 13)}店铺分析</a>` : ''}<a href="${search1688(kw1688(p))}" target="_blank" rel="noopener">${icon('search', 13)}1688 找同款</a></div>
           </div></div>
-        <div class="seg pd-tabs" id="pdtabs">${[['analysis', '分析'], ['source', `1688 找货${p.sourcing?.offers?.length ? ` · ${p.sourcing.offers.length}` : ''}`], ['listing', `上架包${p.listing ? ` · ${LISTING_STATUS[p.listing.status] || ''}` : ''}`]].map(([k, t]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>
-        ${tab === 'source' ? sourceHTML(p) : tab === 'listing' ? listingHTML(p) : `
+        <div class="seg pd-tabs" id="pdtabs">${[['analysis', '分析'], ['source', `1688 找货${p.sourcing?.offers?.length ? ` · ${p.sourcing.offers.length}` : ''}`], ['listing', `上架包${p.listing ? ` · ${LISTING_STATUS[p.listing.status] || ''}` : ''}`], ['videos', '爆款视频']].map(([k, t]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>
+        ${tab === 'source' ? sourceHTML(p) : tab === 'listing' ? listingHTML(p) : tab === 'videos' ? '<div id="pv-box"></div>' : `
         ${ai ? `<div class="ai-box"><div class="row"><b>${icon('sparkles', 15)}AI 研判</b><span class="muted small">${esc(ai.model || '')} · ${esc((ai.at || '').slice(0, 10))}</span></div>
           <div class="ai-reasons">${Object.entries(ai.reasons || {}).filter(([, v]) => v).map(([k, v]) => `<div><span>${esc(k)}</span><p>${esc(v)}</p></div>`).join('')}</div>
           <dl class="kv"><dt>1688 采购价</dt><dd>${esc(ai.est1688 || '—')}${ai.profitOk === false ? ' <span class="down">（按估价利润不成立）</span>' : ai.profitOk ? ' <span class="up">（利润成立）</span>' : ''}</dd><dt>怎么做</dt><dd>${esc(ai.angle || '—')}</dd><dt>下一步</dt><dd>${esc(ai.nextStep || '—')}</dd></dl></div>` : ''}
@@ -578,6 +579,7 @@ export async function render(view, [openId, openTab]) {
       bindFoot();
       if (tab === 'source') return bindSource();
       if (tab === 'listing') return bindListing();
+      if (tab === 'videos') return mountVideos($('#pv-box', root), p);
       const deb = () => { clearTimeout(tmr); tmr = setTimeout(async () => { await save({ costCny: $('#cost', root).value, shippingCny: $('#ship', root).value }); draw(); }, 700); };
       $('#cost', root).oninput = deb;
       $('#ship', root).oninput = deb;

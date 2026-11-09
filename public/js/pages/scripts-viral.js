@@ -24,6 +24,8 @@ export async function render(view, [openId]) {
       <div class="card card-pad col">
         <h3 style="margin:0;font-size:15px">上传爆款视频</h3>
         <div id="caps"></div>
+        <div class="viral-link"><input class="input" id="v-link" placeholder="粘贴 TikTok 视频链接，直接拆解（不用先下载）"><button class="btn" id="v-link-go" data-loading="读取中…">${icon('sparkles', 14)}拆解</button></div>
+        <div class="small muted" id="v-link-msg" style="margin-top:-4px">播放、点赞、评论这些数据会自动带上。也可以在下面上传自己存的视频：</div>
         <div class="dropzone" id="dz">${icon('upload', 28)}<p><b>拖入视频，或点击选择</b><br><span class="small">MP4 / MOV / WebM，${data.maxMb}MB 和 10 分钟以内</span></p><input type="file" id="file" accept="video/*" hidden></div>
         <details class="more"><summary>补充这条视频的数据（可选，分析更准）</summary><div class="col mt">
           <label class="field">标题<input class="input" id="v-title" placeholder="默认用文件名"></label>
@@ -184,6 +186,28 @@ export async function render(view, [openId]) {
       again.onchange = () => send(again.files[0]);
     }
   }
+  // 粘贴链接：服务器存好视频后自动开始拆解，这里等它出现
+  let linkTimer = null;
+  async function waitLink(id) {
+    clearTimeout(linkTimer);
+    if (!alive) return;
+    const x = await api(`/tt-videos/${id}`).catch(() => null);
+    const msg = $('#v-link-msg', view);
+    if (!x || !msg) return;
+    if (x.viralId) {
+      msg.textContent = '已开始拆解。';
+      current = x.viralId;
+      return refreshAll();
+    }
+    if (x.dl === 'failed') return (msg.innerHTML = `<span class="down">下载失败：${esc(x.dlError || '')}</span>`);
+    msg.innerHTML = `<span class="spinner"></span> 正在把 @${esc(x.author)} 的视频存到服务器，存好自动开始拆解…`;
+    linkTimer = setTimeout(() => waitLink(id), 3000);
+  }
+  $('#v-link-go', view).onclick = (e) => withLoading(e.currentTarget, async () => {
+    const r = await api('/viral/link', { method: 'POST', body: { url: $('#v-link', view).value } });
+    $('#v-link', view).value = '';
+    waitLink(r.id);
+  });
   dz.onclick = (e) => { if (e.target.id !== 'file') $('#file', view).click(); };
   file.onchange = () => send(file.files[0]);
   dz.ondragover = (e) => (e.preventDefault(), dz.classList.add('drag'));
@@ -192,5 +216,5 @@ export async function render(view, [openId]) {
 
   renderList();
   await loadDetail();
-  return () => { alive = false; clearTimeout(poll); };
+  return () => { alive = false; clearTimeout(poll); clearTimeout(linkTimer); };
 }

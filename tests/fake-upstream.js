@@ -261,6 +261,34 @@ function fake1688(req, res, url) {
   res.end('{}');
 }
 
+// TikTok 公开视频页：数据在 __UNIVERSAL_DATA_FOR_REHYDRATION__ 里；视频文件要带页面给的 cookie 才能取
+const ttHits = { page: 0 };
+async function fakeTiktok(req, res, url, origin) {
+  const p = url.pathname.replace('/tiktok', '');
+  if (/^\/t\/ZTshort\/?$/.test(p)) {
+    res.writeHead(302, { Location: `${origin}/tiktok/@shorty/video/7300000000000000003` });
+    return res.end();
+  }
+  const cdn = p.match(/^\/cdn\/(\d+)\.mp4$/);
+  if (cdn) {
+    if (!/tt_chain_token=ok/.test(req.headers.cookie || '') || req.headers.referer !== 'https://www.tiktok.com/') return json(res, { error: 'forbidden' }, 403);
+    res.writeHead(200, { 'Content-Type': 'video/mp4' });
+    return res.end(await clipBytes());
+  }
+  const m = p.match(/^\/@([\w.-]+)\/video\/(\d+)$/);
+  if (!m) return json(res, { error: 'not found' }, 404);
+  ttHits.page++;
+  const [, user, id] = m;
+  const gone = id.endsWith('9');
+  const like = 2940 + ttHits.page;
+  const item = { id, desc: `Crushed ice sparkle #925silver #${user}`, createTime: '1793278800', author: { uniqueId: user, nickname: user.toUpperCase() }, authorStats: { followerCount: 12800 },
+    stats: { diggCount: like, shareCount: 273, commentCount: 15, playCount: 344500, collectCount: '813' }, statsV2: { diggCount: String(like), shareCount: '273', commentCount: '15', playCount: '344500', collectCount: '813' },
+    video: { duration: 9, width: 360, height: 640, cover: `${origin}/img/product.png`, playAddr: `${origin}/tiktok/cdn/${id}.mp4` }, music: { title: 'original sound' } };
+  const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': gone ? { statusCode: 10204, statusMsg: 'item doesn\'t exist' } : { statusCode: 0, itemInfo: { itemStruct: item } } } };
+  res.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': ['tt_chain_token=ok; Path=/', 'ttwid=x; Path=/'] });
+  res.end(`<!doctype html><html><body><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></body></html>`);
+}
+
 function start(port = 3902) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -268,6 +296,7 @@ function start(port = 3902) {
     if (url.pathname.startsWith('/video/')) return fakeVideo(req, res, url, `http://127.0.0.1:${server.address().port}`);
     if (url.pathname.startsWith('/fastmoss/')) return fakeFastmoss(req, res, url);
     if (url.pathname === '/sent') return json(res, sent);
+    if (url.pathname.startsWith('/tiktok/')) return fakeTiktok(req, res, url, `http://127.0.0.1:${server.address().port}`);
     if (url.pathname.startsWith('/relay/')) return fakeRelay(req, res, url, `http://127.0.0.1:${server.address().port}`);
     // new-api 中转站公开的价格表（不需要密钥）
     if (url.pathname === '/api/pricing') return json(res, { success: true, group_ratio: { default: 1, Doubao: 1 }, data: [{ model_name: 'doubao-seedance-2.0-fast-720p', quota_type: 0, model_price: 0, description: 'Seedance 2.0 Fast 720p | 带视频特惠约 ¥0.396/秒，不带视频约 ¥0.672/秒(5s约¥3.36)', enable_groups: ['auto', 'Doubao'], supported_endpoint_types: ['openai-video'], billing_unit: 'usage' }, { model_name: 'doubao-seedream-5-0', quota_type: 1, model_price: 0.288, enable_groups: ['Doubao'], supported_endpoint_types: ['image-generation'], billing_unit: 'call' }, { model_name: 'wan3.0-video', quota_type: 1, model_price: 0.252, resolution_prices: { '480p': 0.252, '720p': 0.504 }, enable_groups: ['Wan'], supported_endpoint_types: ['openai-video'], billing_unit: 'second' }] });
