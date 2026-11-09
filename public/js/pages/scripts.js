@@ -1,25 +1,32 @@
-// 视频脚本：写脚本 / 爆款拆解 / 视频库 / 爆款方法论
-import { icon } from '../lib.js';
+// 视频脚本：做视频（写脚本 / AI 出片 / 批量出片）+ 素材（爆款拆解 / 视频库 / 爆款方法论）
+import { icon, esc } from '../lib.js';
+import { HELP, openHelp } from '../help.js';
 
 const TABS = [
-  ['', '写脚本', 'script'],
-  ['create', 'AI 出片', 'video'],
-  ['studio', '批量出片', 'layers'],
-  ['viral', '爆款拆解', 'search'],
-  ['videos', '视频库', 'video'],
-  ['playbook', '爆款方法论', 'book'],
+  ['', '写脚本', 'script', 'make'],
+  ['create', 'AI 出片', 'video', 'make'],
+  ['studio', '批量出片', 'layers', 'make'],
+  ['viral', '爆款拆解', 'search', 'ref'],
+  ['videos', '视频库', 'video', 'ref'],
+  ['playbook', '爆款方法论', 'book', 'ref'],
 ];
 
 export async function render(view, [first, second]) {
   const tab = ['create', 'studio', 'viral', 'videos', 'playbook'].includes(first) ? first : '';
+  const key = tab ? `scripts/${tab}` : 'scripts';
+  const link = ([k, t, ic]) => `<a href="#/scripts${k ? `/${k}` : ''}" class="${k === tab ? 'on' : ''}" data-tab="${k}">${icon(ic, 14)}${t}</a>`;
   view.innerHTML = `
   <section class="page-hero">
-    <div class="kicker">视频脚本 · 爆款方法 × AI × 视频模型</div>
-    <h2>学爆款，写脚本，<em>直接出片</em></h2>
-    <p>脚本按真实爆款的方法来写：选风格、选钩子、抓痛点。上传一条爆款视频，AI 逐段拆解，再学它的结构写你的脚本。「批量出片」上传商品图，一次做十几条不同开头的视频：先出关键帧质检，再只为合格的付视频钱。</p>
+    <div class="kicker">视频脚本</div>
+    <h2>写脚本，<em>直接出片</em></h2>
+    <p>写脚本、出视频、学爆款都在这里。不知道从哪开始：有商品没脚本用「写脚本」，有想法直接出片用「AI 出片」，要一次测很多开头用「批量出片」。</p>
   </section>
-  <div class="seg script-tabs" id="script-tabs">${TABS.map(([k, t, ic]) => `<a href="#/scripts${k ? `/${k}` : ''}" class="${k === tab ? 'on' : ''}" data-tab="${k}">${icon(ic, 14)}${t}</a>`).join('')}</div>
+  <div class="script-nav">
+    <div class="seg script-tabs" id="script-tabs"><span class="st-label">做视频</span>${TABS.filter((x) => x[3] === 'make').map(link).join('')}<span class="st-sep"></span><span class="st-label">素材</span>${TABS.filter((x) => x[3] === 'ref').map(link).join('')}</div>
+  </div>
+  <div class="tab-hint"><span>${esc(HELP[key]?.what || '')}</span><button class="btn sm ghost" id="tab-help">${icon('book', 13)}怎么用</button></div>
   <div id="tab" class="mt"></div>`;
+  view.querySelector('#tab-help').onclick = () => openHelp(key);
   const box = view.querySelector('#tab');
   const mod = await import(`./scripts-${tab || 'write'}.js`);
   return mod.render(box, tab ? [second] : [first, second], view);

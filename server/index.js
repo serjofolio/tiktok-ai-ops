@@ -22,6 +22,7 @@ const media = require('./media');
 const videogen = require('./services/videogen');
 const viral = require('./services/viral');
 const studio = require('./services/studio');
+const zhnames = require('./services/zhnames');
 const create = require('./services/create');
 const playbook = require('./services/playbook');
 const connectors = require('./connectors');
@@ -172,7 +173,7 @@ app.delete('/api/sample', h(async (req, res) => res.json(sample.clear())));
 // ---------- 智能选品 ----------
 // 列表只带货源和上架包的摘要，详情接口才返回完整数据
 const light = ({ sourcing: s, listing: l, reviewsText, analysis, snapshots, daily, pains, ...p }) => ({ ...p, analyzed: !!analysis, sourcing: s ? { count: s.offers?.length || 0, chosen: s.chosen || null, keyword: s.keyword } : null, listing: l ? { status: l.status } : null });
-app.get('/api/products', h(async (req, res) => res.json({ items: products.list(req.query).map(light), categories: products.categories(), ...(req.query.facets ? { facets: products.facets(), quota: products.exportQuota(req.query.today) } : {}), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) })));
+app.get('/api/products', h(async (req, res) => (zhnames.kick(), res.json({ items: products.list(req.query).map(light), categories: products.categories(), ...(req.query.facets ? { facets: products.facets(), quota: products.exportQuota(req.query.today) } : {}), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) }))));
 // AI 选品报告：后台生成，前端轮询
 app.post('/api/reports', h(async (req, res) => res.json(report.start({ ids: req.body?.ids }))));
 app.get('/api/reports/latest', h(async (req, res) => res.json(report.latest() || {})));

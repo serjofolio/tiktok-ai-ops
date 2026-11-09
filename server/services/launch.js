@@ -172,7 +172,7 @@ function view(p, withDetail = true) {
   const rows = p.launch?.days || [];
   const decision = decide(econ, plan, rows);
   const totals = econ ? sumRows(rows, econ) : null;
-  const base = { id: p.id, name: p.name, image: p.image, sample: !!p.sample, type: p.evaluation.metrics.type, market: p.evaluation.metrics.market, verdict: p.evaluation.verdict, started: !!p.launch, economics: econ, decision, totals, lastDate: [...rows].map((d) => d.date).sort().at(-1) || null };
+  const base = { id: p.id, name: p.name, nameZh: p.nameZh || '', image: p.image, sample: !!p.sample, type: p.evaluation.metrics.type, market: p.evaluation.metrics.market, verdict: p.evaluation.verdict, started: !!p.launch, economics: econ, decision, totals, lastDate: [...rows].map((d) => d.date).sort().at(-1) || null };
   if (!withDetail) return base;
   const job = jobs.all().filter((j) => j.productId === p.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
   let running = 0;

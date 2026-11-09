@@ -1,6 +1,7 @@
 // 写脚本：选商品 → 选风格、钩子、痛点 → 生成一条或多条 → 自检 → 生成视频
 import { api, icon, esc, toast, withLoading, $, $$, empty, copy, timeAgo, confirmBox } from '../lib.js';
 import { videoDialog } from './scripts-videos.js';
+import { productPicker, nameText, zhName } from '../picker.js';
 
 const PART = { Hook: '钩子', Problem: '痛点', Demo: '演示', Proof: '证明', Offer: '优惠', CTA: '行动号召', Story: '故事', Twist: '反转' };
 const MODES = [['person', '真人出镜'], ['hands', '不露脸'], ['ai', 'AI 生成']];
@@ -17,7 +18,7 @@ export async function render(view, [first, second]) {
   <div class="split">
     <div class="col">
       <div class="card card-pad col">
-        <label class="field">商品<select class="input" id="pid">${pool.map((p) => `<option value="${p.id}" ${p.id === preset ? 'selected' : ''}>${p.status === 'testing' ? '【测款中】' : p.evaluation.verdict === '可以上' ? '【可以上】' : ''}${esc(p.name)}</option>`).join('')}<option value="">手动填写商品…</option></select></label>
+        <label class="field">商品<select class="input" id="pid">${pool.map((p) => `<option value="${p.id}" ${p.id === preset ? 'selected' : ''}>${esc(nameText(p))}</option>`).join('')}<option value="">手动填写商品…</option></select></label>
         <div class="col" id="manual" hidden><input class="input" id="mname" placeholder="商品名称，例如 Gold Clover Earrings"><textarea class="input" id="mdesc" rows="2" placeholder="卖点、材质、价格（只写真实信息）"></textarea></div>
         <div class="field"><div class="row" style="justify-content:space-between">风格<a class="small link-lime" href="#/scripts/playbook">看爆款方法论 →</a></div>
           <div class="seg seg-full" id="groups">${pb.groups.map((g) => `<button type="button" data-g="${g.id}" title="${esc(g.hint)}" class="${g.id === group ? 'on' : ''}">${esc(g.name)}</button>`).join('')}</div>
@@ -75,6 +76,7 @@ export async function render(view, [first, second]) {
   };
   $('#pid', view).onchange = () => { const manual = !$('#pid', view).value; $('#manual', view).hidden = !manual; pain = null; renderPains(null); renderStyles(); loadSavedPains(); };
   if (!pool.length) { $('#pid', view).value = ''; $('#manual', view).hidden = false; }
+  const picker = productPicker($('#pid', view), pool);
   $('#mname', view).oninput = renderStyles;
   $('#mine', view).onclick = (e) => withLoading(e.currentTarget, async () => {
     const data = await api('/scripts/pains', { method: 'POST', body: { ...productBody(), language: $('#lang', view).value } });
@@ -108,7 +110,7 @@ export async function render(view, [first, second]) {
       <div class="card-head"><h3>${esc(s.title)}</h3><div class="spacer"></div>
         <a class="btn sm ghost" href="#/scripts/create/${s.id}" title="把分镜导进 AI 出片：可以改、插镜头、删镜头，每个镜头配首帧">${icon('wand', 14)}改分镜再出片</a><button class="btn sm primary-glow" id="to-video">${icon('video', 14)}生成视频</button><button class="icon-btn" id="cp" title="复制全文">${icon('copy', 16)}</button><button class="icon-btn" id="dl" title="导出 TXT">${icon('download', 16)}</button><a class="icon-btn" href="/api/scripts/${s.id}/srt" title="下载字幕 SRT（剪映 / CapCut 可导入）">${icon('file', 16)}</a><button class="icon-btn danger" id="rm" title="删除">${icon('trash', 16)}</button></div>
       <div class="card-pad col">
-        <div class="row"><span class="chip">${esc(s.productName || '')}</span><span class="chip">${esc(s.style || '')}</span>${s.hookName ? `<span class="chip">钩子 · ${esc(s.hookName)}</span>` : ''}<span class="chip">${s.duration} 秒</span><span class="chip">${esc(s.language || '')}</span>${s.bgm ? `<span class="chip">声音 · ${esc(s.bgm)}</span>` : ''}${s.viralId ? `<a class="chip click" href="#/scripts/viral/${s.viralId}">学自：${esc(s.viralTitle || '爆款视频')}</a>` : ''}</div>
+        <div class="row"><span class="chip" title="${esc(s.productName || '')}">${esc(zhName(pool.find((p) => p.id === s.productId)) || s.productName || '')}</span><span class="chip">${esc(s.style || '')}</span>${s.hookName ? `<span class="chip">钩子 · ${esc(s.hookName)}</span>` : ''}<span class="chip">${s.duration} 秒</span><span class="chip">${esc(s.language || '')}</span>${s.bgm ? `<span class="chip">声音 · ${esc(s.bgm)}</span>` : ''}${s.viralId ? `<a class="chip click" href="#/scripts/viral/${s.viralId}">学自：${esc(s.viralTitle || '爆款视频')}</a>` : ''}</div>
         ${s.check ? `<div class="check-box ${s.check.score >= 85 ? 'good' : ''}"><div class="row"><b>上线前自检 ${s.check.score} 分</b><span class="muted small">程序按平台规则和方法论检查，不代表一定会爆</span></div>${failed.length ? `<ul>${failed.map((x) => `<li class="${x.level === 'fail' ? 'down' : ''}"><b>${esc(x.label)}</b>：${esc(x.note)}</li>`).join('')}</ul>` : '<p class="small up" style="margin:6px 0 0">全部通过</p>'}</div>` : ''}
         ${s.angle || st.pain ? `<div class="hit strategy"><b>${esc(s.angle || '')}</b><dl class="kv small">${st.audience ? `<dt>给谁看</dt><dd>${esc(st.audience)}</dd>` : ''}${st.pain ? `<dt>抓什么</dt><dd>${esc(st.pain)}</dd>` : ''}${st.whyItWorks ? `<dt>为什么有效</dt><dd>${esc(st.whyItWorks)}</dd>` : ''}${st.proof ? `<dt>怎么证明</dt><dd>${esc(st.proof)}</dd>` : ''}${st.objection ? `<dt>回答的顾虑</dt><dd>${esc(st.objection)}</dd>` : ''}</dl></div>` : ''}
         <div class="hook-box"><span>开头的第一句话</span><b>${esc(s.hook)}</b>${s.hookText || s.hookFrame ? `<div class="hook-3"><div><em>屏幕字</em>${esc(s.hookText || '—')}</div><div><em>第一帧</em>${esc(s.hookFrame || '—')}</div></div>` : ''}${s.hookAlternatives?.length ? `<div class="alts">${s.hookAlternatives.map(hookAlt).join('')}</div>` : ''}</div>
@@ -158,7 +160,7 @@ export async function render(view, [first, second]) {
   });
 
   if (!current && !preset) current = sd.items[0] || null;
-  if (first && first !== 'new' && current?.productId && pool.some((p) => p.id === current.productId)) $('#pid', view).value = current.productId;
+  if (first && first !== 'new' && current?.productId && pool.some((p) => p.id === current.productId)) { $('#pid', view).value = current.productId; picker.sync(); }
   renderStyles();
   renderHist();
   renderViewer();

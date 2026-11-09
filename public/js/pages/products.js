@@ -1,5 +1,6 @@
 // 智能选品：导入 FastMoss 数据 → 六维评估（需求 / 趋势 / 达人 / 竞争 / 利润 / 风险）→ AI 选品报告与逐个研判 → 单品深度分析 → 测款 → 视频脚本
 import { api, icon, esc, fmtNum, modal, toast, withLoading, $, $$, empty, confirmBox, sparkline } from '../lib.js';
+import { zhName } from '../picker.js';
 
 const STATUS = { candidate: '候选', testing: '测款中', dropped: '已放弃' };
 const LISTING_STATUS = { draft: '待确认', approved: '已确认', pushed: '已上品' };
@@ -268,7 +269,7 @@ export async function render(view, [openId, openTab]) {
     const ai = p.ai;
     return `<tr class="prow" data-id="${p.id}">
       <td class="chk" data-stop><input type="checkbox" data-chk="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="选择这个商品"></td>
-      <td><div class="pcell">${thumb(p)}<div style="min-width:0"><b class="pname">${p.sample ? '<span class="tag-sample">示例</span>' : ''}${esc(p.name)}</b>
+      <td><div class="pcell">${thumb(p)}<div style="min-width:0"><b class="pname">${p.sample ? '<span class="tag-sample">示例</span>' : ''}${esc(zhName(p) || p.name)}</b>${zhName(p) ? `<span class="pname-en" title="${esc(p.name)}">${esc(p.name)}</span>` : ''}
         <div class="p-sub"><span class="tag-type">${esc(m.type)}</span>${esc([p.shop, STATUS[p.status] && p.status !== 'candidate' ? STATUS[p.status] : ''].filter(Boolean).join(' · '))} <a class="mini-link" data-stop href="${esc(p.fastmossLink)}" target="_blank" rel="noopener">FastMoss ↗</a></div>
         ${flags.length ? `<div class="flags-inline">${flags.slice(0, 3).map((f) => `<span class="flag ${f.level}">${esc(f.title)}</span>`).join('')}</div>` : ''}</div></div></td>
       <td class="r money">${money(c, m.asp)}${range}</td>
@@ -494,7 +495,7 @@ export async function render(view, [openId, openTab]) {
     if (tab === 'listing') erps = (await api('/connectors').catch(() => ({ items: [] }))).items.filter((c) => c.kind === 'erp' && c.enabled !== false && c.status !== 'pending');
     // 等数据期间已经切到别的页面（或同一页面被重新渲染）：不再弹出，避免叠出两个详情
     if (!view.isConnected) return;
-    const m = modal({ title: esc(p.name.length > 70 ? p.name.slice(0, 70) + '…' : p.name), wide: true, body: '<div id="pd"></div>', footer: '<div id="pf" class="row" style="width:100%"></div>' });
+    const m = modal({ title: esc(zhName(p) || (p.name.length > 70 ? p.name.slice(0, 70) + '…' : p.name)), wide: true, body: '<div id="pd"></div>', footer: '<div id="pf" class="row" style="width:100%"></div>' });
     const root = $('#pd', m.el), foot = $('#pf', m.el);
 
     const draw = () => {

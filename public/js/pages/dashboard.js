@@ -1,5 +1,6 @@
 // 总览：今日行动 + 3D 主视觉 + 选品到测款的进度 + 快捷入口
 import { api, icon, esc, fmtNum, timeAgo, empty, toast, withLoading, confirmBox, $ } from '../lib.js';
+import { zhName } from '../picker.js';
 import { splitText, mountGallery } from '../fx/ambient.js';
 
 const VC = { 可以上: 'v-go', 谨慎测试: 'v-watch', 不建议上: 'v-drop', 数据不足: 'v-na' };
@@ -66,7 +67,7 @@ export async function render(view) {
       ${d.topProducts.length ? `<div style="overflow-x:auto"><table>
         <thead><tr><th>商品</th><th class="r">成交均价</th><th class="r">7 天销量</th><th class="r">趋势</th><th>结论</th></tr></thead>
         <tbody>${d.topProducts.map((p) => `<tr style="cursor:pointer" onclick="location.hash='#/products/${p.id}'">
-          <td><b>${esc(p.name)}</b><div class="p-sub">${esc(p.category || '')}</div></td><td class="r money">${p.evaluation.metrics.asp != null ? p.evaluation.metrics.currency + p.evaluation.metrics.asp : '—'}</td>
+          <td><b>${esc(zhName(p) || p.name)}</b>${zhName(p) ? `<span class="pname-en">${esc(p.name)}</span>` : ''}<div class="p-sub">${esc(p.category || '')}</div></td><td class="r money">${p.evaluation.metrics.asp != null ? p.evaluation.metrics.currency + p.evaluation.metrics.asp : '—'}</td>
           <td class="r">${p.sales7d != null ? fmtNum(p.sales7d) : '—'}</td><td class="r ${(p.evaluation.metrics.momentum ?? 1) >= 1 ? 'up' : 'down'}">${p.evaluation.metrics.momentum != null ? p.evaluation.metrics.momentum + '×' : '—'}</td>
           <td><span class="verdict ${VC[p.evaluation.verdict] || 'v-na'}">${esc(p.evaluation.verdict)}</span></td></tr>`).join('')}</tbody></table></div>`
         : empty('选品库是空的：从 FastMoss 导出商品数据后导入', 'target', '<a class="btn sm" href="#/products">去导入</a>')}

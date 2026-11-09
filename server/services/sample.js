@@ -24,14 +24,14 @@ function history({ now7, prev7, price, creators, videos }) {
 }
 
 const PRODUCTS = [
-  { key: 'pearl', name: 'Layered Freshwater Pearl Chain Necklace 18K Plated', category: '时尚配件', price: 59, now7: 1860, prev7: 820, creators: 86, videos: 210, shop: 'Lumi Atelier（示例）', cost: 14, ship: 4.6, ai: '可以上', headline: '近期销量翻倍，达人还不拥挤，毛利撑得住投放', kw: '淡水珍珠 叠戴项链 18K', state: 'scale' },
-  { key: 'huggie', name: 'Stainless Steel Chunky Huggie Hoop Earrings 3 Pairs Set', category: '时尚配件', price: 45, now7: 1240, prev7: 930, creators: 64, videos: 150, shop: 'Daily Shine（示例）', cost: 11, ship: 3.8, ai: '可以上', headline: '需求稳定上升，套装价有优势', kw: '不锈钢 粗圈耳环 三对装', state: 'keep' },
-  { key: 'case', name: 'Travel Jewelry Organizer Case Mini Velvet Box', category: '收纳', price: 32, now7: 640, prev7: 610, creators: 41, videos: 90, shop: 'Neat Corner（示例）', cost: 12, ship: 6, ai: '谨慎测试', headline: '需求平，利润薄，内容不容易拍出差异', kw: '首饰收纳盒 便携 绒面', state: 'stop' },
-  { key: 'name', name: 'Custom Initial Bracelet Dainty Gold Tone Chain', category: '时尚配件', price: 49, now7: 980, prev7: 500, creators: 38, videos: 72, shop: 'Letter Lane（示例）', cost: 9.5, ship: 3.2, ai: '可以上', headline: '送礼场景明确，新品还在起量', kw: '字母手链 细链 金色', state: 'prep' },
-  { key: 'anklet', name: 'Butterfly Charm Anklet Adjustable Beach Chain', category: '时尚配件', price: 29, now7: 1520, prev7: 610, creators: 57, videos: 130, shop: 'Sea Glow（示例）', state: 'idle' },
-  { key: 'clover', name: 'Clover Stud Earrings Minimal Daily Wear', category: '时尚配件', price: 25, now7: 720, prev7: 800, creators: 210, videos: 640, shop: 'Petal Row（示例）', state: 'idle' },
-  { key: 'bangle', name: 'Cartier Style Love Bangle Gold Plated', category: '时尚配件', price: 68, now7: 2300, prev7: 1500, creators: 120, videos: 300, shop: 'Lux Copy（示例）', state: 'idle' },
-  { key: 'odd', name: 'Crystal Pendant Necklace Gift Box', category: '时尚配件', price: 199, now7: 1400, prev7: 1100, creators: 3, videos: 4, shop: 'Fast Sold（示例）', state: 'idle' },
+  { key: 'pearl', nameZh: '18K 镀金淡水珍珠叠戴项链', name: 'Layered Freshwater Pearl Chain Necklace 18K Plated', category: '时尚配件', price: 59, now7: 1860, prev7: 820, creators: 86, videos: 210, shop: 'Lumi Atelier（示例）', cost: 14, ship: 4.6, ai: '可以上', headline: '近期销量翻倍，达人还不拥挤，毛利撑得住投放', kw: '淡水珍珠 叠戴项链 18K', state: 'scale' },
+  { key: 'huggie', nameZh: '不锈钢粗款耳圈 3 对装', name: 'Stainless Steel Chunky Huggie Hoop Earrings 3 Pairs Set', category: '时尚配件', price: 45, now7: 1240, prev7: 930, creators: 64, videos: 150, shop: 'Daily Shine（示例）', cost: 11, ship: 3.8, ai: '可以上', headline: '需求稳定上升，套装价有优势', kw: '不锈钢 粗圈耳环 三对装', state: 'keep' },
+  { key: 'case', nameZh: '迷你丝绒旅行首饰盒', name: 'Travel Jewelry Organizer Case Mini Velvet Box', category: '收纳', price: 32, now7: 640, prev7: 610, creators: 41, videos: 90, shop: 'Neat Corner（示例）', cost: 12, ship: 6, ai: '谨慎测试', headline: '需求平，利润薄，内容不容易拍出差异', kw: '首饰收纳盒 便携 绒面', state: 'stop' },
+  { key: 'name', nameZh: '定制字母金色细手链', name: 'Custom Initial Bracelet Dainty Gold Tone Chain', category: '时尚配件', price: 49, now7: 980, prev7: 500, creators: 38, videos: 72, shop: 'Letter Lane（示例）', cost: 9.5, ship: 3.2, ai: '可以上', headline: '送礼场景明确，新品还在起量', kw: '字母手链 细链 金色', state: 'prep' },
+  { key: 'anklet', nameZh: '蝴蝶吊坠可调节脚链', name: 'Butterfly Charm Anklet Adjustable Beach Chain', category: '时尚配件', price: 29, now7: 1520, prev7: 610, creators: 57, videos: 130, shop: 'Sea Glow（示例）', state: 'idle' },
+  { key: 'clover', nameZh: '极简四叶草耳钉', name: 'Clover Stud Earrings Minimal Daily Wear', category: '时尚配件', price: 25, now7: 720, prev7: 800, creators: 210, videos: 640, shop: 'Petal Row（示例）', state: 'idle' },
+  { key: 'bangle', nameZh: '卡地亚风镀金手镯', name: 'Cartier Style Love Bangle Gold Plated', category: '时尚配件', price: 68, now7: 2300, prev7: 1500, creators: 120, videos: 300, shop: 'Lux Copy（示例）', state: 'idle' },
+  { key: 'odd', nameZh: '水晶吊坠项链礼盒装', name: 'Crystal Pendant Necklace Gift Box', category: '时尚配件', price: 199, now7: 1400, prev7: 1100, creators: 3, videos: 4, shop: 'Fast Sold（示例）', state: 'idle' },
 ];
 
 const SCRIPT_HOOKS = {

@@ -1,5 +1,6 @@
 // 测款作战室：看板（备战 / 测款 / 该加码 / 该止损）+ 单品作战页（备战清单、单件账本、止损线、每日复盘、素材榜）
 import { api, icon, esc, fmtNum, toast, withLoading, $, $$, empty, confirmBox } from '../lib.js';
+import { nameHTML, zhName } from '../picker.js';
 
 const VCLS = { 可以上: 'v-go', 谨慎测试: 'v-watch', 不建议上: 'v-drop', 数据不足: 'v-na' };
 const COLS = [['prep', '备战中', '账本和素材准备好就能开测'], ['testing', '测款中', '每天录数据，等结论'], ['scale', '该加码', 'CPA 明显低于保本'], ['stop', '该止损', '继续投大概率亏钱']];
@@ -20,7 +21,7 @@ async function board(view) {
   const s = d.summary;
   const card = (x) => {
     const t = x.totals, c = x.economics?.currency || '';
-    return `<a class="lb-card" href="#/launch/${x.id}"><div class="pcell">${thumb(x)}<b class="pname">${esc(x.name)}</b></div>
+    return `<a class="lb-card" href="#/launch/${x.id}"><div class="pcell">${thumb(x)}<div style="min-width:0">${nameHTML(x)}</div></div>
       <p class="small">${sampleTag(x)}${esc(x.decision.title)}</p>
       ${x.lastDate && t ? `<div class="lb-nums"><span>订单<b>${t.orders}</b></span><span>CPA<b>${t.cpa == null ? '—' : c + t.cpa}</b></span><span>利润<b class="${t.profit >= 0 ? 'up' : 'down'}">${sign(c, t.profit)}</b></span></div>` : `<div class="small muted">${x.economics?.ownOrder > 0 ? `每单最多花 ${c}${x.economics.ownOrder}` : '还不能算账'}</div>`}</a>`;
   };
@@ -46,7 +47,7 @@ async function detail(view, id, section) {
     <a class="back-link small" href="#/launch">${icon('arrow', 13)}返回作战室</a>
     <section class="dc dc-${dec.code}" data-reveal>
       <div class="dc-main"><div class="dc-top">${sampleTag(d)}<span class="verdict ${VCLS[d.verdict] || 'v-na'}">${esc(d.verdict)}</span><span class="muted small">${esc(d.market)} 站 · ${esc(d.type)}</span></div>
-        <h2 class="dc-name">${esc(d.name)}</h2>
+        <h2 class="dc-name">${esc(zhName(d) || d.name)}</h2>${zhName(d) ? `<div class="pname-en">${esc(d.name)}</div>` : ''}
         <div class="dc-call"><b>${esc(dec.label)}</b><div><h3>${esc(dec.title)}</h3><p>${esc(dec.why)}</p></div></div>
         ${(dec.diagnosis || []).length ? `<ul class="dc-diag">${dec.diagnosis.map((x) => `<li class="${x.ok ? 'ok' : ''}"><span>${esc(x.stage)}</span>${esc(x.text)}</li>`).join('')}</ul>` : ''}
       </div>

@@ -1,5 +1,6 @@
 // 爆款拆解：上传视频 → 详细分析 → 学习结构生成脚本
 import { api, icon, esc, toast, withLoading, $, $$, empty, confirmBox, timeAgo } from '../lib.js';
+import { productPicker, nameText } from '../picker.js';
 
 const PART = { Hook: '钩子', Problem: '痛点', Demo: '演示', Proof: '证明', Offer: '优惠', CTA: '行动号召', Story: '故事', Twist: '反转' };
 const SCORE = { hook: '钩子', retention: '留人', proof: '证明', conversion: '转化', shareability: '传播' };
@@ -114,9 +115,10 @@ export async function render(view, [openId]) {
     $('#to-learn', box).onclick = (e) => { e.preventDefault(); $('#learn', box).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     const products = (await api('/products?sort=score').catch(() => ({ items: [] }))).items.filter((p) => p.status !== 'dropped');
     if (!view.isConnected || !$('#l-pid', box)) return;
-    $('#l-pid', box).innerHTML = `${products.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}<option value="">手动填写商品…</option>`;
+    $('#l-pid', box).innerHTML = `${products.map((p) => `<option value="${p.id}">${esc(nameText(p))}</option>`).join('')}<option value="">手动填写商品…</option>`;
     const syncManual = () => ($('#l-manual', box).hidden = !!$('#l-pid', box).value);
     if (!products.length) $('#l-pid', box).value = '';
+    productPicker($('#l-pid', box), products);
     $('#l-pid', box).onchange = syncManual;
     syncManual();
     $('#l-go', box).onclick = (e) => withLoading(e.currentTarget, async () => {

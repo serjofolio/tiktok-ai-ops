@@ -1,6 +1,7 @@
 // 应用外壳：导航、路由、全站动效
 import { icon, api, $, esc, countUp, toast } from './lib.js';
 import { session, loadSession } from './session.js';
+import { openHelp, helpKey } from './help.js';
 import { initStars, initPointerFx, initSpotlight, splitText, armReveal, initIntro, initClickBurst } from './fx/ambient.js';
 
 initStars();
@@ -14,6 +15,7 @@ const ROUTES = [
   { path: 'login', title: '登录', hidden: true, full: true, public: true },
   { path: 'account', title: '账号设置', hidden: true },
   { path: 'admin', title: '用户管理', hidden: true, admin: true },
+  { path: 'guide', title: '使用指南', hidden: true },
   { path: 'dashboard', title: '总览', icon: 'home' },
   { path: 'products', title: '智能选品', icon: 'target' },
   { path: 'pipeline', title: '自动上品', icon: 'flow' },
@@ -28,6 +30,9 @@ const nav = $('#nav');
 nav.innerHTML = ROUTES.filter((r) => !r.hidden).map((r) => `<a href="#/${r.path}" data-path="${r.path}">${icon(r.icon, 16)}<span>${r.title}</span></a>`).join('');
 
 $('#menu-btn').innerHTML = icon('menu');
+// 「?」：打开当前页面的使用说明；没有单独说明的页面去使用指南
+$('#help-btn').innerHTML = '?';
+$('#help-btn').onclick = () => (helpKey() ? openHelp() : (location.hash = '#/guide'));
 $('#menu-btn').onclick = () => { $('#app').classList.toggle('nav-open'); requestAnimationFrame(moveIndicator); };
 
 // ---------- 导航滑块：激活项背后的色块弹性滑动 ----------
@@ -58,6 +63,7 @@ addEventListener('scroll', () => {
 
 export async function refreshMode() {
   $('#mode-chip').hidden = !session.user;
+  $('#help-btn').hidden = !session.user;
   if (!session.user) return;
   try {
     const d = await api('/providers');
@@ -139,6 +145,7 @@ function renderAccount() {
     <div class="user-menu" id="user-menu" role="menu">
       <div class="um-head"><b>${esc(u.username)}</b><small>${admin ? '管理员 · 可管理所有账号' : '只能看到自己的数据'}</small></div>
       <a href="#/account" role="menuitem">${icon('settings', 15)}账号与密码</a>
+      <a href="#/guide" role="menuitem">${icon('book', 15)}使用指南</a>
       ${admin ? `<a href="#/admin" role="menuitem">${icon('layers', 15)}用户管理</a>` : ''}
       <button id="logout" role="menuitem">${icon('arrow', 15)}退出登录</button>
     </div>`;

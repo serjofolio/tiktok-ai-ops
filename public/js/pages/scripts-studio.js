@@ -1,5 +1,6 @@
 // 批量出片：上传商品素材 → 每条分配不同的钩子和场景 → 先出关键帧并质检 → 人确认 → 只把合格的做成视频
 import { api, icon, esc, toast, withLoading, $, $$, empty, confirmBox, timeAgo } from '../lib.js';
+import { productPicker, nameText, zhName } from '../picker.js';
 
 const STATUS = { preparing: ['准备中', 'run'], review: ['待确认', 'watch'], rendering: ['生成视频中', 'run'], done: ['完成', 'ok'], error: ['出错', 'err'] };
 const money = (x) => (x == null ? '—' : `¥${Number(x).toFixed(Number(x) < 10 ? 2 : 1)}`);
@@ -24,37 +25,42 @@ export async function render(view, [openId]) {
     <div class="card card-pad col" id="new">
       <h3 style="margin:0;font-size:15px">新建一批</h3>
       ${d.video.length ? '' : `<div class="note-card warn">还没有接入视频模型。到 <a class="link-lime" href="#/providers">接入配置 → 视频与图片模型</a> 添加；你的中转站选「中转站（new-api / OpenAI 兼容格式）」。</div>`}
-      <div class="field"><span>商品素材（图片或视频，可以不传）</span>
-        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好</span></p><input type="file" id="files" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
-        <div class="asset-row" id="assets"></div></div>
+      <h4 class="studio-sec">1 · 商品</h4>
       <div class="grid g2">
-        <label class="field">视频格式<select class="input" id="format">${d.formats.map((x) => `<option value="${x.id}" title="${esc(x.desc)}">${esc(x.name)}</option>`).join('')}</select><span class="small muted" id="format-desc">${esc(d.formats[0]?.desc || '')}</span></label>
-        <label class="field">学这条爆款的结构（可选）<select class="input" id="viral"><option value="">不学</option>${d.virals.map((v) => `<option value="${v.id}">${esc(String(v.title || '').slice(0, 40))}</option>`).join('')}</select><span class="small muted">${d.virals.length ? '学它的钩子、节奏和结构，不照抄台词画面' : '先到「爆款拆解」上传一条爆款视频'}</span></label>
-      </div>
-      <div class="field"><span>统一人物（可选）：上传一张模特照片，这批视频都用同一个人</span>
-        <div class="row" style="gap:8px"><button type="button" class="btn sm ghost" id="pbtn">${icon('upload', 14)}上传人物照片</button><input type="file" id="pfiles" accept="image/jpeg,image/png,image/webp" hidden><div class="asset-row" id="people"></div></div>
-        <span class="small muted">用你有权使用的照片（自己、签约模特或 AI 生成的人），不要用别人的脸</span></div>
-      <div class="grid g2">
-        <label class="field">选品库商品<select class="input" id="prod"><option value="">不选，下面手填</option>${prods.slice(0, 300).map((p) => `<option value="${p.id}">${esc(p.name.slice(0, 60))}</option>`).join('')}</select></label>
+        <label class="field">选品库商品<select class="input" id="prod"><option value="">不选，下面手填</option>${prods.slice(0, 300).map((p) => `<option value="${p.id}">${esc(nameText(p))}</option>`).join('')}</select></label>
         <label class="field">商品名称<input class="input" id="pname" placeholder="例如 Waterproof 18K Gold Anklet"></label>
       </div>
       <label class="field">卖点和事实（只写真的，AI 不会编）<textarea class="input" id="points" rows="2" placeholder="例如：18K 镀金不锈钢，防水不褪色，可调节长度，RM 19.90"></textarea></label>
+      <div class="field"><span>商品素材（图片或视频，可以不传）</span>
+        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好</span></p><input type="file" id="files" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+        <div class="asset-row" id="assets"></div></div>
+      <h4 class="studio-sec">2 · 怎么拍</h4>
       <div class="grid g3">
+        <label class="field">视频格式<select class="input" id="format">${d.formats.map((x) => `<option value="${x.id}" title="${esc(x.desc)}">${esc(x.name)}</option>`).join('')}</select><span class="small muted" id="format-desc">${esc(d.formats[0]?.desc || '')}</span></label>
         <label class="field">做几条<input class="input" id="count" type="number" min="1" max="20" value="10"></label>
-        <label class="field">每条出几张关键帧<select class="input" id="cands"><option value="1">1 张（最省）</option><option value="2" selected>2 张（推荐）</option><option value="3">3 张（最稳）</option></select></label>
         <label class="field">每条时长（秒）<input class="input" id="secs" type="number" min="3" max="15" value="5"><span class="small muted">8 秒以上一次生成 2–3 个镜头</span></label>
       </div>
+      <h4 class="studio-sec">3 · 模型和花费</h4>
       <div class="grid g2">
         <label class="field">视频模型<select class="input" id="vm">${d.video.flatMap((c) => c.models.map((m) => `<option value="${c.id}|${esc(m.id)}">${esc(c.name)} · ${esc(m.label || m.id)}${m.price !== '' && m.price != null ? `（¥${m.price}/${m.unit || '秒'}）` : ''}</option>`)).join('') || '<option value="">还没有</option>'}</select></label>
         <label class="field">关键帧图片模型<select class="input" id="im">${d.image.flatMap((c) => c.models.map((m) => `<option value="${c.id}|${esc(m.id)}">${esc(c.name)} · ${esc(m.label || m.id)}${m.price !== '' && m.price != null ? `（¥${m.price}/张）` : ''}</option>`)).join('')}<option value="direct">不用：直接出片（贵，商品容易走样）</option></select></label>
       </div>
-      <div class="grid g3">
-        <label class="field">屏幕字 / 口播语言<select class="input" id="lang">${LANGS.map((l) => `<option>${l}</option>`).join('')}</select></label>
+      <div class="grid g2">
+        <label class="field">每条出几张关键帧<select class="input" id="cands"><option value="1">1 张（最省）</option><option value="2" selected>2 张（推荐）</option><option value="3">3 张（最稳）</option></select></label>
         <label class="field">预算上限 ¥（可不填）<input class="input" id="budget" type="number" min="0" step="1" placeholder="例如 50"></label>
+      </div>
+      <details class="cs-more"><summary>${icon('chevron', 14)}更多设置：学爆款、统一人物、语言、口播、补充要求</summary><div class="col" style="gap:12px;padding-top:12px">
+        <label class="field">学这条爆款的结构（可选）<select class="input" id="viral"><option value="">不学</option>${d.virals.map((v) => `<option value="${v.id}">${esc(String(v.title || '').slice(0, 40))}</option>`).join('')}</select><span class="small muted">${d.virals.length ? '学它的钩子、节奏和结构，不照抄台词画面' : '先到「爆款拆解」上传一条爆款视频'}</span></label>
+      <div class="field"><span>统一人物（可选）：上传一张模特照片，这批视频都用同一个人</span>
+        <div class="row" style="gap:8px"><button type="button" class="btn sm ghost" id="pbtn">${icon('upload', 14)}上传人物照片</button><input type="file" id="pfiles" accept="image/jpeg,image/png,image/webp" hidden><div class="asset-row" id="people"></div></div>
+        <span class="small muted">用你有权使用的照片（自己、签约模特或 AI 生成的人），不要用别人的脸</span></div>
+      <div class="grid g2">
+        <label class="field">屏幕字 / 口播语言<select class="input" id="lang">${LANGS.map((l) => `<option>${l}</option>`).join('')}</select></label>
         <label class="field">直接出片的合格率（假设）<select class="input" id="pass"><option value="0.3">30%</option><option value="0.5" selected>50%</option><option value="0.7">70%</option></select></label>
       </div>
       <label class="switch"><input type="checkbox" id="audio"><span></span>让模型生成口播和声音（外语口型不一定准；不开也可以后期配音）</label>
       <label class="field">补充要求（可选）<input class="input" id="note" placeholder="例如：模特是东南亚年轻女性；不要出现室外场景"></label>
+      </div></details>
       <div class="studio-est" id="est"></div>
       <div class="row"><div class="spacer"></div><button class="btn primary-glow" id="go" data-loading="准备中…" ${d.video.length ? '' : 'disabled'}>${icon('layers', 15)}开始：先出关键帧</button></div>
       ${d.canSee ? '' : '<p class="small muted" style="margin:0">没有能看图的模型时会跳过 AI 质检，关键帧要你自己挑。接一个免费的智谱 GLM-4.6V-Flash 就行。</p>'}
@@ -63,6 +69,7 @@ export async function render(view, [openId]) {
   </div>`;
 
   const lang = $('#lang', view);
+  productPicker($('#prod', view), prods.slice(0, 300), { placeholder: '不选，下面手填' });
   lang.value = LANGS.includes(localStorage.getItem('studio-lang')) ? localStorage.getItem('studio-lang') : 'English';
   const form = () => {
     const [videoConnectorId, videoModel] = ($('#vm', view).value || '').split('|');
@@ -92,7 +99,7 @@ export async function render(view, [openId]) {
   $('#new', view).addEventListener('input', (e) => { if (!['pname', 'points', 'note'].includes(e.target.id)) estimate(); });
   $('#new', view).addEventListener('change', (e) => {
     if (e.target.id === 'lang') localStorage.setItem('studio-lang', lang.value);
-    if (e.target.id === 'prod' && e.target.value) $('#pname', view).value = e.target.selectedOptions[0].textContent;
+    if (e.target.id === 'prod' && e.target.value) { const p = prods.find((x) => x.id === e.target.value); $('#pname', view).value = zhName(p) || p?.name || ''; }
     if (e.target.id === 'format') {
       $('#format-desc', view).textContent = d.formats.find((x) => x.id === e.target.value)?.desc || '';
       if (e.target.value === 'ugc') $('#audio', view).checked = true;
