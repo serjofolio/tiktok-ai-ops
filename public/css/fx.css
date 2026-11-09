@@ -877,3 +877,5 @@ tr.chosen { background: color-mix(in srgb, var(--ok) 7%, transparent); }
 .ai-prof { display: flex; flex-direction: column; gap: 10px; }
 .ai-prof .field > span.small { display: block; font-weight: 400; margin: 2px 0 4px; }
 .src-assets { display: flex; flex-direction: column; gap: 8px; }
+/* 写脚本：选了要学的爆款时，风格区变淡（按爆款的结构写） */
+.field.dim { opacity: 0.45; }

@@ -18,15 +18,18 @@ const savedSrc = () => {
 };
 
 export async function render(view, [first, second]) {
-  const [{ items: products }, sd, pb] = await Promise.all([api('/products?sort=score'), api('/scripts'), api('/playbook')]);
+  const [{ items: products }, sd, pb, vd] = await Promise.all([api('/products?sort=score'), api('/scripts'), api('/playbook'), api('/viral').catch(() => ({ items: [] }))]);
+  // 拆解完的爆款：可以照着它的结构写（从拆解页点「用我的素材复刻」过来时已经选好）
+  const virals = vd.items.filter((v) => v.status === 'done');
+  const learnId = first === 'learn' ? second : '';
   const rank = (p) => (p.status === 'testing' ? 0 : p.evaluation.verdict === '可以上' ? 1 : p.status === 'dropped' || p.evaluation.verdict === '不建议上' ? 3 : 2);
   const pool = products.slice().sort((a, b) => rank(a) - rank(b));
   const preset = first === 'new' ? second : '';
-  let current = first && first !== 'new' ? sd.items.find((s) => s.id === first) : null;
+  let current = first && first !== 'new' && first !== 'learn' ? sd.items.find((s) => s.id === first) : null;
   let style = 'pain', hookType = '', mode = 'person', pain = null, group = 'solve';
   // 从哪来：打开某个商品时是选品库；看只传素材写的脚本时回到素材；否则用上次的选择
   const fromAssets = current?.assetIds?.length && !current.productId ? current : null;
-  let src = preset ? 'lib' : fromAssets ? 'assets' : SOURCES.some(([k]) => k === savedSrc()) ? savedSrc() : pool.length ? 'lib' : 'assets';
+  let src = preset ? 'lib' : fromAssets || learnId ? 'assets' : SOURCES.some(([k]) => k === savedSrc()) ? savedSrc() : pool.length ? 'lib' : 'assets';
   let assets = fromAssets ? fromAssets.assetIds.map((id) => ({ id })) : [];
   let prof = fromAssets ? { name: fromAssets.productName || '', desc: fromAssets.productDesc || '', unknown: [] } : null;
 
@@ -43,6 +46,7 @@ export async function render(view, [first, second]) {
           <div class="asset-row" id="athumbs"></div>
           <div id="aprof"></div>
         </div>
+        <label class="field">照着哪条爆款写（可选）<select class="input" id="viral"><option value="">不学，按下面选的风格写</option>${virals.map((v) => `<option value="${v.id}" ${v.id === learnId ? 'selected' : ''}>${esc(String(v.title || '').slice(0, 40))}</option>`).join('')}</select><span class="small muted" id="viral-tip">${virals.length ? '' : '先到「爆款拆解」粘贴 TikTok 或 FastMoss 视频链接拆一条，这里就能选'}</span></label>
         <div class="field"><div class="row" style="justify-content:space-between">风格<a class="small link-lime" href="#/scripts/playbook">看爆款方法论 →</a></div>
           <div class="seg seg-full" id="groups">${pb.groups.map((g) => `<button type="button" data-g="${g.id}" title="${esc(g.hint)}" class="${g.id === group ? 'on' : ''}">${esc(g.name)}</button>`).join('')}</div>
           <div class="preset-grid style-grid" id="styles"></div>
@@ -257,7 +261,7 @@ export async function render(view, [first, second]) {
     try {
       for (let i = 0; i < count; i++) {
         progress.textContent = count > 1 ? `正在写第 ${i + 1}/${count} 条，每条约半分钟…` : '';
-        const s = await api('/scripts/generate', { method: 'POST', body: { ...productBody(), style, hookType, mode, variant: i, avoid, pain: pain || (typed ? { pain: typed } : undefined), duration: Number($('#dur', view).value), language: $('#lang', view).value, benchmark: $('#bench', view).value, extra: $('#extra', view).value, useKb: $('#kb', view).checked } });
+        const s = await api('/scripts/generate', { method: 'POST', body: { ...productBody(), viralId: $('#viral', view).value || undefined, style, hookType, mode, variant: i, avoid, pain: pain || (typed ? { pain: typed } : undefined), duration: Number($('#dur', view).value), language: $('#lang', view).value, benchmark: $('#bench', view).value, extra: $('#extra', view).value, useKb: $('#kb', view).checked } });
         avoid.push(s.hook);
         sd.items.unshift(s);
         current = s;
@@ -272,9 +276,22 @@ export async function render(view, [first, second]) {
 
   if (!current && !preset) current = sd.items[0] || null;
   if (first && first !== 'new' && current?.productId && pool.some((p) => p.id === current.productId)) { $('#pid', view).value = current.productId; picker.sync(); }
+  // 选了爆款：风格和钩子跟着爆款走，时长默认跟原视频差不多
+  const syncViral = () => {
+    const v = virals.find((x) => x.id === $('#viral', view).value);
+    $('#viral-tip', view).textContent = v ? '按这条爆款的结构、节奏和钩子写（下面的风格和钩子不用选），只学手法，不照抄台词和画面；第一条保留它的钩子类型，其余换开头' : virals.length ? '' : '先到「爆款拆解」粘贴 TikTok 或 FastMoss 视频链接拆一条，这里就能选';
+    $('#styles', view).closest('.field').classList.toggle('dim', !!v);
+    const sec = v?.probe?.duration;
+    if (sec) {
+      const opts = [...$('#dur', view).options].map((o) => Number(o.value));
+      $('#dur', view).value = String(opts.reduce((a, b) => (Math.abs(b - sec) < Math.abs(a - sec) ? b : a)));
+    }
+  };
+  $('#viral', view).onchange = syncViral;
   showSrc();
   drawAssets();
   drawProf();
+  if (learnId) syncViral();
   renderStyles();
   renderHist();
   renderViewer();

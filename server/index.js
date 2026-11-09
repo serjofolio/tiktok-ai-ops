@@ -364,7 +364,7 @@ app.get('/api/scripts/:id/srt', h(async (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="subtitles.srt"');
   res.type('text/plain; charset=utf-8').send(scripts.srt(s));
 }));
-app.post('/api/scripts/generate', h(async (req, res) => res.json(await scripts.generate(req.body))));
+app.post('/api/scripts/generate', h(async (req, res) => res.json(await (req.body?.viralId ? viral.learn(req.body.viralId, req.body) : scripts.generate(req.body)))));
 // 只有素材：看图认出商品，再按它写脚本
 app.post('/api/scripts/recognize', h(async (req, res) => res.json(await scripts.recognize(req.body || {}))));
 // 自己写或改过的分镜存成脚本

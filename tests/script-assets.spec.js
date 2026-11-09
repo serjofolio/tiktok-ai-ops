@@ -1,6 +1,9 @@
 // 只传素材写脚本：看图认出商品（可以改）→ 写脚本 → 脚本记住素材 → 生成视频时素材当商品参考图，可以选模型、看花费
 const { test, expect } = require('@playwright/test');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { execFileSync } = require('child_process');
 
 const UP = 'http://127.0.0.1:3902';
 const ADMIN = { username: 'admin', password: 'admin-pass-123' };
@@ -78,4 +81,43 @@ test('只传素材：AI 看图认商品 → 改一改 → 写脚本 → 生成�
   await json(await page.request.delete(`/api/video-jobs/${job.id}`));
   await json(await page.request.delete(`/api/scripts/${s.id}`));
   await json(await page.request.delete(`/api/connectors/${relay.id}`));
+});
+
+// 拆解完的爆款 + 自己的商品素材 → 照着爆款的结构写脚本
+let clipFile;
+test.beforeAll(() => {
+  clipFile = path.join(os.tmpdir(), `tk-learn-${process.pid}.mp4`);
+  execFileSync(require('ffmpeg-static'), ['-hide_banner', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=360x640:rate=15:duration=9', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=9', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clipFile], { stdio: 'ignore' });
+});
+test.afterAll(() => fs.rmSync(clipFile, { force: true }));
+
+test('复刻爆款：拆解页点「用我的素材复刻」→ 只传素材 → 照爆款结构写脚本，脚本带着素材', async ({ page }) => {
+  test.setTimeout(120000);
+  await admin(page);
+  const list = await json(await page.request.get('/api/providers'));
+  let llm = list.items.find((x) => x.baseUrl === `${UP}/v1`);
+  if (!llm) llm = await json(await page.request.post('/api/providers', { data: { name: '测试模型', protocol: 'openai', baseUrl: `${UP}/v1`, apiKey: 'sk-test', model: 'glm-test' } }));
+  await json(await page.request.post(`/api/providers/${llm.id}/activate`));
+  const up = await json(await page.request.post('/api/viral', { multipart: { video: { name: 'tewiky-ad.mp4', mimeType: 'video/mp4', buffer: fs.readFileSync(clipFile) }, title: '对标：网球项链广告' } }));
+  await expect.poll(async () => (await json(await page.request.get(`/api/viral/${up.id}`))).status, { timeout: 60000 }).toBe('done');
+
+  await page.goto(`/#/scripts/viral/${up.id}`);
+  await page.locator('a', { hasText: '用我的素材复刻' }).click();
+  await expect(page).toHaveURL(new RegExp(`#/scripts/learn/${up.id}`));
+  await expect(page.locator('#srcs [data-src=assets]')).toHaveClass(/on/);
+  await expect(page.locator('#viral')).toHaveValue(up.id);
+  await expect(page.locator('#viral-tip')).toContainText('按这条爆款的结构');
+  await page.setInputFiles('#afile', [path.join(__dirname, '..', 'extension', 'icon128.png')]);
+  await expect(page.locator('#aname')).toHaveValue(/Gold Tennis Necklace/, { timeout: 20000 });
+  await page.selectOption('#count', '1');
+  await page.click('#gen');
+  await expect(page.locator('.src-assets')).toContainText('商品素材 1 张', { timeout: 30000 });
+  await expect(page.locator('#viewer a.chip', { hasText: '学自' })).toContainText('对标：网球项链广告');
+  const s = (await json(await page.request.get('/api/scripts'))).items[0];
+  expect(s.viralId).toBe(up.id);
+  expect(s.assetIds).toHaveLength(1);
+  expect(s.productName).toContain('Gold Tennis Necklace');
+
+  await json(await page.request.delete(`/api/scripts/${s.id}`));
+  await json(await page.request.delete(`/api/viral/${up.id}`));
 });
