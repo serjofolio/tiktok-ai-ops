@@ -1,5 +1,10 @@
 // 带货视频脚本：按爆款方法论（playbook.js）生成。选风格、钩子和痛点，也可以学一条爆款视频的结构（viral.js）
+// 没有商品资料时可以只传素材：看图模型先认出商品，脚本按认出来的写，素材跟着脚本走，生成视频时当商品参考图
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
+const media = require('../media');
+const understand = require('./understand');
 const llm = require('../providers/llm');
 const rag = require('./rag');
 const products = require('./products');
@@ -33,7 +38,47 @@ function productBrief({ productId, productName, productDesc }) {
   }
   const name = String(productName || '').trim();
   if (!name) throw err('请先选择商品，或填写商品名称');
-  return { id: '', name, jewelry: /earring|necklace|bracelet|ring\b|jewel|anklet|首饰|耳环|项链|手链|戒指/i.test(`${name} ${productDesc || ''}`), facts: { 名称: name, 商品介绍: String(productDesc || '').slice(0, 1500) } };
+  return { id: '', name, jewelry: JEWELRY.test(`${name} ${productDesc || ''}`), facts: { 名称: name, 商品介绍: String(productDesc || '').slice(0, 1500) } };
+}
+
+// ---------- 只有素材：看图认出商品 ----------
+const JEWELRY = /earring|necklace|bracelet|ring\b|jewel|anklet|首饰|耳环|耳钉|项链|手链|戒指|脚链/i;
+// 自己账号里的图片素材（批量出片和 AI 出片上传的也是这种）
+const ownImages = (ids) => [...new Set(Array.isArray(ids) ? ids : [])].map((id) => media.records.get(id)).filter((m) => m && /^image\//.test(m.mime)).slice(0, 12);
+const strs = (v, n, len = 60) => (Array.isArray(v) ? v : []).map((x) => String(x || '').trim().slice(0, len)).filter(Boolean).slice(0, n);
+
+async function recognize({ assetIds, hint } = {}) {
+  const imgs = ownImages(assetIds);
+  if (!imgs.length) throw err('先上传商品图片或视频');
+  const cfg = understand.visionCfg();
+  const noEyes = '认商品要能看图的模型：到「接入配置 → 看画面的模型」接一个（智谱 GLM-4.6V-Flash 官方标明免费）';
+  if (!cfg) throw err(noEyes);
+  let sees = false;
+  try {
+    sees = await understand.canSee(cfg);
+  } catch (e) {
+    throw err(`看图模型连不上：${e.message}`, 424);
+  }
+  if (!sees) throw err(`「${cfg.model}」看不到图片。${noEyes}`);
+  const pics = imgs.slice(0, 6);
+  const dir = media.newDir('recognize');
+  const sheet = path.join(dir, 'sheet.jpg');
+  try {
+    await media.sideBySide(pics.map(media.absPath), sheet, { w: 512, h: 512 });
+    const r = await understand.askImage(cfg, `这 ${pics.length} 张图（从左到右编号 1–${pics.length}）是同一个商品的素材，卖家要在 TikTok Shop 卖它${hint ? `。卖家补充：${String(hint).slice(0, 300)}` : ''}。
+请认出这个商品，给写带货视频脚本用。只写图里看得到的；看不出来的（真实材质、尺寸、价格、功效）放进 unknown，不要当成事实写。
+只输出 JSON：
+{"name":"英文商品名，像 TikTok 商品标题那样的短名，3–8 个词","nameZh":"中文短名，6–16 个字","category":"品类（中文，如 项链、耳环、手机壳）","looks":"外观（中文）：形状、颜色、看起来像什么材质、几件、包装，具体到能照着画出来","features":["从图里看得出来的卖点（中文）"],"uses":["适合的场合或人群（中文，属于推断）"],"unknown":["图里看不出来、建议卖家补充的信息（中文）"],"shots":[{"i":1,"what":"白底图 / 上身图 / 细节图 / 包装图 / 视频截图 / 其他"}]}`, sheet, { maxTokens: 1500 });
+    const name = String(r.name || '').trim().slice(0, 80);
+    const nameZh = String(r.nameZh || '').trim().slice(0, 30);
+    if (!name && !nameZh) throw err('看图模型没认出商品，换几张更清楚的图再试', 424);
+    const p = { name, nameZh, category: String(r.category || '').slice(0, 30), looks: String(r.looks || '').slice(0, 600), features: strs(r.features, 8), uses: strs(r.uses, 5), unknown: strs(r.unknown, 6), shots: (Array.isArray(r.shots) ? r.shots : []).slice(0, pics.length).map((x) => ({ i: Number(x?.i) || 0, what: String(x?.what || '').slice(0, 20) })) };
+    // 给用户看、可以改的商品介绍：写脚本时当商品信息用
+    const desc = [p.category && `品类：${p.category}`, p.looks && `外观：${p.looks}`, p.features.length && `看得到的卖点：${p.features.join('；')}`, p.uses.length && `适合（推断）：${p.uses.join('；')}`].filter(Boolean).join('\n');
+    return { name: nameZh && name ? `${nameZh} · ${name}` : name || nameZh, desc, unknown: p.unknown, profile: p, jewelry: JEWELRY.test(`${name} ${nameZh} ${p.category}`), model: cfg.model };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // ---------- 痛点挖掘 ----------
@@ -136,6 +181,7 @@ async function generate(body = {}) {
   const mode = MODES[body.mode] ? body.mode : 'person';
   const kb = body.useKb === false ? '' : await rag.contextFor(`TikTok 带货短视频脚本 钩子 ${st.name}`, 3);
   const viral = body.viral;
+  const assets = ownImages(body.assetIds).map((m) => m.id);
   const prompt = `为下面这个 TikTok Shop 商品写一条 ${duration} 秒的带货短视频脚本，这是一批里的第 ${variant + 1} 条，要有自己的切入角度。
 
 ${playbook.brief({ styleId: viral ? undefined : st.id, hookId, jewelry: prod.jewelry })}
@@ -148,7 +194,7 @@ ${craft.COPY_RULES.slice(0, 3).map((r, i) => `${i + 1}. ${r}`).join('\n')}
 拍摄方式：${MODES[mode]}
 口播和字幕语言：${lang}
 商品信息：${JSON.stringify(prod.facts)}
-${pain ? `这一条主打的痛点或渴望：${JSON.stringify(pain)}\n` : ''}${viral ? `要学习的爆款视频拆解（学结构、节奏和手法，不能照抄台词和画面，不能提它的品牌）：\n${JSON.stringify(viral)}\n` : ''}${body.benchmark ? `对标视频参考（学结构，不要照抄）：\n${String(body.benchmark).slice(0, 3000)}\n` : ''}${body.avoid?.length ? `这批已经写过这些开头，这条必须完全不同：${JSON.stringify(body.avoid).slice(0, 800)}\n` : ''}${body.extra ? `额外要求：${String(body.extra).slice(0, 500)}\n` : ''}${kb ? `参考知识库：\n${kb}\n` : ''}
+${assets.length ? `商品素材：卖家上传了 ${assets.length} 张商品图，生成视频时会当商品参考图。画面里的商品要和素材一模一样，videoPrompt 描述商品时照商品信息里的外观写（颜色、形状、材质），不要加素材里没有的配件和功能。\n` : ''}${pain ? `这一条主打的痛点或渴望：${JSON.stringify(pain)}\n` : ''}${viral ? `要学习的爆款视频拆解（学结构、节奏和手法，不能照抄台词和画面，不能提它的品牌）：\n${JSON.stringify(viral)}\n` : ''}${body.benchmark ? `对标视频参考（学结构，不要照抄）：\n${String(body.benchmark).slice(0, 3000)}\n` : ''}${body.avoid?.length ? `这批已经写过这些开头，这条必须完全不同：${JSON.stringify(body.avoid).slice(0, 800)}\n` : ''}${body.extra ? `额外要求：${String(body.extra).slice(0, 500)}\n` : ''}${kb ? `参考知识库：\n${kb}\n` : ''}
 要求：
 1. ${Math.max(3, Math.min(8, Math.round(duration / 4)))} 个左右的镜头，时长加起来等于 ${duration} 秒，每个镜头写清楚拍什么、怎么拍，新手照着就能拍；
 2. 每个镜头写一个留人手法（retention）：这一镜凭什么让人继续看；
@@ -168,7 +214,7 @@ ${pain ? `这一条主打的痛点或渴望：${JSON.stringify(pain)}\n` : ''}${
   script.duration = duration;
   script.language = lang;
   const saved = db.scripts.insert({
-    productId: prod.id, productName: prod.name, benchmark: body.benchmark || '', styleId: viral ? '' : st.id, hookType: hookId, hookName: hk.name, mode, viralId: body.viralId || '', viralTitle: body.viralTitle || '',
+    productId: prod.id, productName: prod.name, productDesc: prod.id ? '' : String(body.productDesc || '').slice(0, 1500), assetIds: assets, benchmark: body.benchmark || '', styleId: viral ? '' : st.id, hookType: hookId, hookName: hk.name, mode, viralId: body.viralId || '', viralTitle: body.viralTitle || '',
     ...script,
     check: lint(script, { duration, jewelry: prod.jewelry }),
   });
@@ -187,4 +233,4 @@ function srt(script) {
   }).join('\n');
 }
 
-module.exports = { generate, pains, lint, srt, STYLES, MODES };
+module.exports = { generate, pains, recognize, lint, srt, STYLES, MODES };

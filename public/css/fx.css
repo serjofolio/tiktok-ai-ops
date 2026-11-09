@@ -873,3 +873,7 @@ tr.chosen { background: color-mix(in srgb, var(--ok) 7%, transparent); }
 /* 爆款拆解：粘贴链接 */
 .viral-link { display: flex; gap: 8px; }
 .viral-link .input { flex: 1; min-width: 0; }
+/* 写脚本：只传素材时 AI 认出的商品；脚本里显示它的素材 */
+.ai-prof { display: flex; flex-direction: column; gap: 10px; }
+.ai-prof .field > span.small { display: block; font-weight: 400; margin: 2px 0 4px; }
+.src-assets { display: flex; flex-direction: column; gap: 8px; }

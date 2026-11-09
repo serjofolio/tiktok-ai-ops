@@ -4,8 +4,9 @@ import { api, icon, esc, toast, withLoading, $, $$, empty, modal, confirmBox, ti
 const CLIP = { pending: ['等待', 'muted'], running: ['生成中', 'run'], done: ['完成', 'ok'], failed: ['失败', 'err'] };
 
 export async function videoDialog(script) {
-  const { items: _jobs, models } = await api('/video-jobs');
-  if (!models.length) {
+  // 视频模型按「连接 · 模型」列出来（中转站一个连接里有多个模型），带单价
+  const { video: conns } = await api('/studio');
+  if (!conns.length) {
     modal({
       title: '还没有接入视频模型',
       body: `<p>到「接入配置 → 视频模型」添加一个就能用。支持 Seedance、可灵、通义万相、海螺，也可以填其他模型或中转站的接口。</p><p class="muted small">接入后回到这里，点「生成视频」就能直接出片，生成的视频会存到「视频库」，可以播放和下载。</p>`,
@@ -15,14 +16,19 @@ export async function videoDialog(script) {
   }
   const scenes = script.scenes || [];
   const product = script.productId ? await api(`/products/${script.productId}`).catch(() => null) : null;
+  const assets = script.assetIds || [];
+  const modelOpts = conns.flatMap((c) => (c.models.length ? c.models : [{ id: c.model, label: c.model }]).map((m) => `<option value="${c.id}|${esc(m.id)}" ${m.id === c.model && c.id === conns[0].id ? 'selected' : ''}>${esc(c.name)} · ${esc(m.label || m.id || '默认模型')}${m.price !== '' && m.price != null ? `（¥${m.price}/${m.unit || '秒'}）` : ''}</option>`)).join('');
   modal({
     title: `生成视频：${esc(script.title)}`, wide: true,
     body: `<form class="col" id="vf">
       <div class="grid g3">
-        <label class="field">视频模型<select class="input" name="connectorId">${models.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></label>
+        <label class="field">视频模型<select class="input" name="vm">${modelOpts}</select></label>
         <label class="field">生成方式<select class="input" name="mode"><option value="scenes">分镜逐段生成，再合并</option><option value="whole">整条一次生成（人物和画面更连贯）</option></select></label>
         <label class="field">画面比例<select class="input" name="ratio"><option value="9:16">竖屏 9:16</option><option value="1:1">方形 1:1</option><option value="16:9">横屏 16:9</option></select></label>
       </div>
+      ${assets.length ? `<div class="field"><label class="switch"><input type="checkbox" name="refs" checked><span></span>用这条脚本的 ${assets.length} 张商品素材当参考图（推荐：商品照着素材画，不容易走样）</label>
+        <div class="asset-row">${assets.map((id) => `<div class="asset sm"><img src="/api/media/${id}" alt=""></div>`).join('')}</div>
+        <span class="small muted">要模型支持参考图才有效，比如 Seedance 2.0、MiniMax H3；下面选了首帧时，模型只认首帧，参考图不再生效。</span></div>` : ''}
       <div class="grid g2">
         <label class="field">首帧图片（让画面更接近真实商品）<select class="input" name="imageSource"><option value="">不用</option>${product?.image ? '<option value="product" selected>用商品主图</option>' : ''}<option value="upload">上传我拍的图</option></select></label>
         <label class="field" id="img-field" hidden>选择图片<input class="input" type="file" name="image" accept="image/jpeg,image/png,image/webp"></label>
@@ -36,13 +42,14 @@ export async function videoDialog(script) {
     onMount(el, close) {
       const f = $('#vf', el);
       const chosen = () => $$('[name=scene]', f).filter((c) => c.checked).map((c) => Number(c.value));
+      const vm = () => { const [connectorId, ...rest] = f.vm.value.split('|'); return { connectorId, model: rest.join('|') }; };
       const refresh = async () => {
         const out = $('#plan', el);
         try {
-          const p = await api('/video-jobs/plan', { method: 'POST', body: { scriptId: script.id, connectorId: f.connectorId.value, mode: f.mode.value, sceneNs: chosen() } });
+          const p = await api('/video-jobs/plan', { method: 'POST', body: { scriptId: script.id, ...vm(), mode: f.mode.value, sceneNs: chosen() } });
           const trimmed = p.clips.some((c) => c.duration > c.target);
           out.className = 'small';
-          out.innerHTML = `将提交 <b>${p.tasks} 个任务，共 ${p.seconds} 秒</b>，费用由你的模型账号按量扣除。${trimmed ? '这个模型有最短时长限制，有的镜头会多生成几秒，合并时裁掉（多的部分也计费）。' : ''}${p.mode === 'scenes' && p.tasks > 1 ? '每段单独生成，人物和背景可能不完全一致。' : ''}`;
+          out.innerHTML = `将提交 <b>${p.tasks} 个任务，共 ${p.seconds} 秒</b>${p.yuan != null ? `，约 <b>¥${p.yuan}</b>（按模型映射里的单价，以账单为准）` : '，这个模型没填单价，费用由你的模型账号按量扣除'}。${trimmed ? '这个模型有最短时长限制，有的镜头会多生成几秒，合并时裁掉（多的部分也计费）。' : ''}${p.mode === 'scenes' && p.tasks > 1 ? '每段单独生成，人物和背景可能不完全一致。' : ''}`;
           $('#go', el).disabled = false;
         } catch (e) {
           out.className = 'small down';
@@ -57,7 +64,7 @@ export async function videoDialog(script) {
       };
       refresh();
       $('#go', el).onclick = (e) => withLoading(e.currentTarget, async () => {
-        const body = { scriptId: script.id, connectorId: f.connectorId.value, mode: f.mode.value, ratio: f.ratio.value, audio: f.audio.checked, sceneNs: chosen(), imageSource: f.imageSource.value };
+        const body = { scriptId: script.id, ...vm(), mode: f.mode.value, ratio: f.ratio.value, audio: f.audio.checked, sceneNs: chosen(), imageSource: f.imageSource.value, refAssetIds: f.refs?.checked ? assets : [] };
         if (f.imageSource.value === 'upload') {
           if (!f.image.files[0]) throw new Error('请选择首帧图片');
           const form = new FormData();

@@ -269,6 +269,7 @@ function patchClip(jobId, i, patch) {
   return jobs.update(jobId, (j) => ({ clips: j.clips.map((x, k) => (k === i ? { ...x, ...patch } : x)) }));
 }
 
+// 脚本生成视频。refAssetIds：商品参考图（只传素材写的脚本会带上它的素材）；没有首帧时交给支持参考图的模型
 async function startJob(body, script) {
   const p = plan({ script, connectorId: body.connectorId, mode: body.mode, sceneNs: body.sceneNs });
   media.assertQuota();
@@ -276,7 +277,9 @@ async function startJob(body, script) {
   assertSlots(1);
   const ratio = ['9:16', '1:1', '16:9'].includes(body.ratio) ? body.ratio : '9:16';
   const audio = !!body.audio;
-  const hasImage = !!body.imageUrl || !!body.imageMediaId;
+  const model = connectors.modelsOf(c).find((x) => x.id === body.model)?.id || opt(c, 'model');
+  const refs = (Array.isArray(body.refAssetIds) ? body.refAssetIds : []).map(ownImage).filter(Boolean).map((m) => m.id).slice(0, 9);
+  const hasImage = !!body.imageUrl || !!body.imageMediaId || refs.length > 0;
   const language = script.language;
   const clips = p.clips.map((x) => ({
     scenes: x.scenes.map((s) => s.n),
@@ -288,7 +291,7 @@ async function startJob(body, script) {
   }));
   const job = jobs.insert({
     status: 'running', step: '提交任务', scriptId: script.id, title: script.title, productId: script.productId || '', productName: script.productName || '',
-    connectorId: c.id, vendor: c.vendor, connectorName: c.name, model: opt(c, 'model'), mode: p.mode, ratio, audio, imageUrl: body.imageUrl || '', imageMediaId: body.imageMediaId || '', clips, seconds: p.seconds, aiLabelReminder: true,
+    connectorId: c.id, vendor: c.vendor, connectorName: c.name, model, mode: p.mode, ratio, audio, imageUrl: body.imageUrl || '', imageMediaId: body.imageMediaId || '', refs, clips, seconds: p.seconds, aiLabelReminder: true,
   });
   run(job.id);
   return job;
@@ -342,6 +345,13 @@ function planFree(body) {
   const variants = Math.max(1, Math.min(4, Number(body.variants) || 1));
   return { script, c, model, p, variants, yuan: freeCost(c0, model, p.seconds * variants, p.clips.length * variants) };
 }
+// 按模型映射里填的单价估算花费（没填单价返回 null）
+function costOf(connectorId, model, seconds, tasks) {
+  const c = connectorId ? connectors.get(connectorId) : connectors.active('video')[0];
+  if (!c) return null;
+  const m = connectors.modelsOf(c).find((x) => x.id === model)?.id || opt(c, 'model');
+  return { model: m, yuan: freeCost(c, m, seconds, tasks) };
+}
 const publicFreePlan = (x) => ({ ...publicPlan(x.p), model: x.model, variants: x.variants, totalTasks: x.p.clips.length * x.variants, totalSeconds: x.p.seconds * x.variants, yuan: x.yuan });
 
 function startFree(body = {}) {
@@ -394,7 +404,8 @@ async function run(id) {
   try {
     const job = jobs.get(id);
     const c0 = connectors.get(job.connectorId);
-    const c = c0 && job.free && job.model ? connectors.withModel(c0, job.model) : c0;
+    // 任务记下了提交时选的模型：重试也用同一个
+    const c = c0 && job.model ? connectors.withModel(c0, job.model) : c0;
     if (!c) return failJob('这个视频模型的连接已被删除');
     const adapter = ADAPTERS[c.vendor];
     const dir = job.dir ? path.join(db.MEDIA_DIR, job.dir) : media.newDir('job');
@@ -539,4 +550,4 @@ function recover(userById) {
 const list = () => jobs.all();
 const getJob = (id) => jobs.get(id);
 
-module.exports = { opt, planFree, publicFreePlan, startFree, plan, publicPlan, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };
+module.exports = { opt, planFree, publicFreePlan, startFree, plan, publicPlan, costOf, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };

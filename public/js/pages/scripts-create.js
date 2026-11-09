@@ -29,6 +29,8 @@ export async function render(view, [scriptId]) {
   // 从脚本导入：每个镜头带上英文提示词、时长、口播，中文画面说明留作参考
   const fromScript = (s) => ({
     ...st, title: s.title, scriptId: s.id, language: s.language || st.language,
+    // 只传素材写的脚本：素材直接当商品参考图
+    refs: s.assetIds?.length ? s.assetIds.slice(0, 6).map((id) => ({ id, title: '' })) : st.refs,
     shots: (s.scenes || []).map((x) => ({ prompt: x.videoPrompt || '', duration: Number(x.duration) || 4, voiceover: x.voiceover || '', imageMediaId: '', visual: [x.shot, x.visual].filter(Boolean).join(' · '), caption: x.caption || '', part: x.part || '' })),
   });
   if (scriptId) {

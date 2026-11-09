@@ -365,6 +365,8 @@ app.get('/api/scripts/:id/srt', h(async (req, res) => {
   res.type('text/plain; charset=utf-8').send(scripts.srt(s));
 }));
 app.post('/api/scripts/generate', h(async (req, res) => res.json(await scripts.generate(req.body))));
+// 只有素材：看图认出商品，再按它写脚本
+app.post('/api/scripts/recognize', h(async (req, res) => res.json(await scripts.recognize(req.body || {}))));
 // 自己写或改过的分镜存成脚本
 app.post('/api/scripts/manual', h(async (req, res) => res.json(create.saveScript(req.body || {}))));
 app.put('/api/scripts/:id', h(async (req, res) => res.json(create.saveScript(req.body || {}, req.params.id))));
@@ -456,7 +458,10 @@ const scriptOf = (id) => {
 };
 app.get('/api/video-jobs', h(async (req, res) => res.json({ items: videogen.list(), models: connectors.active('video').map((c) => ({ id: c.id, name: c.name, vendor: c.vendor })), storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB } })));
 // 提交前的规划：几段、一共多少秒
-app.post('/api/video-jobs/plan', h(async (req, res) => res.json(videogen.publicPlan(videogen.plan({ script: scriptOf(req.body?.scriptId), connectorId: req.body?.connectorId, mode: req.body?.mode, sceneNs: req.body?.sceneNs })))));
+app.post('/api/video-jobs/plan', h(async (req, res) => {
+  const p = videogen.plan({ script: scriptOf(req.body?.scriptId), connectorId: req.body?.connectorId, mode: req.body?.mode, sceneNs: req.body?.sceneNs });
+  res.json({ ...videogen.publicPlan(p), ...videogen.costOf(p.connector.id, req.body?.model, p.seconds, p.clips.length) });
+}));
 app.post('/api/video-jobs', h(async (req, res) => {
   const script = scriptOf(req.body?.scriptId);
   const body = { ...req.body };
@@ -478,7 +483,7 @@ app.delete('/api/video-jobs/:id', h(async (req, res) => res.json({ ok: videogen.
 
 // ---------- 批量出片 ----------
 app.get('/api/studio', h(async (req, res) => {
-  const pick = (kind) => connectors.active(kind).map((c) => ({ id: c.id, name: c.name, vendor: c.vendor, models: connectors.modelsOf(c), maxSeconds: kind === 'video' ? videogen.durationRule(c).max : undefined }));
+  const pick = (kind) => connectors.active(kind).map((c) => ({ id: c.id, name: c.name, vendor: c.vendor, model: c.options?.model || '', models: connectors.modelsOf(c), maxSeconds: kind === 'video' ? videogen.durationRule(c).max : undefined }));
   const virals = viral.list().filter((v) => v.status === 'done').map((v) => ({ id: v.id, title: v.title, keyReason: v.keyReason }));
   res.json({ items: studio.list(), video: pick('video'), image: pick('image'), formats: Object.entries(studio.FORMATS).map(([id, f]) => ({ id, name: f.name, desc: f.desc })), virals, canSee: !!(connectors.active('vision').length || settings.activeProvider()), storage: { usedMb: Math.round(media.used() / 1048576), quotaMb: req.user.role === 'admin' ? null : media.QUOTA_MB }, maxMb: MAX_VIDEO_MB });
 }));

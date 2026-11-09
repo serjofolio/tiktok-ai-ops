@@ -79,6 +79,8 @@ function studioBriefs(text) {
   return { briefs: Array.from({ length: n }, (_, i) => ({ n: i + 1, angle: `第 ${i + 1} 种切入`, keyframe: `Vertical 9:16 photo, the first frame of a TikTok product video, a hand holding the product from image 1, angle ${i + 1}`, motion: 'the hand slowly rotates the product toward the camera, handheld slight sway', caption: `Hook ${i + 1}`, voiceover: `Line ${i + 1}`, why: '第一帧就有商品和手' })).slice(0, Math.max(1, n - 1)) };
 }
 let qcCount = 0;
+// 只传素材写脚本：看图认出的商品
+const SEEN = { name: 'Gold Tennis Necklace', nameZh: '金色锆石网球项链', category: '项链', looks: '一条金色细链，镶一整圈白色方形锆石，龙虾扣', features: ['锆石一整圈连续镶嵌，反光强', '链条细，适合叠戴'], uses: ['约会、通勤（推断）'], unknown: ['真实材质是不是 925 银镀金', '链长'], shots: [{ i: 1, what: '白底图' }, { i: 2, what: '细节图' }] };
 
 function answerFor(text) {
   if (/批量策划 \d+ 条/.test(text)) return JSON.stringify(studioBriefs(text));
@@ -351,6 +353,10 @@ function start(port = 3902) {
           const reply = JSON.stringify(bad ? { sameProduct: 52, stopPower: 70, problems: ['颜色不对'], verdict: 'fail' } : { sameProduct: 86 + (qcCount % 5), stopPower: 78, problems: [], verdict: 'pass' });
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: reply } }] }));
+        }
+        if (/认出这个商品/.test(last)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify(SEEN) } }] }));
         }
         const reply = /左半边和右半边/.test(last) ? '红色，蓝色' : /开头 3 秒/.test(last) ? JSON.stringify({ firstFrame: '耳环上身特写', person: true, face: false, product: true, productWhat: '金色耳环', onScreenText: 'Everyone asks', motion: '手指捏住耳环', camera: '特写' }) : JSON.stringify({ frames: n.map((t) => ({ t, shot: '特写', person: true, product: true, visual: '手捏住耳环转动', text: '' })) });
         res.writeHead(200, { 'Content-Type': 'application/json' });
