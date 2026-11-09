@@ -84,14 +84,14 @@ const VENDORS = {
     options: [['baseUrl', '接口地址', 'https://api.minimax.io'], ['model', '模型', 'MiniMax-Hailuo-2.3', ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-2.3-Fast', 'MiniMax-Hailuo-02']], ['resolution', '清晰度', '768P', ['768P', '1080P']], ['durations', '单段可选时长（秒）', '6,10']],
   },
   videonewapi: {
-    kind: 'video', name: '中转站（new-api / OpenAI 兼容格式）', status: 'beta', relay: true,
-    desc: 'new-api 一类中转站的统一视频接口：POST /v1/videos 提交、GET /v1/videos/{id} 查询，首帧图放在 images 字段。接口地址填到 /v1 为止，模型名点「获取模型列表」从中转站读取，单价点「读取价格」。',
+    kind: 'video', name: '中转站（new-api 格式）', status: 'beta', relay: true, recommend: '大多数中转站选这个',
+    desc: '大多数中转站都是 new-api 搭的（后台有「令牌」「模型广场」「分组」的就是）。只填中转站地址和 Key，模型点「获取模型列表」读取，单价点「读取价格」。Seedance、可灵、MiniMax 等都走这一个。',
     fields: [['apiKey', 'API Key', true]],
     options: [['baseUrl', '接口地址', ''], ['model', '模型', ''], ['endpoint', '提交路径', '/videos', ['/videos', '/video/generations']], ['resolution', '清晰度（模型名里已带清晰度时不用管）', '720p', ['480p', '720p', '1080p']], ['durations', '单段时长范围（秒）', '4-15']],
   },
   videocustom: {
-    kind: 'video', name: '自定义视频接口（中转站 / 其他模型）', status: 'ready',
-    desc: '异步「提交任务 → 查询任务」形式的接口都能接：填提交地址、请求体模板和结果字段路径。模板里可用 {{prompt}} {{model}} {{duration}} {{ratio}} {{image}} {{audio}}；路径用点号写，例如 data.task_id。',
+    kind: 'video', name: '自定义视频接口（格式特殊的接口）', status: 'ready',
+    desc: '只给不是 new-api 格式的接口用，要自己写提交地址、请求体模板和结果字段路径。一般的中转站请选「中转站（new-api 格式）」。异步「提交任务 → 查询任务」形式的接口都能接。模板里可用 {{prompt}} {{model}} {{duration}} {{ratio}} {{image}} {{audio}}；路径用点号写，例如 data.task_id。',
     fields: [['apiKey', 'API Key', true]],
     options: [['submitUrl', '提交地址（POST）', ''], ['submitBody', '请求体模板（JSON）', '{"model":"{{model}}","prompt":"{{prompt}}","duration":{{duration}},"aspect_ratio":"{{ratio}}"}'], ['taskIdPath', '任务 ID 字段路径', 'id'], ['queryUrl', '查询地址（GET，用 {{id}} 表示任务 ID）', ''], ['statusPath', '状态字段路径', 'status'], ['doneValues', '成功的状态值（逗号分隔）', 'succeeded,success,completed,done'], ['failValues', '失败的状态值（逗号分隔）', 'failed,fail,error,cancelled,canceled,expired'], ['videoUrlPath', '视频地址字段路径', 'video_url'], ['errorPath', '错误信息字段路径（可选）', 'error.message'], ['authHeader', '鉴权头（用 {{key}} 表示密钥）', 'Authorization: Bearer {{key}}'], ['model', '模型', ''], ['durations', '单段时长范围（秒）', '5-10']],
   },
@@ -104,7 +104,7 @@ const VENDORS = {
     models: [{ label: 'Seedream 4.5', id: 'doubao-seedream-4-5-251128', price: 0.29, note: '按海外价 $0.04/张折算' }],
   },
   imageopenai: {
-    kind: 'image', name: '中转站 / OpenAI 兼容图片接口', status: 'beta', relay: true, refs: 6,
+    kind: 'image', name: '中转站 / OpenAI 兼容图片接口', status: 'beta', relay: true, recommend: '中转站的 Seedream、gpt-image 选这个', refs: 6,
     desc: '/images/generations 接口，参考图放在 image 字段（中转站的 Seedream、gpt-image 等多数这样转发）。接口地址填到 /v1 为止。',
     fields: [['apiKey', 'API Key', true]],
     options: [['baseUrl', '接口地址', ''], ['model', '模型', ''], ['size', '竖屏尺寸', '1024x1536']],
@@ -158,6 +158,17 @@ const VENDORS = {
 // ---------- 存储（每个用户自己的配置，跟模型供应商放在一起） ----------
 const list = () => settings.get().connectors || [];
 
+// 中转站地址只填了域名时补上 /v1：new-api 一类中转站的接口都在 /v1 下
+function relayBase(u) {
+  const s = String(u || '').trim().replace(/\/+$/, '');
+  try {
+    const x = new URL(s);
+    return x.pathname === '/' || x.pathname === '' ? `${x.origin}/v1` : s;
+  } catch {
+    return s;
+  }
+}
+
 function save(input) {
   const s = settings.get();
   const v = VENDORS[input.vendor];
@@ -173,6 +184,7 @@ function save(input) {
   }
   const options = {};
   for (const [f, , def] of v.options || []) options[f] = String(input.options?.[f] ?? c?.options?.[f] ?? def ?? '').trim();
+  if (v.relay && options.baseUrl) options.baseUrl = relayBase(options.baseUrl);
   const models = Array.isArray(input.models) ? cleanModels(input.models) : c?.models || cleanModels(v.models || []);
   // 默认模型要在映射表里：没选或选的已删掉时用第一个
   if (models.length && 'model' in options && !models.some((m) => m.id === options.model)) options.model = models[0].id;
@@ -223,7 +235,7 @@ function publicOne(c) {
   return { ...c, creds, kind: v.kind, status: v.status, configured: (v.fields || []).filter(required).every(([f]) => c.creds?.[f]) };
 }
 const publicList = () => list().map(publicOne);
-const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, keyUrl: v.keyUrl || '', relay: !!v.relay, refs: v.refs || 0, models: v.models || [], builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
+const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, keyUrl: v.keyUrl || '', relay: !!v.relay, recommend: v.recommend || '', refs: v.refs || 0, models: v.models || [], builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
 
 // 当前可用的某类连接器（已启用、已填写凭证）
 function active(kind) {
@@ -433,9 +445,11 @@ function adapter(c) {
 async function listModels({ id, vendor, apiKey, baseUrl }) {
   const c = id ? get(id) : null;
   const key = apiKey && !String(apiKey).includes('••') ? apiKey : c?.creds?.apiKey;
-  const base = String(baseUrl || c?.options?.baseUrl || '').trim().replace(/\/+$/, '');
-  if (!VENDORS[vendor || c?.vendor]) throw err('不支持的连接器类型');
-  if (!/^https?:\/\//.test(base)) throw err('先填接口地址');
+  const v = VENDORS[vendor || c?.vendor];
+  if (!v) throw err('不支持的连接器类型');
+  let base = String(baseUrl || c?.options?.baseUrl || '').trim().replace(/\/+$/, '');
+  if (v.relay) base = relayBase(base);
+  if (!/^https?:\/\//.test(base)) throw err(v.relay ? '先填接口地址' : '这个类型读不了模型列表，请手动添加；一般的中转站请改用「中转站（new-api 格式）」类型');
   if (!key) throw err('先填 API Key');
   const d = await request(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } }, 20000);
   const list = (Array.isArray(d.data) ? d.data : Array.isArray(d.models) ? d.models : Array.isArray(d) ? d : []).map((m) => (typeof m === 'string' ? m : m.id || m.name)).filter(Boolean);

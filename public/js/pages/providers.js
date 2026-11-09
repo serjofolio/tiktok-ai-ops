@@ -209,7 +209,7 @@ export async function render(view) {
   function mediaPicker() {
     const m = modal({
       title: '添加模型', wide: true,
-      body: `<p class="small muted" style="margin-top:0">视频模型按生成的秒数或条数收费，费用在你自己的模型账号里扣。标着「测试版」的是按官方文档接好、还没用真实密钥跑过的，第一次用先生成一条短的试试。</p>${Object.entries(MEDIA_KIND).map(([k, [label]]) => `<h4 class="rp-h" style="margin-top:6px">${label}</h4><div class="preset-grid conn-pick">${Object.entries(conn.catalog).filter(([, v]) => v.kind === k).map(([key, v]) => { const st = STATUS[v.status]; return `<div class="preset-card" data-v="${key}"><div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b><span class="verdict ${st[1]}" style="font-size:10px">${st[0]}</span></div><small>${esc(v.desc)}</small></div>`; }).join('')}</div>`).join('')}`,
+      body: `<p class="small muted" style="margin-top:0">视频模型按生成的秒数或条数收费，费用在你自己的模型账号里扣。标着「测试版」的是按官方文档接好、还没用真实密钥跑过的，第一次用先生成一条短的试试。</p>${Object.entries(MEDIA_KIND).map(([k, [label]]) => `<h4 class="rp-h" style="margin-top:6px">${label}</h4><div class="preset-grid conn-pick">${Object.entries(conn.catalog).filter(([, v]) => v.kind === k).sort(([, a], [, b]) => !!b.recommend - !!a.recommend).map(([key, v]) => { const st = STATUS[v.status]; return `<div class="preset-card ${v.recommend ? 'rec' : ''}" data-v="${key}"><div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b><span class="verdict ${st[1]}" style="font-size:10px">${st[0]}</span></div>${v.recommend ? `<span class="rec-tag">${icon('check', 12)}${esc(v.recommend)}</span>` : ''}<small>${esc(v.desc)}</small></div>`; }).join('')}</div>`).join('')}`,
       onMount(el, close) {
         $$('[data-v]', el).forEach((c) => (c.onclick = () => { close(); connEditor(c.dataset.v); }));
       },
@@ -235,14 +235,34 @@ export async function render(view) {
     visionglm: (o) => `${o.baseUrl}/chat/completions`, visionopenai: (o) => `${o.baseUrl}/chat/completions`, visionclaude: (o) => `${o.baseUrl}/v1/messages`, asrsiliconflow: (o) => `${o.baseUrl}/audio/transcriptions`, asrglm: (o) => `${o.baseUrl}/audio/transcriptions`, asropenai: (o) => `${o.baseUrl}/audio/transcriptions`,
   };
   const UNIT_HINT = { video: '秒', image: '张' };
-  function connEditor(vendor, c) {
+  // 中转站地址只填了域名时补 /v1（和服务端一致）
+  const relayBase = (u) => {
+    const t = String(u || '').trim().replace(/\/+$/, '');
+    try {
+      const x = new URL(t);
+      return x.pathname === '/' || x.pathname === '' ? `${x.origin}/v1` : t;
+    } catch {
+      return t;
+    }
+  };
+  // 自定义接口没有接口地址，只有提交地址：从提交地址推出 /v1 那一级，用来读模型列表
+  const baseOf = (u) => {
+    try {
+      const x = new URL(String(u || '').trim());
+      const i = x.pathname.indexOf('/v1');
+      return i >= 0 ? x.origin + x.pathname.slice(0, i + 3) : `${x.origin}/v1`;
+    } catch {
+      return '';
+    }
+  };
+  function connEditor(vendor, c, prefill = {}) {
     const v = conn.catalog[vendor];
     const urlKey = v.options.find((o) => o.key === 'baseUrl') ? 'baseUrl' : v.options.find((o) => o.key === 'submitUrl') ? 'submitUrl' : '';
     const hasModels = v.options.some((o) => o.key === 'model') && ['video', 'image', 'vision', 'asr'].includes(v.kind);
     const st = {
-      name: c?.name || v.name, note: c?.note || '', enabled: c?.enabled !== false,
-      creds: { ...(c?.creds || {}) },
-      options: Object.fromEntries(v.options.map((o) => [o.key, c?.options?.[o.key] ?? o.default ?? ''])),
+      name: c?.name || v.name, note: c?.note || prefill.note || '', enabled: c?.enabled !== false,
+      creds: { ...(c?.creds || {}), ...(prefill.creds || {}) },
+      options: Object.fromEntries(v.options.map((o) => [o.key, c?.options?.[o.key] ?? prefill.options?.[o.key] ?? o.default ?? ''])),
       models: (c?.models?.length ? c.models : v.models || []).map((m) => ({ ...m })),
     };
     if (hasModels && !st.models.length && st.options.model) st.models = [{ label: st.options.model, id: st.options.model, price: '', unit: '' }];
@@ -279,6 +299,7 @@ export async function render(view) {
       const others = v.options.filter((o) => o.key !== urlKey && !(hasModels && o.key === 'model'));
       root.innerHTML = `<div class="cc">
         <div class="cc-logo" aria-hidden="true">${initial(st.name || v.name)}</div>
+        ${vendor === 'videocustom' && !c ? `<div class="note-card warn cc-switch"><div><b>用的是一般的中转站？</b>请改用「${esc(conn.catalog.videonewapi.name)}」：只填地址和 Key，不用写请求模板。自定义接口只给格式特殊的接口用。</div><button type="button" class="btn sm" id="to-relay">${icon('refresh', 14)}改用中转站类型</button></div>` : ''}
         <div class="grid g2"><label class="field">名称<input class="input" name="name" value="${esc(st.name)}"></label><label class="field">备注<input class="input" name="note" value="${esc(st.note)}" placeholder="例如：朋友推荐的中转站 / 公司账号"></label></div>
         ${v.link ? `<label class="field">官网链接<div class="cc-inline"><input class="input" value="${esc(v.link)}" readonly><a class="btn sm ghost" href="${esc(v.link)}" target="_blank" rel="noopener">打开 ↗</a></div></label>` : ''}
         ${v.fields.map((f) => `<div class="field"><span>${esc(f.label)}</span><div class="cc-secret"><input class="input" data-cred="${f.key}" type="${f.secret ? 'password' : 'text'}" autocomplete="off" value="${esc(st.creds[f.key] || '')}" placeholder="${c && f.secret ? '留空则不修改' : ''}">${f.secret ? `<button type="button" class="icon-btn cc-eye" data-eye title="显示 / 隐藏">${icon('eye', 15)}</button>` : ''}</div>${f.secret && (v.keyUrl || v.link) ? `<a class="cc-sub link-lime" href="${esc(v.keyUrl || v.link)}" target="_blank" rel="noopener">获取 API Key ↗</a>` : ''}</div>`).join('')}
@@ -332,7 +353,25 @@ export async function render(view) {
       }));
       const am = $('#am', root);
       if (am) am.onclick = () => { collect(); st.models.push({ label: '', id: '', price: '', unit: '' }); draw(); $$('.cc-tr[data-i] [data-m=label]', root).at(-1)?.focus(); };
-      const body = () => ({ id: c?.id, vendor, apiKey: st.creds.apiKey, baseUrl: st.options.baseUrl });
+      const body = () => ({ id: c?.id, vendor, apiKey: st.creds.apiKey, baseUrl: urlKey === 'baseUrl' ? st.options.baseUrl : baseOf(st.options[urlKey]) });
+      const toRelay = $('#to-relay', root);
+      if (toRelay) toRelay.onclick = () => {
+        collect();
+        const url = st.options.submitUrl ? baseOf(st.options.submitUrl) : '';
+        m.close();
+        connEditor('videonewapi', null, { creds: { apiKey: st.creds.apiKey }, options: { baseUrl: url }, note: st.note });
+      };
+      // 中转站地址只填了域名：离开输入框时自动补 /v1
+      const urlInput = urlKey && v.relay ? $(`[data-opt=${urlKey}]`, root) : null;
+      if (urlInput) urlInput.onchange = () => {
+        const fixed = relayBase(urlInput.value);
+        if (fixed === urlInput.value.trim()) return;
+        urlInput.value = fixed;
+        collect();
+        const pv = $('#pv', root);
+        if (pv) pv.textContent = `POST ${preview()}`;
+        toast('已在地址后面补上 /v1（中转站的接口都在 /v1 下）', 'info');
+      };
       const fm = $('#fm', root);
       if (fm) fm.onclick = (e) => withLoading(e.currentTarget, async () => {
         collect();

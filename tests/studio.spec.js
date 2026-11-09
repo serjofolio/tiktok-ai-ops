@@ -88,6 +88,35 @@ test('接入配置：仿 CC Switch 的编辑页，中转站拉模型列表、读
   expect(prices['wan3.0-video']).toMatchObject({ price: 0.504, unit: '秒' });
 });
 
+test('接入配置：选错成自定义接口时一键改用中转站；中转站只填域名自动补 /v1', async ({ page }) => {
+  await admin(page);
+  await clearMediaConnectors(page);
+  await page.goto('/#/providers');
+  await page.click('#add-media');
+  await expect(page.locator('.preset-card.rec[data-v=videonewapi] .rec-tag')).toContainText('大多数中转站');
+  await page.locator('.preset-card[data-v=videocustom]').click();
+  await expect(page.locator('.cc-switch')).toContainText('一般的中转站');
+  await page.fill('[data-cred=apiKey]', 'sk-relay');
+  // 自定义接口的「获取模型列表」用提交地址推出来的 /v1
+  await page.fill('[data-opt=submitUrl]', `${UP}/relay/v1/videos`);
+  await page.click('#fm');
+  await expect(page.locator('[data-add="wan3.0-video"]')).toBeVisible();
+  // 改用中转站类型：Key 和地址带过去
+  await page.click('#to-relay');
+  await expect(page.locator('.cc-switch')).toHaveCount(0);
+  await expect(page.locator('[data-cred=apiKey]')).toHaveValue('sk-relay');
+  await expect(page.locator('[data-opt=baseUrl]')).toHaveValue(`${UP}/relay/v1`);
+  await page.fill('[data-opt=baseUrl]', `${UP}/`);
+  await page.locator('[name=note]').click();
+  await expect(page.locator('[data-opt=baseUrl]')).toHaveValue(`${UP}/v1`);
+  await page.locator('.modal [data-close]').first().click();
+  // 服务端同样补 /v1：读模型列表和保存都是
+  expect((await json(await page.request.post('/api/connectors/models', { data: { vendor: 'videonewapi', apiKey: 'sk-test', baseUrl: UP } }))).models).toContain('glm-test');
+  const c = await json(await page.request.post('/api/connectors', { data: { vendor: 'videonewapi', creds: { apiKey: 'sk-test' }, options: { baseUrl: `${UP}/` } } }));
+  expect(c.options.baseUrl).toBe(`${UP}/v1`);
+  await json(await page.request.delete(`/api/connectors/${c.id}`));
+});
+
 test('批量出片：上传素材 → 估算和预算 → 关键帧质检 → 换图重出 → 只为勾选的生成视频 → 复检 → 清单 → 删除', async ({ page }) => {
   test.setTimeout(120000);
   await admin(page);

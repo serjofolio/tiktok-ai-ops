@@ -56,7 +56,7 @@ export async function render(view, [scriptId]) {
     </div>
     <aside class="create-side card">
       <h4 class="cs-h">生成设置</h4>
-      ${d.video.length ? `<label class="field">视频模型<select class="input" id="video">${opts(d.video, '秒')}</select></label>` : `<div class="cs-empty"><b>还没有视频模型</b><span>先到接入配置添加一个（你的中转站选「中转站（new-api / OpenAI 兼容格式）」），回来就能生成。</span><a class="btn sm" href="#/providers">${icon('link', 14)}去接入配置</a><select id="video" hidden><option value=""></option></select></div>`}
+      ${d.video.length ? `<label class="field">视频模型<select class="input" id="video">${opts(d.video, '秒')}</select></label>` : `<div class="cs-empty"><b>还没有视频模型</b><span>先到接入配置添加一个（你的中转站选「中转站（new-api 格式）」），回来就能生成。</span><a class="btn sm" href="#/providers">${icon('link', 14)}去接入配置</a><select id="video" hidden><option value=""></option></select></div>`}
       <div class="grid g2">
         <label class="field">画面比例<select class="input" id="ratio"><option value="9:16">竖屏 9:16</option><option value="1:1">方形 1:1</option><option value="3:4">3:4</option><option value="16:9">横屏 16:9</option></select></label>
         <label class="field">出几个版本<select class="input" id="variants"><option value="1">1 个</option><option value="2">2 个</option><option value="3">3 个</option><option value="4">4 个</option></select></label>

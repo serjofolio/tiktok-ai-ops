@@ -24,7 +24,7 @@ export async function render(view, [openId]) {
   <div class="split studio-split">
     <div class="card card-pad col" id="new">
       <h3 style="margin:0;font-size:15px">新建一批</h3>
-      ${d.video.length ? '' : `<div class="note-card warn">还没有接入视频模型。到 <a class="link-lime" href="#/providers">接入配置 → 视频与图片模型</a> 添加；你的中转站选「中转站（new-api / OpenAI 兼容格式）」。</div>`}
+      ${d.video.length ? '' : `<div class="note-card warn">还没有接入视频模型。到 <a class="link-lime" href="#/providers">接入配置 → 视频与图片模型</a> 添加；你的中转站选「中转站（new-api 格式）」。</div>`}
       <h4 class="studio-sec">1 · 商品</h4>
       <div class="grid g2">
         <label class="field">选品库商品<select class="input" id="prod"><option value="">不选，下面手填</option>${prods.slice(0, 300).map((p) => `<option value="${p.id}">${esc(nameText(p))}</option>`).join('')}</select></label>
