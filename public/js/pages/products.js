@@ -156,7 +156,7 @@ export async function render(view, [openId, openTab]) {
   }
 
   // ---------- 增长榜 ----------
-  const growthState = { window: '10', sort: 'composite', category: '', group: '', market: '', minUnits: '' };
+  const growthState = { window: '10', sort: 'composite', category: '', group: '', market: '', minUnits: '', rising: '' };
   const GRADE = { daily: ['实测·逐日', 'v-go'], snapshot: ['实测·两次导入', 'v-go'], estimate: ['估算', 'v-na'] };
   const pct = (v) => (v == null ? '<span class="muted">—</span>' : `<b class="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v}%</b>`);
   async function loadGrowth() {
@@ -173,13 +173,14 @@ export async function render(view, [openId, openTab]) {
         <select class="input" data-g="market" aria-label="站点">${marketOptions(growthState.market)}</select>
         ${sel('sort', [['composite', '综合：销量和 GMV 都涨得快'], ['units', '销量增量最大'], ['gmv', 'GMV 增量最大'], ['rate', '销量增长率最高'], ['gmvRate', 'GMV 增长率最高']])}
         <input class="input num" id="g-min" type="number" min="0" placeholder="${W} 天销量≥" value="${esc(growthState.minUnits)}" aria-label="最低销量">
+        <label class="switch" title="销量增长率和 GMV 增长率都大于 0 才显示"><input type="checkbox" id="g-rising" ${growthState.rising ? 'checked' : ''}><span></span>只看销量和 GMV 都在涨</label>
         ${d.items.length ? `<button class="btn sm" id="g-ai">${icon('sparkles', 14)}AI 研判前 20 个</button>` : ''}
       </div>
       ${hint}
-      <p class="muted small" style="margin:0 0 10px">共 ${d.total} 个商品：实测 ${d.grades.daily + d.grades.snapshot} 个，估算 ${d.grades.estimate} 个${d.excluded ? `；另有 ${d.excluded} 个数据可疑（疑似刷单），已排除` : ''}。「前期」是再往前 ${W} 天。不同币种的 GMV 按人民币比较。</p>
+      <p class="muted small" style="margin:0 0 10px">共 ${d.total} 个商品：实测 ${d.grades.daily + d.grades.snapshot} 个，估算 ${d.grades.estimate} 个${d.flat ? `；${d.flat} 个销量或 GMV 没涨，已隐藏` : ''}${d.excluded ? `；另有 ${d.excluded} 个数据可疑（疑似刷单），已排除` : ''}。「前期」是再往前 ${W} 天。不同币种的 GMV 按人民币比较。</p>
       ${d.items.length ? `<div class="table-wrap"><table class="ptable growth"><thead><tr><th>#</th><th>商品</th><th class="r">${W} 天销量<div class="p-sub">前期</div></th><th class="r">销量增长</th><th class="r">${W} 天 GMV<div class="p-sub">前期</div></th><th class="r">GMV 增长</th><th title="达人和视频增量通常比销量早一周左右动（FastMoss 的判断方法）">达人 · 视频增量</th><th>数据</th><th>结论</th></tr></thead><tbody>
         ${d.items.map((r, i) => `<tr class="prow" data-id="${r.id}"><td class="muted">${i + 1}</td>
-          <td><div class="pcell">${r.image ? `<img class="pthumb" src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="pthumb ph">${esc((r.type || '?').slice(0, 1))}</span>`}<div style="min-width:0"><b class="pname">${esc(r.name)}</b><div class="p-sub"><span class="tag-type">${esc(r.type)}</span>${esc(r.shop || '')}</div>${r.spark?.length ? sparkline(r.spark, { w: 110, h: 24 }) : ''}</div></div></td>
+          <td><div class="pcell">${r.image ? `<img class="pthumb" src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="pthumb ph">${esc((r.type || '?').slice(0, 1))}</span>`}<div style="min-width:0"><b class="pname">${esc(zhName(r) || r.name)}</b>${zhName(r) ? `<span class="pname-en" title="${esc(r.name)}">${esc(r.name)}</span>` : ''}<div class="p-sub"><span class="tag-type">${esc(r.type)}</span>${esc(r.shop || '')}${r.fastmossLink ? ` <a class="mini-link" data-stop href="${esc(r.fastmossLink)}" target="_blank" rel="noopener" title="在 FastMoss 看这个商品的带货视频">FastMoss ↗</a>` : ''}</div>${r.spark?.length ? sparkline(r.spark, { w: 110, h: 24 }) : ''}</div></div></td>
           <td class="r">${fmtNum(r.units.cur)}<div class="p-sub">${r.units.prev == null ? '—' : fmtNum(r.units.prev)}</div></td><td class="r">${pct(r.units.rate)}<div class="p-sub">${r.units.gain == null ? '' : `${r.units.gain >= 0 ? '+' : ''}${fmtNum(r.units.gain)} 件`}</div></td>
           <td class="r money">${r.gmv.cur == null ? '—' : esc(r.currency) + fmtNum(r.gmv.cur)}<div class="p-sub">${r.gmv.prev == null ? '—' : esc(r.currency) + fmtNum(r.gmv.prev)}</div></td><td class="r">${pct(r.gmv.rate)}<div class="p-sub">${r.gmv.gainCny == null ? '' : `${r.gmv.gainCny >= 0 ? '+' : '-'}¥${fmtNum(Math.abs(r.gmv.gainCny))}`}</div></td>
           <td class="small">${r.lead && (r.lead.creators != null || r.lead.videos != null) ? `达人 ${r.lead.creators > 0 ? '+' : ''}${r.lead.creators ?? '—'}<div class="p-sub">视频 ${r.lead.videos > 0 ? '+' : ''}${r.lead.videos ?? '—'}</div>` : '<span class="muted">要两次数据</span>'}</td>
@@ -188,9 +189,10 @@ export async function render(view, [openId, openTab]) {
     $$('[data-g]', box).forEach((s) => (s.onchange = () => { growthState[s.dataset.g] = s.value; loadGrowth(); }));
     $('#g-cat', box).onchange = (e) => { const v = e.target.value; growthState.group = v.startsWith('group:') ? v.slice(6) : ''; growthState.category = v.startsWith('group:') ? '' : v; loadGrowth(); };
     $('#g-min', box).onchange = (e) => { growthState.minUnits = e.target.value; loadGrowth(); };
+    $('#g-rising', box).onchange = (e) => { growthState.rising = e.target.checked ? '1' : ''; loadGrowth(); };
     const ai = $('#g-ai', box);
     if (ai) ai.onclick = async () => { await startReport(d.items.slice(0, 20).map((x) => x.id)); $('#report', view).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-    $$('.prow', box).forEach((tr) => tr.addEventListener('click', () => openDetail(tr.dataset.id)));
+    $$('.prow', box).forEach((tr) => tr.addEventListener('click', (e) => !e.target.closest('[data-stop]') && openDetail(tr.dataset.id)));
   }
   $$('#panes button', view).forEach((b) => (b.onclick = () => {
     $$('#panes button', view).forEach((x) => x.classList.toggle('on', x === b));

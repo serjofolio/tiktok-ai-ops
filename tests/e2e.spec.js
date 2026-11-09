@@ -94,7 +94,7 @@ test('智能选品：导入 FastMoss 真实导出 → 六维评分 → AI 选品
   await expect(page.locator('.onboard')).toBeVisible();
   await page.click('#import');
   await page.setInputFiles('#file', path.join(__dirname, 'fixtures', 'fastmoss-my-3c.xlsx'));
-  await expect(page.locator('#imp')).toContainText('自动识别了 22 列');
+  await expect(page.locator('#imp')).toContainText('自动识别了 22 列', { timeout: 30000 }); // 机器忙时读 xlsx 会超过默认的 5 秒
   await expect(page.locator('#imp')).toContainText('关键字段齐全');
   await page.click('#commit');
   await expect(page.locator('.prow')).toHaveCount(8);

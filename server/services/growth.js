@@ -107,12 +107,14 @@ function percentile(values) {
 const WINDOWS = [3, 7, 10, 14, 30];
 
 // filters：group / category / type / market / batch / date / q（和选品库同一套）
-function board({ window: win, sort = 'composite', minUnits, limit, includeSuspicious, ...filters } = {}) {
+// rising：只留销量和 GMV 都比前期涨的（两个增长率都算得出来、都大于 0）
+function board({ window: win, sort = 'composite', minUnits, limit, includeSuspicious, rising, ...filters } = {}) {
   const W = WINDOWS.includes(Number(win)) ? Number(win) : 10;
   const floor = minUnits === undefined || minUnits === '' ? 0 : Number(minUnits);
   const all = products.list(filters).filter((p) => p.status !== 'dropped');
-  const rows = [];
+  let rows = [];
   let excluded = 0;
+  let flat = 0;
   for (const p of all) {
     if (!includeSuspicious && p.evaluation.flags.some((f) => f.title === '数据可疑')) {
       excluded++;
@@ -124,12 +126,17 @@ function board({ window: win, sort = 'composite', minUnits, limit, includeSuspic
     const cny = selection.marketProfile(p.evaluation.metrics.market).cnyRate;
     const cur = (x) => (x == null ? null : x * cny);
     rows.push({
-      id: p.id, name: p.name, image: p.image, shop: p.shop, category: p.category, market: p.evaluation.metrics.market, currency: p.evaluation.metrics.currency,
+      id: p.id, name: p.name, nameZh: p.nameZh || '', image: p.image, shop: p.shop, category: p.category, market: p.evaluation.metrics.market, currency: p.evaluation.metrics.currency,
       type: p.evaluation.metrics.type, verdict: p.evaluation.verdict, stage: p.evaluation.stage, fastmossLink: p.fastmossLink, asp: p.evaluation.metrics.asp,
       grade: g.grade, note: g.note, spark: g.spark, lead: g.lead || null,
       units: { cur: round(g.units.cur), prev: round(g.units.prev), gain: g.units.cur == null ? null : round(g.units.cur - (g.units.prev ?? 0)), rate: rate(g.units.cur, g.units.prev) },
       gmv: { cur: round(g.gmv.cur), prev: round(g.gmv.prev), gainCny: g.gmv.cur == null ? null : round(cur(g.gmv.cur) - (cur(g.gmv.prev) ?? 0)), rate: rate(g.gmv.cur, g.gmv.prev) },
     });
+  }
+  if (rising === '1' || rising === true) {
+    const keep = rows.filter((r) => r.units.rate > 0 && r.gmv.rate > 0);
+    flat = rows.length - keep.length;
+    rows = keep;
   }
   const pUnits = percentile(rows.map((r) => r.units.gain));
   const pGmv = percentile(rows.map((r) => r.gmv.gainCny));
@@ -140,7 +147,7 @@ function board({ window: win, sort = 'composite', minUnits, limit, includeSuspic
   rows.sort((a, b) => key(b) - key(a));
   const grades = { daily: 0, snapshot: 0, estimate: 0 };
   for (const r of rows) grades[r.grade]++;
-  return { window: W, windows: WINDOWS, sort, total: rows.length, excluded, grades, items: rows.slice(0, Math.min(200, Number(limit) || 100)) };
+  return { window: W, windows: WINDOWS, sort, total: rows.length, excluded, flat, grades, items: rows.slice(0, Math.min(200, Number(limit) || 100)) };
 }
 
 module.exports = { board, forProduct, WINDOWS };

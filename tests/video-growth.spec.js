@@ -104,11 +104,27 @@ test('增长榜：两次导入算实测增长，只有一次数据的标估算',
   const gamma = (await json(await page.request.get('/api/products/growth?window=10&q=Gamma'))).items[0];
   expect(gamma.grade).toBe('estimate');
   expect(gamma.units.cur).toBe(1286); // 900 / 7 × 10
+  // 只看销量和 GMV 都在涨：Beta 10 天只卖了 100 件（前期按 28 天日均约 357 件），被隐藏
+  const beta = (await json(await page.request.get('/api/products/growth?window=10&q=Chain Necklace Beta'))).items[0];
+  expect(beta.units.rate).toBeLessThan(0);
+  const rising = await json(await page.request.get('/api/products/growth?window=10&q=Chain Necklace Beta&rising=1'));
+  expect(rising.items).toHaveLength(0);
+  expect(rising.flat).toBe(1);
+  expect((await json(await page.request.get('/api/products/growth?window=10&q=Hoop Earrings Alpha&rising=1'))).items).toHaveLength(1);
   await page.goto('/#/products');
   await page.click('#panes [data-p=growth]');
   await expect(page.locator('#growth-pane .ptable')).toBeVisible();
   await expect(page.locator('#growth-pane .note-card')).toContainText('估算');
   await expect(page.locator('#growth-pane .prow', { hasText: 'Alpha' })).toContainText('实测');
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Beta' })).toHaveCount(1);
+  const risingSwitch = page.locator('label.switch', { has: page.locator('#g-rising') }).locator('span');
+  await risingSwitch.click();
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Beta' })).toHaveCount(0);
+  await expect(page.locator('#growth-pane')).toContainText('销量或 GMV 没涨，已隐藏');
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Alpha' })).toHaveCount(1);
+  await expect(page.locator('#g-rising')).toBeChecked();
+  await risingSwitch.click();
+  await expect(page.locator('#growth-pane .prow', { hasText: 'Beta' })).toHaveCount(1);
   await page.locator('#g-cat').selectOption({ index: 1 });
   await expect(page.locator('#growth-pane .prow', { hasText: 'Gamma' })).toHaveCount(0);
 });
