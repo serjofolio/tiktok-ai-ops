@@ -1,6 +1,7 @@
 // 批量出片：上传商品素材 → 每条分配不同的钩子和场景 → 先出关键帧并质检 → 人确认 → 只把合格的做成视频
 import { api, icon, esc, toast, withLoading, $, $$, empty, confirmBox, timeAgo } from '../lib.js';
 import { productPicker, nameText, zhName } from '../picker.js';
+import { pasteInto } from '../paste.js';
 
 const STATUS = { preparing: ['准备中', 'run'], review: ['待确认', 'watch'], rendering: ['生成视频中', 'run'], done: ['完成', 'ok'], error: ['出错', 'err'] };
 const money = (x) => (x == null ? '—' : `¥${Number(x).toFixed(Number(x) < 10 ? 2 : 1)}`);
@@ -32,7 +33,7 @@ export async function render(view, [openId]) {
       </div>
       <label class="field">卖点和事实（只写真的，AI 不会编）<textarea class="input" id="points" rows="2" placeholder="例如：18K 镀金不锈钢，防水不褪色，可调节长度，RM 19.90"></textarea></label>
       <div class="field"><span>商品素材（图片或视频，可以不传）</span>
-        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好</span></p><input type="file" id="files" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好；复制的图片可以直接 Ctrl+V 粘贴</span></p><input type="file" id="files" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
         <div class="asset-row" id="assets"></div></div>
       <h4 class="studio-sec">2 · 怎么拍</h4>
       <div class="grid g3">

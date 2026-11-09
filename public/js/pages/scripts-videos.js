@@ -30,8 +30,8 @@ export async function videoDialog(script) {
         <div class="asset-row">${assets.map((id) => `<div class="asset sm"><img src="/api/media/${id}" alt=""></div>`).join('')}</div>
         <span class="small muted">要模型支持参考图才有效，比如 Seedance 2.0、MiniMax H3；下面选了首帧时，模型只认首帧，参考图不再生效。</span></div>` : ''}
       <div class="grid g2">
-        <label class="field">首帧图片（让画面更接近真实商品）<select class="input" name="imageSource"><option value="">不用</option>${product?.image ? '<option value="product" selected>用商品主图</option>' : ''}<option value="upload">上传我拍的图</option></select></label>
-        <label class="field" id="img-field" hidden>选择图片<input class="input" type="file" name="image" accept="image/jpeg,image/png,image/webp"></label>
+        <label class="field">首帧图片（让画面更接近真实商品，复制的图片可以直接 Ctrl+V 粘贴）<select class="input" name="imageSource"><option value="">不用</option>${product?.image ? '<option value="product" selected>用商品主图</option>' : ''}<option value="upload">上传我拍的图</option></select></label>
+        <label class="field" id="img-field" hidden>选择图片<input class="input" type="file" name="image" data-paste accept="image/jpeg,image/png,image/webp"></label>
       </div>
       <label class="switch"><input type="checkbox" name="audio"><span></span>让模型生成声音和口播（模型支持才有效，外语口型不一定准，也可以后期配音）</label>
       <div class="field">要生成的镜头 <label class="row small" style="gap:6px;font-weight:400"><input type="checkbox" id="skip-product"> 跳过有商品的镜头（这些镜头用实拍替换，最稳妥）</label>
@@ -59,6 +59,11 @@ export async function videoDialog(script) {
       };
       f.onchange = (e) => {
         if (e.target.name === 'imageSource') $('#img-field', el).hidden = e.target.value !== 'upload';
+        // 粘贴的图片：自动切到「上传我拍的图」
+        if (e.target.name === 'image' && e.target.files.length) {
+          f.imageSource.value = 'upload';
+          $('#img-field', el).hidden = false;
+        }
         if (e.target.id === 'skip-product') $$('[name=scene]', f).forEach((c) => { if (c.dataset.product) c.checked = !e.target.checked; });
         if (e.target.name !== 'image') refresh();
       };

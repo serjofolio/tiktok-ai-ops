@@ -3,6 +3,7 @@
 import { api, icon, esc, toast, withLoading, $, $$, empty, copy, timeAgo, confirmBox } from '../lib.js';
 import { videoDialog } from './scripts-videos.js';
 import { productPicker, nameText, zhName } from '../picker.js';
+import { pasteInto } from '../paste.js';
 
 const PART = { Hook: '钩子', Problem: '痛点', Demo: '演示', Proof: '证明', Offer: '优惠', CTA: '行动号召', Story: '故事', Twist: '反转' };
 const MODES = [['person', '真人出镜'], ['hands', '不露脸'], ['ai', 'AI 生成']];
@@ -33,11 +34,12 @@ export async function render(view, [first, second]) {
   <div class="split">
     <div class="col">
       <div class="card card-pad col">
-        <div class="field"><span>商品从哪来</span><div class="seg seg-full" id="srcs">${SOURCES.map(([k, t]) => `<button type="button" data-src="${k}" class="${k === src ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+        <div class="field"><span>商品从哪来</span><div class="seg seg-full" id="srcs" data-paste-hint="要用粘贴的图片写脚本：先把「商品从哪来」换成「只传素材」">${SOURCES.map(([k, t]) => `<button type="button" data-src="${k}" class="${k === src ? 'on' : ''}">${t}</button>`).join('')}</div></div>
         <div id="src-lib"><select class="input" id="pid" aria-label="商品">${pool.map((p) => `<option value="${p.id}" ${p.id === preset ? 'selected' : ''}>${esc(nameText(p))}</option>`).join('')}</select>${pool.length ? '' : '<p class="small muted" style="margin:6px 0 0">选品库里还没有商品：可以「只传素材」，或者先到智能选品导入。</p>'}</div>
         <div class="col" id="manual" hidden><input class="input" id="mname" placeholder="商品名称，例如 Gold Clover Earrings"><textarea class="input" id="mdesc" rows="2" placeholder="卖点、材质、价格（只写真实信息）"></textarea></div>
         <div class="col" id="assets-box" hidden style="gap:10px">
-          <div class="dropzone sm" id="adz">${icon('upload', 22)}<p><b>拖入商品图片或视频，或点击选择</b><br><span class="small">白底图、上身图、细节图都行，最多 12 个；视频自动截 3 帧。AI 先看图认出商品，脚本照它写，生成视频时这些图当商品参考</span></p><input type="file" id="afile" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+          <div class="dropzone sm" id="adz">${icon('upload', 22)}<p><b>拖入商品图片或视频，或点击选择</b><br><span class="small">白底图、上身图、细节图都行，最多 12 个；视频自动截 3 帧。复制的图片可以直接 Ctrl+V 粘贴。AI 先看图认出商品，脚本照它写，生成视频时这些图当商品参考</span></p><input type="file" id="afile" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+          <div class="row" style="gap:8px"><button type="button" class="btn sm ghost" id="apaste" data-loading="读取中…">${icon('copy', 14)}粘贴图片</button><span class="small muted">或者直接按 Ctrl+V</span></div>
           <div class="asset-row" id="athumbs"></div>
           <div id="aprof"></div>
         </div>
@@ -170,6 +172,7 @@ export async function render(view, [first, second]) {
     // 第一次传素材自动认商品；已经认过的不覆盖用户改过的内容，要重认点「重新识别」
     if (!prof) await recognize().catch(() => {});
   }
+  $('#apaste', view).onclick = (e) => withLoading(e.currentTarget, () => pasteInto($('#afile', view)));
   const adz = $('#adz', view);
   adz.onclick = (e) => { if (e.target.id !== 'afile') $('#afile', view).click(); };
   $('#afile', view).onchange = (e) => addFiles([...e.target.files]).catch((x) => toast(x.message, 'error')).finally(() => (e.target.value = ''));

@@ -1,6 +1,7 @@
 // AI 出片创作台：不用等脚本，自己写分镜就能出片；也可以把脚本导进来改、插镜头、删镜头再出片
 // 每个镜头可以有自己的首帧图（上传或用图片模型生成），商品参考图让支持参考图的模型照着画商品
 import { api, icon, esc, toast, withLoading, $, $$ } from '../lib.js';
+import { pasteInto, filesIn, PASTE_TIP } from '../paste.js';
 
 const KEY = 'create-draft';
 const blankShot = () => ({ prompt: '', duration: 5, voiceover: '', imageMediaId: '', visual: '', caption: '' });
@@ -63,9 +64,10 @@ export async function render(view, [scriptId]) {
         <label class="field">画面比例<select class="input" id="ratio"><option value="9:16">竖屏 9:16</option><option value="1:1">方形 1:1</option><option value="3:4">3:4</option><option value="16:9">横屏 16:9</option></select></label>
         <label class="field">出几个版本<select class="input" id="variants"><option value="1">1 个</option><option value="2">2 个</option><option value="3">3 个</option><option value="4">4 个</option></select></label>
       </div>
-      <div class="field"><span>商品参考图 <i class="muted">可选</i></span>
+      <div class="field ref-drop" id="refdrop"><span>商品参考图 <i class="muted">可选</i></span>
         <span class="small muted">让模型照着真实商品画，商品不容易走样</span>
-        <div class="row" style="gap:8px"><button type="button" class="btn sm ghost" id="refbtn">${icon('upload', 14)}上传商品图</button><input type="file" id="reffiles" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn sm ghost" id="refbtn">${icon('upload', 14)}上传商品图</button><button type="button" class="btn sm ghost" id="refpaste" data-loading="读取中…">${icon('copy', 14)}粘贴图片</button><input type="file" id="reffiles" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+        <span class="small muted">${PASTE_TIP}</span>
         <div class="asset-row" id="refs"></div></div>
       <details class="cs-more"><summary>${icon('chevron', 14)}更多设置</summary><div class="col" style="gap:12px;padding-top:10px">
         <label class="field">生成方式<select class="input" id="mode"><option value="scenes">每个镜头单独生成，再拼起来</option><option value="whole">整条一次生成（人和画面更连贯）</option></select></label>
@@ -135,16 +137,32 @@ export async function render(view, [scriptId]) {
     for (const x of files) fd.append('files', x);
     return (await api('/studio/assets', { method: 'POST', form: fd })).items;
   };
-  f('refbtn').onclick = () => f('reffiles').click();
-  f('reffiles').onchange = async (e) => {
+  // 上传、粘贴、拖进来都走这里；最多 6 张
+  const addRefs = async (files) => {
+    if (!files.length) return;
+    const drop = f('refdrop');
+    drop.classList.add('busy');
     try {
-      st.refs.push(...(await upload([...e.target.files])));
+      st.refs.push(...(await upload(files)));
+      if (st.refs.length > 6) toast(`参考图最多 6 张，只留前 6 张`, 'info');
       st.refs = st.refs.slice(0, 6);
       drawRefs();
       replan();
     } catch (err) {
       toast(err.message, 'error');
+    } finally {
+      drop.classList.remove('busy');
     }
+  };
+  f('refpaste').onclick = (e) => withLoading(e.currentTarget, () => pasteInto(f('reffiles')));
+  const refDrop = f('refdrop');
+  refDrop.ondragover = (e) => { e.preventDefault(); refDrop.classList.add('drag'); };
+  refDrop.ondragleave = () => refDrop.classList.remove('drag');
+  refDrop.ondrop = (e) => { e.preventDefault(); refDrop.classList.remove('drag'); addRefs(filesIn(e.dataTransfer)); };
+  f('refbtn').onclick = () => f('reffiles').click();
+  f('reffiles').onchange = async (e) => {
+    await addRefs([...e.target.files]);
+    e.target.value = '';
   };
 
   function drawShots() {
@@ -154,7 +172,7 @@ export async function render(view, [scriptId]) {
         <button class="icon-btn" data-act="up" title="上移" ${i ? '' : 'disabled'}>${icon('arrow', 14)}</button><button class="icon-btn" data-act="down" title="下移" ${i < st.shots.length - 1 ? '' : 'disabled'}>${icon('arrow', 14)}</button>
         <button class="icon-btn" data-act="insert" title="在下面插入一个镜头">${icon('plus', 15)}</button><button class="icon-btn danger" data-act="del" title="删除这个镜头" ${st.shots.length > 1 ? '' : 'disabled'}>${icon('trash', 14)}</button></div>
       <div class="shot-b">
-        <div class="shot-frame" title="首帧：视频的第一张画面。有首帧时商品和构图更可控">${s.imageMediaId ? `<img src="/api/media/${s.imageMediaId}" alt="首帧"><button class="icon-btn" data-act="rmimg" title="不用这张首帧">${icon('x', 12)}</button>` : `<span class="small muted">首帧<br>可选</span>`}
+        <div class="shot-frame" data-paste-zone title="首帧：视频的第一张画面。有首帧时商品和构图更可控。鼠标停在这里按 Ctrl+V 可以粘贴图片">${s.imageMediaId ? `<img src="/api/media/${s.imageMediaId}" alt="首帧"><button class="icon-btn" data-act="rmimg" title="不用这张首帧">${icon('x', 12)}</button>` : `<span class="small muted">首帧<br>可选</span>`}
           <div class="col" style="gap:6px;width:100%"><button class="btn sm ghost" data-act="upimg">${icon('upload', 13)}上传</button>${d.image.length ? `<button class="btn sm ghost" data-act="genimg" data-loading="出图中…">${icon('image', 13)}AI 出图</button>` : ''}<input type="file" data-file accept="image/jpeg,image/png,image/webp" hidden></div></div>
         <div class="col" style="gap:8px;min-width:0">
           <textarea class="input shot-prompt" data-k="prompt" rows="3" aria-label="画面和动作" placeholder="写这个镜头的画面和动作，中文也行。例如：女生在镜子前戴上这条项链，手指轻轻拨动吊坠，镜头慢慢推近">${esc(s.prompt)}</textarea>

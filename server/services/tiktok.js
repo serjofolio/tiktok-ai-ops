@@ -27,11 +27,12 @@ const allowed = (u) => {
   }
 };
 
-// 从粘贴的文字里找视频链接：完整链接、vm / vt 短链接、tiktok.com/t/ 短链接
+// 从粘贴的文字里找视频链接：完整链接、vm / vt 短链接、tiktok.com/t/ 短链接，还有 FastMoss 的视频详情页（只有视频编号）
 function links(text) {
   const s = String(text || '');
   const out = new Map();
   for (const m of s.matchAll(/https?:\/\/(?:www\.|m\.)?tiktok\.com\/@([\w.-]+)\/video\/(\d{8,25})/gi)) out.set(m[2], { id: m[2], user: m[1] });
+  for (const m of s.matchAll(/https?:\/\/(?:www\.)?fastmoss\.com\/(?:[\w-]+\/)?media-source\/video\/(\d{8,25})/gi)) if (!out.has(m[1])) out.set(m[1], { id: m[1], user: '' });
   for (const m of s.matchAll(/https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/[\w-]+|(?:www\.)?tiktok\.com\/t\/[\w-]+)\/?/gi)) out.set(m[0], { short: m[0] });
   return [...out.values()].slice(0, MAX_LINKS);
 }
@@ -135,7 +136,7 @@ const get = (id) => videos.get(id);
 // 粘贴链接加进商品的爆款视频；已经有的更新数据
 async function addLinks(productId, text) {
   const found = links(text);
-  if (!found.length) throw err('没找到 TikTok 视频链接。链接长这样：https://www.tiktok.com/@用户名/video/一串数字，也可以是 vm.tiktok.com 开头的短链接');
+  if (!found.length) throw err('没找到视频链接。支持 TikTok 视频链接（https://www.tiktok.com/@用户名/video/一串数字，或 vm.tiktok.com 短链接）和 FastMoss 视频详情页的网址');
   let added = 0, updated = 0;
   const errors = [];
   for (const l of found) {
@@ -152,7 +153,7 @@ async function addLinks(productId, text) {
         added++;
       }
     } catch (e) {
-      errors.push({ link: l.short || `https://www.tiktok.com/@${l.user}/video/${l.id}`, error: e.message });
+      errors.push({ link: l.short || (l.user ? `https://www.tiktok.com/@${l.user}/video/${l.id}` : `视频 ${l.id}`), error: e.message });
     }
   }
   return { added, updated, errors, items: list(productId) };
@@ -222,7 +223,7 @@ async function analyze(id) {
 async function analyzeLink(text) {
   if (!settings.activeProvider()) throw llm.noLLM();
   const [l] = links(text);
-  if (!l) throw err('没找到 TikTok 视频链接');
+  if (!l) throw err('没找到视频链接：支持 TikTok 视频链接和 FastMoss 视频详情页的网址');
   const ref = await resolve(l);
   const r = await read(ref);
   const exist = videos.all().find((x) => !x.productId && x.videoId === r.meta.videoId);

@@ -2,6 +2,7 @@
 import { icon, api, $, esc, countUp, toast } from './lib.js';
 import { session, loadSession } from './session.js';
 import { openHelp, helpKey } from './help.js';
+import { installPaste } from './paste.js';
 import { initStars, initPointerFx, initSpotlight, splitText, armReveal, initIntro, initClickBurst } from './fx/ambient.js';
 
 initStars();
@@ -78,6 +79,8 @@ export async function refreshMode() {
 
 // 新渲染出的 [data-count] 数字自动滚动
 new MutationObserver(() => countUp($('#view'))).observe($('#view'), { childList: true, subtree: true });
+// 所有上传框都能 Ctrl+V 粘贴复制的图片和文件
+installPaste();
 
 const progress = document.createElement('div');
 progress.className = 'topbar-progress';

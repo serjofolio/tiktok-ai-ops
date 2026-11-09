@@ -59,8 +59,8 @@ export function mountVideos(box, p) {
     const kw = searchWords(p);
     box.innerHTML = `<div class="pv">
       <div class="pv-add">
-        <div class="row" style="gap:8px;flex-wrap:wrap"><b>粘贴 TikTok 视频链接</b><span class="small muted">一行一条，也可以把一整段文字粘进来，系统自己找链接（一次最多 20 条）</span></div>
-        <textarea class="input" id="pv-text" rows="3" placeholder="https://www.tiktok.com/@用户名/video/7xxxxxxxxxxxxxxxxxx&#10;https://vm.tiktok.com/xxxxxx/"></textarea>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><b>粘贴 TikTok 视频链接</b><span class="small muted">FastMoss 视频详情页的网址也行。一行一条，也可以把一整段文字粘进来，系统自己找链接（一次最多 20 条）</span></div>
+        <textarea class="input" id="pv-text" rows="3" placeholder="https://www.tiktok.com/@用户名/video/7xxxxxxxxxxxxxxxxxx&#10;https://www.fastmoss.com/zh/media-source/video/7xxxxxxxxxxxxxxxxxx"></textarea>
         <div class="row" style="gap:10px;flex-wrap:wrap"><button class="btn" id="pv-go" data-loading="读取中…（每条几秒）">${icon('download', 14)}读取数据</button>
           <span class="small muted">去哪找链接：</span><span class="ext-links">${fm}${kw ? `<a href="https://www.tiktok.com/search?q=${encodeURIComponent(kw)}" target="_blank" rel="noopener">${icon('search', 13)}在 TikTok 搜「${esc(kw)}」</a>` : ''}</span></div>
         <div id="pv-err"></div>

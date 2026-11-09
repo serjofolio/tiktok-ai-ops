@@ -24,16 +24,16 @@ test('爆款视频：贴链接看数据 → 存视频 → 播放和保存 → �
   // 没有链接时说清楚链接长什么样
   const bad = await page.request.post(`/api/products/${prod.id}/videos`, { data: { text: '这里没有链接' } });
   expect(bad.status()).toBe(400);
-  expect(await bad.text()).toContain('没找到 TikTok 视频链接');
+  expect(await bad.text()).toContain('没找到视频链接');
 
   await page.goto('/#/products');
   await page.locator('.prow', { hasText: 'Viral Test' }).first().click();
   await page.click('#pdtabs [data-tab=videos]');
   await expect(page.locator('.pv-add')).toContainText('粘贴 TikTok 视频链接');
   await expect(page.locator('.pv-add a[href*="tiktok.com/search"]')).toContainText('Crushed Ice Tennis Necklace');
-  await page.fill('#pv-text', '对标 https://www.tiktok.com/@ariana_25111/video/7300000000000000001?lang=en 还有短链接 https://www.tiktok.com/t/ZTshort/ 和一条删了的 https://www.tiktok.com/@gone/video/7300000000000000009');
+  await page.fill('#pv-text', '对标 https://www.tiktok.com/@ariana_25111/video/7300000000000000001?lang=en 还有短链接 https://www.tiktok.com/t/ZTshort/ 和一条删了的 https://www.tiktok.com/@gone/video/7300000000000000009，还有 FastMoss 视频详情页 https://www.fastmoss.com/zh/media-source/video/7300000000000000005');
   await page.click('#pv-go');
-  await expect(page.locator('.pv-card')).toHaveCount(2);
+  await expect(page.locator('.pv-card')).toHaveCount(3);
   await expect(page.locator('#pv-err')).toContainText('看不到');
   const card = page.locator('.pv-card', { hasText: '@ariana_25111' });
   await expect(card.locator('.pv-stats')).toContainText('813');
@@ -41,6 +41,8 @@ test('爆款视频：贴链接看数据 → 存视频 → 播放和保存 → �
   await expect(card.locator('.pv-author')).toContainText('粉丝 1.3万');
   await expect(card.locator('.pv-cover img')).toBeVisible();
   await expect(page.locator('.pv-card', { hasText: '@shorty' })).toHaveCount(1);
+  // FastMoss 链接只有视频编号：照样读到作者和数据
+  await expect(page.locator('.pv-card', { hasText: '@mia.carter58' }).locator('.pv-stats')).toContainText('813');
 
   // 存到服务器 → 播放、保存到电脑
   await card.locator('[data-act=dl]').click();
@@ -77,7 +79,7 @@ test('爆款视频：贴链接看数据 → 存视频 → 播放和保存 → �
 
   // 删除商品时爆款视频一起删掉
   const ids = (await json(await page.request.get(`/api/products/${prod.id}/videos`))).items.map((x) => x.id);
-  expect(ids).toHaveLength(2);
+  expect(ids).toHaveLength(3);
   await json(await page.request.delete(`/api/products/${prod.id}`));
   expect((await page.request.get(`/api/tt-videos/${ids[0]}`)).status()).toBe(404);
   for (const x of (await json(await page.request.get('/api/viral'))).items.filter((i) => i.title.includes('@ariana_25111') || i.title.includes('@linky'))) await json(await page.request.delete(`/api/viral/${x.id}`));

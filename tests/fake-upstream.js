@@ -283,7 +283,8 @@ async function fakeTiktok(req, res, url, origin) {
   const [, user, id] = m;
   const gone = id.endsWith('9');
   const like = 2940 + ttHits.page;
-  const item = { id, desc: `Crushed ice sparkle #925silver #${user}`, createTime: '1793278800', author: { uniqueId: user, nickname: user.toUpperCase() }, authorStats: { followerCount: 12800 },
+  const who = user === '_' ? 'mia.carter58' : user;
+  const item = { id, desc: `Crushed ice sparkle #925silver #${who}`, createTime: '1793278800', author: { uniqueId: who, nickname: who.toUpperCase() }, authorStats: { followerCount: 12800 },
     stats: { diggCount: like, shareCount: 273, commentCount: 15, playCount: 344500, collectCount: '813' }, statsV2: { diggCount: String(like), shareCount: '273', commentCount: '15', playCount: '344500', collectCount: '813' },
     video: { duration: 9, width: 360, height: 640, cover: `${origin}/img/product.png`, playAddr: `${origin}/tiktok/cdn/${id}.mp4` }, music: { title: 'original sound' } };
   const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': gone ? { statusCode: 10204, statusMsg: 'item doesn\'t exist' } : { statusCode: 0, itemInfo: { itemStruct: item } } } };
