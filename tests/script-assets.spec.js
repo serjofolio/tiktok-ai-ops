@@ -121,3 +121,13 @@ test('复刻爆款：拆解页点「用我的素材复刻」→ 只传素材 →
   await json(await page.request.delete(`/api/scripts/${s.id}`));
   await json(await page.request.delete(`/api/viral/${up.id}`));
 });
+
+test('脚本没写英文提示词：导进 AI 出片时用中文画面说明填上，不留空', async ({ page }) => {
+  await admin(page);
+  const s = await json(await page.request.post('/api/scripts/manual', { data: { title: '没有提示词的脚本', shots: [{ visual: '模特在镜子前戴上项链，手指拨动吊坠', prompt: '', duration: 3 }, { visual: '项链放在白色瓷盘上', prompt: 'Macro shot of the necklace on a white plate', duration: 4 }] } }));
+  await page.goto(`/#/scripts/create/${s.id}`);
+  await expect(page.locator('.shot')).toHaveCount(2);
+  await expect(page.locator('.shot').nth(0).locator('[data-k=prompt]')).toHaveValue('模特在镜子前戴上项链，手指拨动吊坠');
+  await expect(page.locator('.shot').nth(1).locator('[data-k=prompt]')).toHaveValue('Macro shot of the necklace on a white plate');
+  await json(await page.request.delete(`/api/scripts/${s.id}`));
+});

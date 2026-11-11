@@ -32,7 +32,8 @@ export async function render(view, [scriptId]) {
     ...st, title: s.title, scriptId: s.id, language: s.language || st.language,
     // 只传素材写的脚本：素材直接当商品参考图
     refs: s.assetIds?.length ? s.assetIds.slice(0, 6).map((id) => ({ id, title: '' })) : st.refs,
-    shots: (s.scenes || []).map((x) => ({ prompt: x.videoPrompt || '', duration: Number(x.duration) || 4, voiceover: x.voiceover || '', imageMediaId: '', visual: [x.shot, x.visual].filter(Boolean).join(' · '), caption: x.caption || '', part: x.part || '' })),
+    // 没有英文提示词的脚本（模型漏写或老脚本）先用中文画面说明填上，可以直接出图、出片或点「优化提示词」
+    shots: (s.scenes || []).map((x) => ({ prompt: x.videoPrompt || [x.shot, x.visual].filter(Boolean).join('，'), duration: Number(x.duration) || 4, voiceover: x.voiceover || '', imageMediaId: '', visual: [x.shot, x.visual].filter(Boolean).join(' · '), caption: x.caption || '', part: x.part || '' })),
   });
   if (scriptId) {
     const s = sd.items.find((x) => x.id === scriptId);
