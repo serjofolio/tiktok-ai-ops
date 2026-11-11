@@ -23,8 +23,9 @@ async function useFakeLlm(page) {
   if (!p) p = await json(await page.request.post('/api/providers', { data: { name: '测试模型', protocol: 'openai', baseUrl: `${UP}/v1`, apiKey: 'sk-test', model: 'glm-test' } }));
   await json(await page.request.post(`/api/providers/${p.id}/activate`));
 }
+// 删掉视频、图片等模型，以及除了模拟大模型以外的统一接入（里面可能启用了视频、图片模型）
 async function clearMediaConnectors(page) {
-  for (const c of (await json(await page.request.get('/api/connectors'))).items.filter((x) => ['video', 'image', 'vision', 'asr'].includes(x.kind))) await json(await page.request.delete(`/api/connectors/${c.id}`));
+  for (const c of (await json(await page.request.get('/api/connectors'))).items.filter((x) => ['video', 'image', 'vision', 'asr'].includes(x.kind) || (x.vendor === 'hub' && x.options.baseUrl !== `${UP}/v1`))) await json(await page.request.delete(`/api/connectors/${c.id}`));
 }
 
 let clipFile;
@@ -34,14 +35,16 @@ test.beforeAll(() => {
 });
 test.afterAll(() => fs.rmSync(clipFile, { force: true }));
 
-test('接入配置：仿 CC Switch 的编辑页，中转站拉模型列表、读价格表、原始 JSON 双向同步', async ({ page }) => {
+test('接入配置：中转站一次接入全部模型，自动分类、按类型一键启用、读价格、原始 JSON 双向同步', async ({ page }) => {
   await admin(page);
   await clearMediaConnectors(page);
   await page.goto('/#/providers');
-  await page.click('#add-media');
-  await expect(page.locator('.modal h4', { hasText: '生成图片' })).toBeVisible();
-  await page.locator('.preset-card[data-v=videonewapi]').click();
+  await page.click('#add');
+  await expect(page.locator('.modal h4', { hasText: '官方专用接口' })).toBeVisible();
+  await expect(page.locator('.preset-card[data-v=videonewapi]')).toHaveCount(0);
+  await page.locator('.preset-card[data-preset=relay]').click();
   await expect(page.locator('.cc-logo')).toBeVisible();
+  await page.fill('.modal [name=name]', '我的中转站');
   await page.fill('[name=note]', '朋友推荐的中转站');
   const key = page.locator('[data-cred=apiKey]');
   await key.fill('sk-relay');
@@ -49,51 +52,66 @@ test('接入配置：仿 CC Switch 的编辑页，中转站拉模型列表、读
   await page.click('[data-eye]');
   await expect(key).toHaveAttribute('type', 'text');
   await page.fill('[data-opt=baseUrl]', `${UP}/relay/v1/`);
-  await expect(page.locator('.cc-tip')).toContainText('/v1 为止');
+  await expect(page.locator('.cc-tip').first()).toContainText('自动补 /v1');
   await page.click('#full');
-  await expect(page.locator('#pv')).toHaveText(`POST ${UP}/relay/v1/videos`);
-  // 从上游拉模型列表，点一下加入映射，再读中转站的价格表
+  await expect(page.locator('#pv')).toHaveText(`POST ${UP}/relay/v1/chat/completions`);
+  // 读模型列表：全部列出来、按名字分好类，单价从中转站价格表带上
   await page.click('#fm');
-  await page.locator('[data-add="doubao-seedance-2.0-fast-720p"]').click();
-  await expect(page.locator('.cc-tr[data-i] [data-m=id]')).toHaveValue('doubao-seedance-2.0-fast-720p');
-  await page.click('#fp');
-  await expect(page.locator('.cc-tr[data-i] [data-m=price]')).toHaveValue('0.672');
-  await expect(page.locator('.cc-tr[data-i] [data-m=unit]')).toHaveValue('秒');
+  await expect(page.locator('.cc-tr.hub[data-i]')).toHaveCount(8);
+  const tip = page.locator('.cc-tip', { hasText: '读到 8 个模型' });
+  await expect(tip).toContainText('文本 2');
+  await expect(tip).toContainText('看图 1');
+  await expect(tip).toContainText('图片 1');
+  await expect(tip).toContainText('视频 3');
+  const row = (id) => page.locator('.cc-tr.hub[data-i]', { has: page.locator(`[data-m=id][value="${id}"]`) });
+  await expect(row('doubao-seedance-2.0-fast-720p').locator('[data-m=kind]')).toHaveValue('video');
+  await expect(row('doubao-seedance-2.0-fast-720p').locator('[data-m=price]')).toHaveValue('0.672');
+  await expect(row('doubao-seedance-2.0-fast-720p').locator('[data-m=unit]')).toHaveValue('秒');
+  await expect(row('text-embedding-3-small').locator('[data-m=kind]')).toHaveValue('other');
+  // 只看视频，一键启用这一类
+  await page.locator('[data-ef=video]').click();
+  await expect(page.locator('.cc-tr.hub[data-i]')).toHaveCount(3);
+  await page.click('#all-on');
+  await expect(page.locator('.cc-tr.hub[data-i] [data-m=on]:checked')).toHaveCount(3);
+  await page.locator('[data-ef=all]').click();
   // 原始 JSON 改了，表单跟着变
   await page.locator('#raw-box summary').click();
-  await expect(page.locator('#raw')).toHaveValue(/doubao-seedance-2.0-fast-720p/);
   const raw = JSON.parse(await page.locator('#raw').inputValue());
-  raw.models[0].label = 'Seedance Fast';
+  raw.models.find((m) => m.id === 'doubao-seedance-2.0-fast-720p').label = 'Seedance Fast';
   await page.fill('#raw', JSON.stringify(raw));
   await page.click('#fmt');
-  await expect(page.locator('.cc-tr[data-i] [data-m=label]')).toHaveValue('Seedance Fast');
+  await expect(row('doubao-seedance-2.0-fast-720p').locator('[data-m=label]')).toHaveValue('Seedance Fast');
   await page.click('#ok');
-  const row = page.locator('#media-conns .conn', { hasText: '中转站' });
-  await expect(row).toContainText('朋友推荐的中转站');
-  await row.locator('[data-act=test]').click();
-  await expect(row.locator('[data-result]')).toContainText('没有扣费');
-  const saved = (await json(await page.request.get('/api/connectors'))).items.find((x) => x.vendor === 'videonewapi');
-  expect(saved.models).toEqual([expect.objectContaining({ label: 'Seedance Fast', id: 'doubao-seedance-2.0-fast-720p', price: 0.672, unit: '秒' })]);
-  expect(saved.options.model).toBe('doubao-seedance-2.0-fast-720p');
+  const card = page.locator('.mh-card', { hasText: '朋友推荐的中转站' });
+  await expect(card.locator('.mh-count', { hasText: '视频' })).toContainText('视频 3/3');
+  await card.locator('[data-act=test]').click();
+  await expect(card.locator('[data-result]')).toContainText('没有扣费');
+  const saved = (await json(await page.request.get('/api/connectors'))).items.find((x) => x.vendor === 'hub' && x.name === '我的中转站');
+  expect(saved.options.baseUrl).toBe(`${UP}/relay/v1`);
+  expect(saved.models.find((m) => m.id === 'doubao-seedance-2.0-fast-720p')).toEqual(expect.objectContaining({ label: 'Seedance Fast', kind: 'video', enabled: true, price: 0.672, unit: '秒' }));
   expect(saved.creds.apiKey).not.toBe('sk-relay');
+  // 视频模型会出现在出片可选的模型里
+  const studio = await json(await page.request.get('/api/studio'));
+  expect(studio.video.find((x) => x.id === `${saved.id}:video`).models.map((m) => m.id)).toContain('doubao-seedance-2.0-fast-720p');
   // 编辑时密钥留空不会被清掉
-  await row.locator('[data-act=edit]').click();
+  await card.locator('[data-act=edit]').click();
   await expect(page.locator('[data-cred=apiKey]')).toHaveValue(/••/);
   await page.click('#ok');
-  await row.locator('[data-act=test]').click();
-  await expect(row.locator('[data-result]')).toContainText('没有扣费');
+  await card.locator('[data-act=test]').click();
+  await expect(card.locator('[data-result]')).toContainText('没有扣费');
   // 价格表：按秒、按张、按清晰度分档都能读
   const { prices } = await json(await page.request.post('/api/connectors/pricing', { data: { baseUrl: `${UP}/relay/v1` } }));
   expect(prices['doubao-seedream-5-0']).toMatchObject({ price: 0.288, unit: '张' });
   expect(prices['wan3.0-video']).toMatchObject({ price: 0.504, unit: '秒' });
+  await json(await page.request.delete(`/api/connectors/${saved.id}`));
 });
 
 test('接入配置：选错成自定义接口时一键改用中转站；中转站只填域名自动补 /v1', async ({ page }) => {
   await admin(page);
   await clearMediaConnectors(page);
   await page.goto('/#/providers');
-  await page.click('#add-media');
-  await expect(page.locator('.preset-card.rec[data-v=videonewapi] .rec-tag')).toContainText('大多数中转站');
+  await page.click('#add');
+  await expect(page.locator('.preset-card.rec[data-preset=relay] .rec-tag')).toContainText('大多数中转站');
   await page.locator('.preset-card[data-v=videocustom]').click();
   await expect(page.locator('.cc-switch')).toContainText('一般的中转站');
   await page.fill('[data-cred=apiKey]', 'sk-relay');
@@ -101,9 +119,10 @@ test('接入配置：选错成自定义接口时一键改用中转站；中转�
   await page.fill('[data-opt=submitUrl]', `${UP}/relay/v1/videos`);
   await page.click('#fm');
   await expect(page.locator('[data-add="wan3.0-video"]')).toBeVisible();
-  // 改用中转站类型：Key 和地址带过去
+  // 改用中转站：Key 和地址带过去
   await page.click('#to-relay');
   await expect(page.locator('.cc-switch')).toHaveCount(0);
+  await expect(page.locator('#proto')).toBeVisible();
   await expect(page.locator('[data-cred=apiKey]')).toHaveValue('sk-relay');
   await expect(page.locator('[data-opt=baseUrl]')).toHaveValue(`${UP}/relay/v1`);
   await page.fill('[data-opt=baseUrl]', `${UP}/`);
@@ -111,8 +130,9 @@ test('接入配置：选错成自定义接口时一键改用中转站；中转�
   await expect(page.locator('[data-opt=baseUrl]')).toHaveValue(`${UP}/v1`);
   await page.locator('.modal [data-close]').first().click();
   // 服务端同样补 /v1：读模型列表和保存都是
+  expect((await json(await page.request.post('/api/connectors/models', { data: { vendor: 'hub', apiKey: 'sk-test', baseUrl: UP } }))).models.map((m) => m.id)).toContain('glm-test');
   expect((await json(await page.request.post('/api/connectors/models', { data: { vendor: 'videonewapi', apiKey: 'sk-test', baseUrl: UP } }))).models).toContain('glm-test');
-  const c = await json(await page.request.post('/api/connectors', { data: { vendor: 'videonewapi', creds: { apiKey: 'sk-test' }, options: { baseUrl: `${UP}/` } } }));
+  const c = await json(await page.request.post('/api/connectors', { data: { vendor: 'hub', creds: { apiKey: 'sk-test' }, options: { baseUrl: `${UP}/` }, models: [{ id: 'glm-test', kind: 'text', enabled: true }] } }));
   expect(c.options.baseUrl).toBe(`${UP}/v1`);
   await json(await page.request.delete(`/api/connectors/${c.id}`));
 });

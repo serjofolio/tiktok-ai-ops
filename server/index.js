@@ -239,7 +239,15 @@ app.put('/api/selection', h(async (req, res) => {
 }));
 
 // ---------- 数据源与 ERP 连接器 ----------
-app.get('/api/connectors', h(async (req, res) => res.json({ catalog: connectors.catalog(), items: connectors.publicList() })));
+// 现在每类用哪个模型（首选在前；出错时按顺序换）
+const primaries = () => ({ text: connectors.textPool()[0]?.ref || '', ...Object.fromEntries(['vision', 'image', 'video', 'asr'].map((k) => [k, connectors.mediaPool(k)[0]?.ref || ''])) });
+app.get('/api/connectors', h(async (req, res) => {
+  const s = settings.get();
+  res.json({ catalog: connectors.catalog(), items: connectors.publicList(), kinds: connectors.KINDS, presets: llm.PRESETS, prefs: s.modelPrefs || {}, autoFallback: s.autoFallback !== false, primary: primaries() });
+}));
+// 统一接入：在列表里直接开关模型、改类型；设首选模型和出错自动换
+app.patch('/api/connectors/:id/models', h(async (req, res) => res.json(connectors.setModels(req.params.id, req.body || {}))));
+app.put('/api/models/prefs', h(async (req, res) => res.json({ ...connectors.setPrefs(req.body || {}), primary: primaries() })));
 app.post('/api/connectors', h(async (req, res) => res.json(connectors.save(req.body || {}))));
 app.put('/api/connectors/:id', h(async (req, res) => {
   const c = connectors.get(req.params.id);
@@ -251,7 +259,11 @@ app.delete('/api/connectors/:id', h(async (req, res) => {
   res.json({ ok: true });
 }));
 // 从上游拉模型列表 / 读中转站价格表（表单没保存也能用）
-app.post('/api/connectors/models', h(async (req, res) => res.json({ models: await connectors.listModels(req.body || {}) })));
+app.post('/api/connectors/models', h(async (req, res) => {
+  const vendor = req.body?.vendor || connectors.get(req.body?.id)?.vendor;
+  if (vendor === 'hub') return res.json(await connectors.hubList(req.body || {}));
+  res.json({ models: await connectors.listModels(req.body || {}) });
+}));
 app.post('/api/connectors/pricing', h(async (req, res) => {
   const c = req.body?.id ? connectors.get(req.body.id) : null;
   res.json({ prices: await connectors.relayPricing(req.body?.baseUrl || c?.options?.baseUrl) });
@@ -544,31 +556,65 @@ app.delete('/api/docs/:id', h(async (req, res) => res.json({ ok: rag.removeDocum
 app.post('/api/rag/search', h(async (req, res) => res.json({ items: await rag.search(req.body.query || '', { kbIds: req.body.kbIds, topK: req.body.topK || 6 }) })));
 app.post('/api/rag/ask', h(async (req, res) => res.json(await rag.ask(req.body.question || '', { kbIds: req.body.kbIds }))));
 
-// ---------- 接入配置（模型供应商，类似 CC Switch） ----------
+// ---------- 文本模型（兼容旧接口）：数据都在统一的模型接入里，一个接入算一个「供应商」 ----------
+// 页面顶部显示当前模型、Agent 和脚本、n8n 等外部程序还在用这组接口
+const hubOf = (id) => {
+  const c = connectors.get(id);
+  if (!c || c.vendor !== 'hub') throw notFound('供应商');
+  return c;
+};
+function providerView(c, active) {
+  const cfgs = connectors.textCfgs(c);
+  const cur = active?.id === c.id ? active : cfgs[0];
+  const p = connectors.publicList().find((x) => x.id === c.id);
+  return { id: c.id, name: c.name, protocol: c.options?.protocol === 'anthropic' ? 'anthropic' : 'openai', baseUrl: c.options?.baseUrl || '', model: cur?.model || '', apiKey: p?.creds?.apiKey || '', hasKey: !!c.creds?.apiKey, presetId: c.options?.presetId || '' };
+}
 app.get('/api/providers', h(async (req, res) => {
   const v = settings.publicView();
-  res.json({ items: v.providers, activeId: v.activeProviderId, presets: llm.PRESETS, dataSources: v.dataSources, store: v.store, selection: v.selection });
+  const active = settings.activeProvider();
+  const items = connectors.list().filter((c) => c.vendor === 'hub' && connectors.textCfgs(c).length).map((c) => providerView(c, active));
+  res.json({ items, activeId: active?.id || '', presets: llm.PRESETS, dataSources: v.dataSources, store: v.store, selection: v.selection });
 }));
-app.post('/api/providers', h(async (req, res) => res.json(settings.saveProvider(req.body))));
-app.put('/api/providers/:id', h(async (req, res) => res.json(settings.saveProvider({ ...req.body, id: req.params.id }))));
+// 添加一个文本模型：同一个地址 + Key 已经接入过就加进那个接入
+function saveTextModel(b, id, { prefer } = {}) {
+  const cur = id ? hubOf(id) : null;
+  const models = (cur?.models || []).map((m) => ({ ...m }));
+  if (b.model && !models.some((m) => m.id === b.model)) models.unshift({ label: b.model, id: b.model, kind: connectors.classify(b.model) === 'vision' ? 'vision' : 'text', enabled: true });
+  for (const m of models) if (m.id === b.model) m.enabled = true;
+  const out = connectors.save({ id: cur?.id, vendor: 'hub', name: b.name || cur?.name, note: cur?.note, creds: { apiKey: b.apiKey ?? '' }, options: { ...(cur?.options || {}), ...(b.baseUrl ? { baseUrl: b.baseUrl } : {}), ...(b.protocol ? { protocol: b.protocol } : {}), ...(b.presetId ? { presetId: b.presetId } : {}), ...(b.temperature != null ? { temperature: String(b.temperature) } : {}) }, models });
+  if (b.model && prefer) connectors.setPrefs({ kind: 'text', ref: `${out.id}|${b.model}` });
+  return providerView(connectors.get(out.id), settings.activeProvider());
+}
+app.post('/api/providers', h(async (req, res) => {
+  const b = req.body || {};
+  if (!b.name) throw bad('请填写名称');
+  if (!b.baseUrl) throw bad('请填写 Base URL');
+  if (b.protocol && !['openai', 'anthropic'].includes(b.protocol)) throw bad('协议只能是 openai 或 anthropic');
+  // 第一个自动成为首选；已经有在用的就不抢，跟以前一样点「启用」切换
+  res.json(saveTextModel(b, null, { prefer: !settings.activeProvider() }));
+}));
+app.put('/api/providers/:id', h(async (req, res) => res.json(saveTextModel(req.body || {}, req.params.id, { prefer: settings.activeProvider()?.id === req.params.id }))));
 app.delete('/api/providers/:id', h(async (req, res) => {
-  settings.removeProvider(req.params.id);
+  hubOf(req.params.id);
+  connectors.remove(req.params.id);
   res.json({ ok: true });
 }));
 app.post('/api/providers/:id/activate', h(async (req, res) => {
-  settings.activate(req.params.id);
+  const cfg = connectors.textCfgs(hubOf(req.params.id))[0];
+  if (!cfg) throw bad('这个接入还没有启用文本模型');
+  connectors.setPrefs({ kind: 'text', ref: cfg.ref });
   res.json({ ok: true });
 }));
 app.post('/api/providers/:id/test', h(async (req, res) => {
-  const p = settings.getProvider(req.params.id);
-  if (!p) throw notFound('供应商');
-  res.json(await llm.test(p));
+  const cfg = connectors.textCfgs(hubOf(req.params.id))[0];
+  if (!cfg) throw bad('这个接入还没有启用文本模型');
+  res.json(await llm.test(cfg));
 }));
 // 获取模型列表：可携带表单里尚未保存的地址/Key（Key 留空或脱敏时使用已保存的）
 app.post('/api/providers/models', h(async (req, res) => {
-  const saved = req.body.id ? settings.getProvider(req.body.id) : null;
-  const cfg = { ...(saved || {}), ...req.body };
-  if (!req.body.apiKey || String(req.body.apiKey).includes('••')) cfg.apiKey = saved?.apiKey || '';
+  const c = req.body.id ? connectors.get(req.body.id) : null;
+  const cfg = { protocol: c?.options?.protocol, baseUrl: c?.options?.baseUrl, presetId: c?.options?.presetId, ...req.body };
+  if (!req.body.apiKey || String(req.body.apiKey).includes('••')) cfg.apiKey = c?.creds?.apiKey || '';
   res.json(await llm.listModels(cfg));
 }));
 app.put('/api/settings', h(async (req, res) => {

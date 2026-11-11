@@ -283,12 +283,12 @@ test('视频模型：接入配置添加 → 脚本生成视频 → 合并保存 
   await page.click('.modal [data-close]');
   // 在接入配置页面添加
   await page.goto('/#/providers');
-  await page.click('#add-media');
+  await page.click('#add');
   await page.locator('.preset-card[data-v=seedance]').click();
   await page.fill('[data-cred=apiKey]', 'vk-test');
   await page.fill('[data-opt=baseUrl]', `${UP}/video/ark`);
   await page.click('#ok');
-  const row = page.locator('#media-conns .conn', { hasText: 'Seedance' });
+  const row = page.locator('#hubs .mh-card', { hasText: 'Seedance' });
   await expect(row).toBeVisible();
   await row.locator('[data-act=test]').click();
   await expect(row.locator('[data-result]')).toContainText('没有扣费');

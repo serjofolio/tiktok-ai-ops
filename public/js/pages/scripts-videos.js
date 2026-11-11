@@ -9,7 +9,7 @@ export async function videoDialog(script) {
   if (!conns.length) {
     modal({
       title: '还没有接入视频模型',
-      body: `<p>到「接入配置 → 视频模型」添加一个就能用。支持 Seedance、可灵、通义万相、海螺，也可以填其他模型或中转站的接口。</p><p class="muted small">接入后回到这里，点「生成视频」就能直接出片，生成的视频会存到「视频库」，可以播放和下载。</p>`,
+      body: `<p>到「接入配置」点「添加模型」，启用一个视频模型就能用。中转站填一次地址和 Key，视频模型自动认出来；也支持 Seedance、可灵、通义万相、海螺的官方接口。</p><p class="muted small">接入后回到这里，点「生成视频」就能直接出片，生成的视频会存到「视频库」，可以播放和下载。</p>`,
       footer: `<button class="btn ghost" data-close>关闭</button><a class="btn" href="#/providers" data-close>去接入配置</a>`,
     });
     return;
@@ -96,7 +96,7 @@ export async function render(view) {
     const box = view;
     const top = `<div class="row" style="margin-bottom:12px"><span class="muted small">生成的视频保存在你的服务器上，模型服务商的链接过期也不影响。已用 ${d.storage.usedMb} MB${d.storage.quotaMb ? ` / ${d.storage.quotaMb} MB` : ''}。</span><div class="spacer"></div>${d.models.length ? '' : `<a class="btn sm" href="#/providers">${icon('link', 14)}接入视频模型</a>`}</div>`;
     if (!d.items.length) {
-      box.innerHTML = `${top}<div class="card">${empty(d.models.length ? '还没有视频。到「写脚本」选一个脚本，点「生成视频」' : '先到「接入配置 → 视频模型」接入一个模型，再回来从脚本生成视频', 'video', d.models.length ? '<a class="btn" href="#/scripts">去写脚本</a>' : '<a class="btn" href="#/providers">去接入配置</a>')}</div>`;
+      box.innerHTML = `${top}<div class="card">${empty(d.models.length ? '还没有视频。到「写脚本」选一个脚本，点「生成视频」' : '先到「接入配置」添加模型、启用一个视频模型，再回来从脚本生成视频', 'video', d.models.length ? '<a class="btn" href="#/scripts">去写脚本</a>' : '<a class="btn" href="#/providers">去接入配置</a>')}</div>`;
       return;
     }
     box.innerHTML = `${top}<div class="video-grid">${d.items.map(jobCard).join('')}</div>`;

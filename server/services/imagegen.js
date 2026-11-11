@@ -105,4 +105,24 @@ async function generate(c, { prompt, refs, size, model }, outBase) {
   return { abs, mime };
 }
 
-module.exports = { generate, ADAPTERS, findImage, fetchImage };
+// 出图失败（没额度、被拒等）时换下一个启用的图片模型，最多试 3 个
+async function generateAny(c, opts, outBase) {
+  const model = opts.model || c.options?.model || '';
+  const pool = connectors.autoFallback() ? connectors.mediaPool('image').filter((x) => !(x.connectorId === c.id && x.model === model)) : [];
+  const tried = [];
+  let first;
+  for (const x of [{ c, model, connectorId: c.id }, ...pool].slice(0, 3)) {
+    try {
+      const out = await generate(x.c, { ...opts, model: x.model }, outBase);
+      return Object.assign(out, { model: x.model, connectorId: x.connectorId, fellBack: tried });
+    } catch (e) {
+      connectors.markFail(`${x.c.hub || x.connectorId}|${x.model}`);
+      first = first || e;
+      tried.push({ model: x.model, error: String(e.message).slice(0, 120) });
+    }
+  }
+  if (tried.length > 1) first.message = `${first.message}（已自动换了 ${tried.length - 1} 个备用图片模型，也都失败了）`;
+  throw first;
+}
+
+module.exports = { generate, generateAny, ADAPTERS, findImage, fetchImage };

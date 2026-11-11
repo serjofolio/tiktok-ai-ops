@@ -20,8 +20,38 @@ const PRESETS = [
   { id: 'custom', name: '自定义', protocol: 'openai', baseUrl: '', models: [] },
 ];
 
-const noLLM = () => Object.assign(new Error('还没有接入大模型：请到「接入配置」添加并启用一个供应商'), { status: 400, code: 'NO_LLM' });
+const noLLM = () => Object.assign(new Error('还没有接入大模型：请到「接入配置」点「添加模型」，启用一个文本模型'), { status: 400, code: 'NO_LLM' });
 const isMock = () => !settings.activeProvider();
+
+// ---------- 出错自动换模型 ----------
+// 没指定模型时：首选文本模型 → 其余启用的文本模型（最多再试 3 个）。没额度、Key 失效、超时、上游报错都会换
+const MAX_TRIES = 4;
+function candidates() {
+  const connectors = require('../connectors');
+  const pool = connectors.textPool();
+  if (!pool.length) throw noLLM();
+  return connectors.autoFallback() ? pool.slice(0, MAX_TRIES) : pool.slice(0, 1);
+}
+async function withFallback(fn, { shouldStop } = {}) {
+  const connectors = require('../connectors');
+  const tried = [];
+  let first;
+  for (const cfg of candidates()) {
+    try {
+      const r = await fn(resolve(cfg));
+      if (cfg.ref) connectors.markOk(cfg.ref);
+      if (tried.length) console.warn(`[llm] ${tried.map((t) => t.model).join('、')} 出错，已换成 ${cfg.model}`);
+      return r && typeof r === 'object' ? Object.assign(r, { model: cfg.model, provider: cfg.name, fellBack: tried }) : r;
+    } catch (e) {
+      if (e.name === 'AbortError' || shouldStop?.()) throw e;
+      if (cfg.ref) connectors.markFail(cfg.ref);
+      first = first || e;
+      tried.push({ model: cfg.model, provider: cfg.name, error: String(e.message).slice(0, 160) });
+    }
+  }
+  if (tried.length > 1) first.message = `${first.message}（已自动换了 ${tried.length - 1} 个备用模型，也都失败了：${tried.slice(1).map((t) => `${t.model}：${t.error.slice(0, 60)}`).join('；')}）`;
+  throw first;
+}
 
 const trimSlash = (u) => (u || '').trim().replace(/\/+$/, '');
 // Anthropic 协议会自动拼 /v1/messages，用户多填的 /v1 去掉，避免出现 /v1/v1
@@ -128,6 +158,10 @@ function resolve(cfgOverride) {
 
 // ---------- 非流式 ----------
 async function chat(opts, cfgOverride) {
+  if (!cfgOverride) return withFallback((cfg) => chatOnce(opts, cfg));
+  return chatOnce(opts, cfgOverride);
+}
+async function chatOnce(opts, cfgOverride) {
   const cfg = resolve(cfgOverride);
   const send = (body) => http(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(body) }, opts.timeoutMs || 180000);
   const req = buildRequest(cfg, opts);
@@ -151,7 +185,17 @@ async function chat(opts, cfgOverride) {
 }
 
 // ---------- 流式：onDelta({ text?, think? })，返回完整文本 ----------
+// 还没输出任何内容就出错时换下一个模型；已经输出了一部分就不换了（避免前后两个模型的话拼在一起）
 async function stream(opts, onDelta, { signal, cfg: cfgOverride } = {}) {
+  if (cfgOverride) return streamOnce(opts, onDelta, { signal, cfg: cfgOverride });
+  let started = false;
+  const emit = (d) => {
+    started = true;
+    onDelta(d);
+  };
+  return withFallback((cfg) => streamOnce(opts, emit, { signal, cfg }), { shouldStop: () => started || signal?.aborted });
+}
+async function streamOnce(opts, onDelta, { signal, cfg: cfgOverride } = {}) {
   const cfg = resolve(cfgOverride);
   const req = buildRequest(cfg, { ...opts, stream: true });
   let res;
@@ -223,11 +267,17 @@ function imageMessage(cfg, text, images) {
   return { role: 'user', content: [...images.map((i) => ({ type: 'image_url', image_url: { url: isGLM(cfg) ? i.b64 : `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text }] };
 }
 
+// 返回的不是合法 JSON 也算出错：没指定模型时换下一个
 async function completeJSON(prompt, { system, temperature, maxTokens, timeoutMs, noThinking, cfg, messages } = {}) {
-  const r = await chat({ system, messages: messages || [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs, noThinking }, cfg);
-  const parsed = safeJSON(r.text);
-  if (!parsed) throw new Error('模型返回的内容不是合法 JSON，请重试或换一个模型：' + r.text.slice(0, 160));
-  return parsed;
+  const once = async (c) => {
+    const r = await chatOnce({ system, messages: messages || [{ role: 'user', content: prompt }], temperature: temperature ?? 0.4, json: true, maxTokens, timeoutMs, noThinking }, c);
+    const parsed = safeJSON(r.text);
+    if (!parsed) throw new Error('模型返回的内容不是合法 JSON，请重试或换一个模型：' + r.text.slice(0, 160));
+    return parsed;
+  };
+  if (cfg) return once(cfg);
+  const out = await withFallback(async (c) => ({ v: await once(c) }));
+  return out.v;
 }
 
 function safeJSON(s) {

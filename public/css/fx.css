@@ -879,3 +879,43 @@ tr.chosen { background: color-mix(in srgb, var(--ok) 7%, transparent); }
 .src-assets { display: flex; flex-direction: column; gap: 8px; }
 /* 写脚本：选了要学的爆款时，风格区变淡（按爆款的结构写） */
 .field.dim { opacity: 0.45; }
+
+/* ---------- 接入模型：一个入口，模型单独开关 ---------- */
+.mh-now { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.mh-now-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mh-now-item .input { width: 100%; min-width: 0; }
+.mh-none { padding: 8px 0; }
+.mh-card { padding: 16px 18px; transition: border-color 0.3s; }
+.mh-card.on { border-color: color-mix(in srgb, var(--lime) 45%, transparent); }
+.mh-card.off { opacity: 0.6; }
+.mh-top { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.mh-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mh-count { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-3); }
+.mh-count.on { color: var(--text); border-color: var(--line-2); background: var(--panel-2); }
+.mh-count b { color: var(--lime); font-weight: 600; }
+.mh-panel { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.mh-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.mh-bar .seg button { font-size: 12px; padding: 4px 10px; }
+.mh-q { height: 32px; width: 180px; max-width: 100%; font-size: 13px; }
+.mh-list { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow: auto; padding-right: 4px; }
+.mh-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto 150px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); }
+.mh-row:hover { background: var(--panel-2); }
+.mh-row:not(.on) .mh-name b { color: var(--text-3); font-weight: 500; }
+.mh-name { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-width: 0; }
+.mh-name b { font: 13px var(--mono); overflow-wrap: anywhere; }
+.mh-kind { height: 32px; font-size: 12.5px; padding: 0 8px; }
+.cc-table.hub { max-height: 380px; overflow: auto; padding-right: 4px; }
+.cc-tr.hub { grid-template-columns: 44px 128px minmax(0, 1fr) minmax(0, 1.3fr) 82px 80px 32px; }
+.cc-tr.hub:not(.on):not(.cc-th) [data-m=id] { color: var(--text-3); }
+.cc-th.hub, .cc-tr.hub.cc-th { position: sticky; top: 0; background: var(--panel); z-index: 1; padding: 2px 0; }
+@media (max-width: 700px) {
+  .mh-top { grid-template-columns: 44px minmax(0, 1fr); }
+  .mh-top .pv-actions { grid-column: 1 / -1; flex-wrap: wrap; }
+  .mh-row { grid-template-columns: 44px minmax(0, 1fr) 108px; gap: 6px 8px; }
+  .mh-row > :nth-child(3) { grid-column: 2; grid-row: 2; justify-self: start; }
+  .mh-row > :nth-child(4) { grid-column: 3; grid-row: 1; }
+  .cc-tr.hub { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) 32px; }
+  .cc-tr.hub [data-m=label], .cc-tr.hub [data-m=price] { grid-column: 2; }
+  .cc-tr.hub [data-m=id], .cc-tr.hub [data-m=unit] { grid-column: 3; }
+  .cc-tr.hub.cc-th span:nth-child(n+3) { display: none; }
+}

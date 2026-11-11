@@ -339,7 +339,7 @@ async function keyframe(batchId, n, { note } = {}) {
   patchBrief(batchId, n, (x) => ({ candidates: [...x.candidates, { status: 'running', note: note || '' }] }));
   const set = (patch) => patchBrief(batchId, n, (x) => ({ candidates: x.candidates.map((cd, i) => (i === idx ? { ...cd, ...patch } : cd)) }));
   try {
-    const out = await imagegen.generate(c, { prompt: keyframePrompt(brief, note), refs, model: batch.imageModel }, path.join(dir, `kf-${n}-${idx + 1}-${Date.now()}`));
+    const out = await imagegen.generateAny(c, { prompt: keyframePrompt(brief, note), refs, model: batch.imageModel }, path.join(dir, `kf-${n}-${idx + 1}-${Date.now()}`));
     addSpent(batchId, { images: 1, imageYuan: price || 0 });
     const m = media.register({ abs: out.abs, kind: 'keyframe', title: `${batch.product.name} 第 ${n} 条 关键帧 ${idx + 1}`, mime: out.mime, meta: { batchId } });
     set({ status: 'checking', mediaId: m.id });

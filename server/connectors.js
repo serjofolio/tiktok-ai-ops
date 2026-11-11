@@ -8,6 +8,13 @@ const { safeFetch } = require('./net');
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
 const VENDORS = {
+  // ---------- 统一接入：一个地址 + 一个 Key，下面的文本、看图、图片、视频、语音模型自动分好类，各自开关 ----------
+  hub: {
+    kind: 'hub', name: '模型接入（中转站 / OpenAI 兼容 / Anthropic）', status: 'ready', relay: true,
+    desc: '填一次地址和 Key，读出全部模型并按名字自动分成文本、看图、图片、视频、语音；每个模型单独开关。写脚本、出图、出视频都从这里取，出错时自动换下一个启用的同类模型。',
+    fields: [['apiKey', 'API Key', true]],
+    options: [['baseUrl', '接口地址', ''], ['protocol', '协议', 'openai', ['openai', 'anthropic']], ['presetId', '预设', ''], ['endpoint', '视频提交路径', '/videos', ['/videos', '/video/generations']], ['resolution', '视频清晰度（模型名里已带清晰度时不用管）', '720p', ['480p', '720p', '1080p']], ['durations', '视频单段时长范围（秒）', '4-15'], ['size', '图片竖屏尺寸', '1024x1536'], ['temperature', '文本模型温度（0–1，越低越稳）', '0.7']],
+  },
   // ---------- 选品数据 ----------
   fastmoss: {
     kind: 'product', name: 'FastMoss 开放接口', status: 'beta', link: 'https://developers.fastmoss.com/api/overview',
@@ -91,7 +98,7 @@ const VENDORS = {
   },
   videocustom: {
     kind: 'video', name: '自定义视频接口（格式特殊的接口）', status: 'ready',
-    desc: '只给不是 new-api 格式的接口用，要自己写提交地址、请求体模板和结果字段路径。一般的中转站请选「中转站（new-api 格式）」。异步「提交任务 → 查询任务」形式的接口都能接。模板里可用 {{prompt}} {{model}} {{duration}} {{ratio}} {{image}} {{audio}}；路径用点号写，例如 data.task_id。',
+    desc: '只给不是 new-api 格式的接口用，要自己写提交地址、请求体模板和结果字段路径。一般的中转站请在「添加模型」里选「中转站」。异步「提交任务 → 查询任务」形式的接口都能接。模板里可用 {{prompt}} {{model}} {{duration}} {{ratio}} {{image}} {{audio}}；路径用点号写，例如 data.task_id。',
     fields: [['apiKey', 'API Key', true]],
     options: [['submitUrl', '提交地址（POST）', ''], ['submitBody', '请求体模板（JSON）', '{"model":"{{model}}","prompt":"{{prompt}}","duration":{{duration}},"aspect_ratio":"{{ratio}}"}'], ['taskIdPath', '任务 ID 字段路径', 'id'], ['queryUrl', '查询地址（GET，用 {{id}} 表示任务 ID）', ''], ['statusPath', '状态字段路径', 'status'], ['doneValues', '成功的状态值（逗号分隔）', 'succeeded,success,completed,done'], ['failValues', '失败的状态值（逗号分隔）', 'failed,fail,error,cancelled,canceled,expired'], ['videoUrlPath', '视频地址字段路径', 'video_url'], ['errorPath', '错误信息字段路径（可选）', 'error.message'], ['authHeader', '鉴权头（用 {{key}} 表示密钥）', 'Authorization: Bearer {{key}}'], ['model', '模型', ''], ['durations', '单段时长范围（秒）', '5-10']],
   },
@@ -155,7 +162,7 @@ const VENDORS = {
   },
 };
 
-// ---------- 存储（每个用户自己的配置，跟模型供应商放在一起） ----------
+// ---------- 存储（每个用户自己的配置，放在 settings 里） ----------
 const list = () => settings.get().connectors || [];
 
 // 中转站地址只填了域名时补上 /v1：new-api 一类中转站的接口都在 /v1 下
@@ -200,13 +207,18 @@ function save(input) {
 
 // 模型映射：显示名 / 实际请求的模型 / 单价（人民币；单位：秒、条或张，不填时视频按秒、图片按张）
 const UNITS = ['秒', '条', '张'];
+// 统一接入里每个模型的类型。imagechat：用对话接口出图的模型（Gemini 图片模型等）
+const KINDS = { text: '文本', vision: '看图', image: '图片', imagechat: '图片（对话出图）', video: '视频', asr: '语音转写', other: '其他（不用）' };
 function cleanModels(list) {
   const out = [];
-  for (const m of list.slice(0, 30)) {
+  for (const m of list.slice(0, 400)) {
     const id = String(m?.id || '').trim().slice(0, 120);
     if (!id || out.some((x) => x.id === id)) continue;
     const price = m.price === '' || m.price == null ? '' : Number(m.price);
-    out.push({ label: String(m.label || id).trim().slice(0, 60), id, price: Number.isFinite(price) && price >= 0 ? price : '', unit: UNITS.includes(m.unit) ? m.unit : '', note: String(m.note || '').slice(0, 80) });
+    const x = { label: String(m.label || id).trim().slice(0, 60), id, price: Number.isFinite(price) && price >= 0 ? price : '', unit: UNITS.includes(m.unit) ? m.unit : '', note: String(m.note || '').slice(0, 80) };
+    if (m.kind !== undefined) x.kind = KINDS[m.kind] ? m.kind : classify(id);
+    if (m.enabled !== undefined) x.enabled = m.enabled !== false;
+    out.push(x);
   }
   return out;
 }
@@ -232,16 +244,178 @@ function publicOne(c) {
   const v = VENDORS[c.vendor] || {};
   const creds = {};
   for (const [f, , secret] of v.fields || []) creds[f] = secret ? mask(c.creds?.[f]) : c.creds?.[f] || '';
-  return { ...c, creds, kind: v.kind, status: v.status, configured: (v.fields || []).filter(required).every(([f]) => c.creds?.[f]) };
+  return { ...c, ...(c.vendor === 'hub' ? { models: hubModels(c) } : {}), creds, kind: v.kind, status: v.status, configured: (v.fields || []).filter(required).every(([f]) => c.creds?.[f]) };
 }
 const publicList = () => list().map(publicOne);
 const catalog = () => Object.fromEntries(Object.entries(VENDORS).map(([k, v]) => [k, { kind: v.kind, name: v.name, status: v.status, desc: v.desc, link: v.link, keyUrl: v.keyUrl || '', relay: !!v.relay, recommend: v.recommend || '', refs: v.refs || 0, models: v.models || [], builtin: !!v.builtin, fields: v.fields.map(([f, l, s]) => ({ key: f, label: l, secret: !!s })), options: (v.options || []).map(([f, l, d, choices]) => ({ key: f, label: l, default: d, choices })) }]));
 
-// 当前可用的某类连接器（已启用、已填写凭证）
+// 当前可用的某类连接器（已启用、已填写凭证）：统一接入拆出来的在前，首选的排第一
+const ready = (c) => c.enabled !== false && VENDORS[c.vendor]?.status !== 'pending' && (VENDORS[c.vendor]?.fields || []).filter(required).every(([f]) => c.creds?.[f]);
 function active(kind) {
-  return list().filter((c) => c.enabled !== false && VENDORS[c.vendor]?.kind === kind && VENDORS[c.vendor].status !== 'pending' && (VENDORS[c.vendor].fields || []).filter(required).every(([f]) => c.creds?.[f]));
+  const own = list().filter((c) => ready(c) && VENDORS[c.vendor]?.kind === kind);
+  const all = [...list().filter((c) => c.vendor === 'hub' && ready(c)).flatMap((h) => virtuals(h).filter((v) => VENDORS[v.vendor].kind === kind)), ...own];
+  const pref = String(settings.get().modelPrefs?.[kind] || '').split('|')[0];
+  return pref ? [...all.filter((c) => c.id === pref || c.hub === pref), ...all.filter((c) => c.id !== pref && c.hub !== pref)] : all;
 }
-const get = (id) => list().find((c) => c.id === id) || null;
+// 统一接入拆出来的连接器 id 是「接入 id:类型」；旧连接器迁移进统一接入后，旧 id 记在别名表里，老任务重试还能找到
+function get(id) {
+  if (!id) return null;
+  const alias = settings.get().connectorAliases?.[id];
+  if (alias && alias !== id) return get(alias);
+  const [hid, vk] = String(id).split(':');
+  if (vk) {
+    const h = list().find((c) => c.id === hid && c.vendor === 'hub');
+    return (h && virtuals(h).find((v) => v.id === id)) || null;
+  }
+  return list().find((c) => c.id === id) || null;
+}
+
+// ---------- 统一接入：一个地址 + Key，模型自动分类、单独开关、出错自动换 ----------
+// 按模型名认类型；中转站价格表里有接口类型时以它为准
+const has = (re, id) => re.test(String(id).toLowerCase());
+function classify(id, endpointTypes = []) {
+  const t = endpointTypes.join(' ').toLowerCase();
+  if (/video/.test(t)) return 'video';
+  if (/embed|rerank|moderation/.test(t)) return 'other';
+  if (/audio|transcri|whisper/.test(t)) return 'asr';
+  if (/image/.test(t)) return has(/gemini|nano.?banana/, id) ? 'imagechat' : 'image';
+  if (has(/embed|rerank|moderation|(^|[-_/])tts([-_]|$)|text-to-speech|speech-d|realtime/, id)) return 'other';
+  if (has(/video|seedance|kling|hailuo|(^|[-_/])veo|sora|vidu|runway|pika|luma|pixverse|(^|[-_/])t2v|(^|[-_/])i2v|(^|[-_/])s2v|wan\d.*-(t2v|i2v)|minimax-h\d|hunyuan-?video/, id)) return 'video';
+  if (has(/gemini.*image|nano.?banana/, id)) return 'imagechat';
+  if (has(/image|seedream|dall-?e|gpt-image|flux|imagen|midjourney|(^|[-_/])mj[-_]|sdxl|stable-diffusion|kolors|ideogram|recraft|cogview|qwen-image|wanx/, id)) return 'image';
+  if (has(/whisper|(^|[-_/])asr|transcri|sensevoice|paraformer|telespeech/, id)) return 'asr';
+  if (has(/(^|[-_/])vl([-_]|$)|vision|-vl-|\d(\.\d)?v($|[-_])|4v|qvq|llava|internvl|minicpm-v|pixtral/, id)) return 'vision';
+  return 'text';
+}
+// 一看就是对话模型的名字（迁移旧的视频连接器时，把误放进去的文字模型改回文本）
+const looksText = (id) => has(/^(glm|deepseek|kimi|moonshot|qwen|gpt-|o\d|claude|gemini|doubao-(pro|lite|seed-1)|hunyuan-(chat|2|t1|turbo|large)|minimax-(m|text)|step-|mimo|ernie|yi-|llama|mistral)/, id) && classify(id) === 'text';
+const hubModels = (h) => (h.models || []).map((m) => ({ ...m, kind: m.kind || classify(m.id), enabled: m.enabled !== false }));
+const enabledOf = (h, kinds) => hubModels(h).filter((m) => m.enabled && kinds.includes(m.kind));
+// 统一接入里的模型按类型交给原有的接口实现
+const VIRTUAL = { video: ['videonewapi', ['video']], image: ['imageopenai', ['image']], imagechat: ['imagechat', ['imagechat']], vision: [null, ['vision']], asr: ['asropenai', ['asr']] };
+function virtuals(h) {
+  const out = [];
+  for (const [vk, [vendor0, kinds]] of Object.entries(VIRTUAL)) {
+    const ms = enabledOf(h, kinds);
+    if (!ms.length) continue;
+    const vendor = vendor0 || (h.options?.protocol === 'anthropic' ? 'visionclaude' : 'visionopenai');
+    const o = h.options || {};
+    out.push({
+      id: `${h.id}:${vk}`, hub: h.id, vendor, name: h.name, note: h.note || '', enabled: true, creds: { apiKey: h.creds?.apiKey || '' },
+      options: { baseUrl: o.baseUrl || '', model: ms[0].id, endpoint: o.endpoint || '/videos', resolution: o.resolution || '720p', durations: o.durations || '4-15', size: o.size || '1024x1536' },
+      models: ms.map(({ label, id, price, unit, note }) => ({ label, id, price, unit, note })),
+    });
+  }
+  return out;
+}
+
+// 文本模型：首选在前，其余启用的按顺序排；刚出错的往后放
+const cooling = new Map(); // 「接入 id|模型」→ 出错时间（内存里，重启清空）
+const COOL_MS = 5 * 60 * 1000;
+const hot = (ref) => Date.now() - (cooling.get(ref) || 0) < COOL_MS;
+function markFail(ref) {
+  cooling.set(ref, Date.now());
+}
+const markOk = (ref) => cooling.delete(ref);
+function textCfgs(h) {
+  const o = h.options || {};
+  const temp = Number(o.temperature);
+  // 看图模型也能写字，排在文字模型后面当备用
+  return [...enabledOf(h, ['text']), ...enabledOf(h, ['vision'])].map((m) => ({ id: h.id, ref: `${h.id}|${m.id}`, name: h.name, protocol: o.protocol === 'anthropic' ? 'anthropic' : 'openai', baseUrl: o.baseUrl, apiKey: h.creds?.apiKey || '', model: m.id, kind: m.kind, temperature: Number.isFinite(temp) && o.temperature !== '' ? temp : 0.7 }));
+}
+function textPool() {
+  const s = settings.get();
+  const out = list().filter((c) => c.vendor === 'hub' && ready(c)).flatMap(textCfgs);
+  const pref = s.modelPrefs?.text;
+  const i = out.findIndex((x) => x.ref === pref);
+  if (i > 0) out.unshift(...out.splice(i, 1));
+  const firstText = out.findIndex((x) => x.kind === 'text');
+  if (i < 0 && firstText > 0) out.unshift(...out.splice(firstText, 1));
+  return [...out.filter((x) => !hot(x.ref)), ...out.filter((x) => hot(x.ref))];
+}
+// 某类媒体模型的候选：[{ c: 连接器（已换成该模型）, ref }]，首选在前，刚出错的放后面
+function mediaPool(kind) {
+  const out = active(kind).flatMap((c) => modelsOf(c).filter((m) => m.enabled !== false).map((m) => ({ c: withModel(c, m.id), ref: `${c.hub || c.id}|${m.id}`, connectorId: c.id, model: m.id })));
+  const pref = settings.get().modelPrefs?.[kind];
+  const i = out.findIndex((x) => x.ref === pref);
+  if (i > 0) out.unshift(...out.splice(i, 1));
+  return [...out.filter((x) => !hot(x.ref)), ...out.filter((x) => hot(x.ref))];
+}
+const autoFallback = () => settings.get().autoFallback !== false;
+
+// 首选模型和出错自动换模型的开关
+function setPrefs({ kind, ref, autoFallback: af } = {}) {
+  const s = settings.get();
+  s.modelPrefs = s.modelPrefs || {};
+  if (kind) {
+    if (!['text', 'vision', 'image', 'video', 'asr'].includes(kind)) throw err('类型不对');
+    if (ref) s.modelPrefs[kind] = String(ref);
+    else delete s.modelPrefs[kind];
+  }
+  if (af !== undefined) s.autoFallback = !!af;
+  settings.update({});
+  return { modelPrefs: s.modelPrefs, autoFallback: s.autoFallback !== false };
+}
+
+// 在列表里直接开关模型：enable / disable 是模型 id 列表；all: true 全部启用、false 全部停用；kinds 改类型
+function setModels(id, { enable = [], disable = [], all, kinds = {}, kind } = {}) {
+  const h = list().find((c) => c.id === id);
+  if (!h) throw err('这个接入不存在', 404);
+  h.models = hubModels(h).map((m) => {
+    const x = { ...m };
+    if (kinds[m.id] && KINDS[kinds[m.id]]) x.kind = kinds[m.id];
+    const inScope = !kind || x.kind === kind || (kind === 'image' && x.kind === 'imagechat');
+    if (all !== undefined && inScope && x.kind !== 'other') x.enabled = !!all;
+    if (enable.includes(m.id)) x.enabled = true;
+    if (disable.includes(m.id)) x.enabled = false;
+    return x;
+  });
+  settings.update({});
+  return publicOne(h);
+}
+
+// 旧数据迁移（每个账号一次）：「模型供应商」和中转站类型的视频 / 图片 / 看图 / 语音连接器，
+// 按「地址 + Key」合并成统一接入；原来启用的供应商成为首选文本模型
+const RELAY_KIND = { videonewapi: 'video', imageopenai: 'image', imagechat: 'imagechat', visionopenai: 'vision', asropenai: 'asr' };
+function migrate(s) {
+  s.connectors = Array.isArray(s.connectors) ? s.connectors : [];
+  const sameKey = (h, base, key, protocol) => h.vendor === 'hub' && relayBase(h.options?.baseUrl).toLowerCase() === relayBase(base).toLowerCase() && (h.creds?.apiKey || '') === key && (h.options?.protocol || 'openai') === protocol;
+  const hubFor = (name, base, key, protocol, extra = {}) => {
+    let h = s.connectors.find((x) => sameKey(x, base, key, protocol));
+    if (!h) {
+      h = { id: 'cn_' + crypto.randomBytes(5).toString('hex'), vendor: 'hub', name: name || '模型接入', creds: { apiKey: key }, options: { baseUrl: relayBase(base), protocol, presetId: '', endpoint: '/videos', resolution: '720p', durations: '4-15', size: '1024x1536', temperature: '0.7', ...extra }, models: [], note: '', enabled: true, createdAt: new Date().toISOString() };
+      s.connectors.push(h);
+    }
+    return h;
+  };
+  const add = (h, m) => {
+    const x = h.models.find((y) => y.id === m.id);
+    if (x) x.enabled = x.enabled || m.enabled;
+    else h.models.push(m);
+  };
+  for (const p of Array.isArray(s.providers) ? s.providers : []) {
+    if (!p.baseUrl) continue;
+    const h = hubFor(p.name, p.baseUrl, p.apiKey || '', p.protocol === 'anthropic' ? 'anthropic' : 'openai', { presetId: p.presetId || '', temperature: String(p.temperature ?? 0.7) });
+    if (p.model) add(h, { label: p.model, id: p.model, price: '', unit: '', note: '', kind: classify(p.model) === 'vision' ? 'vision' : 'text', enabled: true });
+    if (p.id === s.activeProviderId && p.model) s.modelPrefs = { ...(s.modelPrefs || {}), text: `${h.id}|${p.model}` };
+  }
+  s.connectorAliases = s.connectorAliases || {};
+  for (const c of [...s.connectors]) {
+    const kind = RELAY_KIND[c.vendor];
+    if (!kind || !c.options?.baseUrl) continue;
+    const h = hubFor(c.name, c.options.baseUrl, c.creds?.apiKey || '', 'openai');
+    for (const k of ['endpoint', 'resolution', 'durations', 'size']) if (c.options[k]) h.options[k] = c.options[k];
+    if (c.note && !h.note) h.note = c.note;
+    for (const m of modelsOf(c)) {
+      const k = kind !== 'imagechat' && looksText(m.id) ? 'text' : kind;
+      add(h, { ...m, kind: k, enabled: c.enabled !== false });
+    }
+    s.connectorAliases[c.id] = `${h.id}:${kind}`;
+    s.connectors = s.connectors.filter((x) => x !== c);
+  }
+  if (Array.isArray(s.providers) && s.providers.length) s.providersBackup = s.providers;
+  s.providers = [];
+}
 
 // ---------- HTTP ----------
 // 地址由用户填写：普通用户不能请求服务器内网，管理员可以（自建 n8n 等），规则见 net.js
@@ -449,7 +623,7 @@ async function listModels({ id, vendor, apiKey, baseUrl }) {
   if (!v) throw err('不支持的连接器类型');
   let base = String(baseUrl || c?.options?.baseUrl || '').trim().replace(/\/+$/, '');
   if (v.relay) base = relayBase(base);
-  if (!/^https?:\/\//.test(base)) throw err(v.relay ? '先填接口地址' : '这个类型读不了模型列表，请手动添加；一般的中转站请改用「中转站（new-api 格式）」类型');
+  if (!/^https?:\/\//.test(base)) throw err(v.relay ? '先填接口地址' : '这个类型读不了模型列表，请手动添加；一般的中转站请在「添加模型」里选「中转站」');
   if (!key) throw err('先填 API Key');
   const d = await request(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } }, 20000);
   const list = (Array.isArray(d.data) ? d.data : Array.isArray(d.models) ? d.models : Array.isArray(d) ? d : []).map((m) => (typeof m === 'string' ? m : m.id || m.name)).filter(Boolean);
@@ -457,9 +631,28 @@ async function listModels({ id, vendor, apiKey, baseUrl }) {
   return [...new Set(list)].sort();
 }
 
+async function hubList({ id, apiKey, baseUrl, protocol, presetId }) {
+  const llm = require('./providers/llm');
+  const c = id ? get(id) : null;
+  const key = apiKey && !String(apiKey).includes('••') ? apiKey : c?.creds?.apiKey || '';
+  const base = relayBase(baseUrl || c?.options?.baseUrl || '');
+  if (!/^https?:\/\//.test(base)) throw err('先填接口地址，例如 https://你的中转站域名（会自动补 /v1）');
+  if (!key) throw err('先填 API Key');
+  const proto = (protocol || c?.options?.protocol) === 'anthropic' ? 'anthropic' : 'openai';
+  const r = await llm.listModels({ protocol: proto, baseUrl: base, apiKey: key, presetId: presetId || c?.options?.presetId });
+  if (!r.models.length) throw err(r.error || '上游没有返回模型列表，请手动添加');
+  let table = { prices: {}, types: {} };
+  if (proto === 'openai') table = await readPricing(base).catch(() => table);
+  const models = r.models.map((m) => ({ id: m.id, kind: classify(m.id, table.types[m.id] || []), ...(table.prices[m.id] || {}) }));
+  return { models, baseUrl: base, error: r.source === 'preset' ? r.error : '', priced: Object.keys(table.prices).length };
+}
+
 // 读 new-api 中转站公开的价格表（/api/pricing，不需要密钥），换算成人民币单价
 // 按秒、按次计费的直接读；按 token 计费的视频读站长写在说明里的「不带视频约 ¥x/秒」，读不到就留空让用户填
 async function relayPricing(baseUrl) {
+  return (await readPricing(baseUrl)).prices;
+}
+async function readPricing(baseUrl) {
   let origin;
   try {
     origin = new URL(String(baseUrl || '').trim()).origin;
@@ -474,7 +667,9 @@ async function relayPricing(baseUrl) {
   const rate = cny ? Number(status.usd_exchange_rate) || 1 : 7.2;
   const groups = p.group_ratio || {};
   const out = {};
+  const types = {};
   for (const m of p.data) {
+    if (Array.isArray(m.supported_endpoint_types)) types[m.model_name] = m.supported_endpoint_types.map(String);
     const g = (m.enable_groups || []).find((x) => x !== 'auto');
     const gr = Number(groups[g] ?? 1) || 1;
     const fixed = Number(m.model_price) > 0 && Number(m.quota_type) === 1;
@@ -491,8 +686,42 @@ async function relayPricing(baseUrl) {
     }
     out[m.model_name] = { price, unit, note: price === '' ? '按 token 计费，没读到单价' : `中转站价格表${m.resolution_prices?.["720p"] ? '（720p 档）' : ''}${cny ? '' : '（按 $1≈¥7.2 折算）'}${gr !== 1 ? `，含分组倍率 ${gr}` : ''}` };
   }
-  return out;
+  return { prices: out, types };
 }
+
+// 测试统一接入：文本模型发一句话，视频、图片等用各自不扣费的检查
+const hub = {
+  async test(h) {
+    const llm = require('./providers/llm');
+    const lines = [];
+    let ok = 0;
+    const text = textCfgs(h)[0];
+    if (text) {
+      try {
+        const r = await llm.test(text);
+        lines.push(`文本 ${text.model}：${r.text} · ${r.ms}ms`);
+        ok++;
+      } catch (e) {
+        lines.push(`文本 ${text.model}：${e.message}`);
+      }
+    }
+    for (const v of virtuals(h)) {
+      const a = ADAPTERS[v.vendor];
+      if (!a?.test || /^vision|^asr/.test(v.vendor)) continue; // 看图、语音的测试要真的发图发音频，用到时再检查
+      const label = KINDS[v.id.split(':')[1]] || '';
+      try {
+        lines.push(`${label} ${v.options.model}：${await a.test(v)}`);
+        ok++;
+      } catch (e) {
+        lines.push(`${label} ${v.options.model}：${e.message}`);
+      }
+    }
+    if (!lines.length) throw err('还没有启用文本、图片或视频模型：点「模型开关」勾选要用的模型');
+    if (!ok) throw err(lines.join('；'), 424);
+    return lines.join('；');
+  },
+};
+ADAPTERS.hub = hub;
 
 async function test(id) {
   const c = get(id);
@@ -500,4 +729,4 @@ async function test(id) {
   return { message: await adapter(c).test(c) };
 }
 
-module.exports = { VENDORS, catalog, list, publicList, save, remove, get, active, adapter, register, request, test, normalizeOffer, modelsOf, withModel, listModels, relayPricing, UNITS };
+module.exports = { VENDORS, KINDS, catalog, list, publicList, save, remove, get, active, adapter, register, request, test, normalizeOffer, modelsOf, withModel, listModels, relayPricing, UNITS, relayBase, classify, virtuals, textCfgs, textPool, mediaPool, markFail, markOk, autoFallback, setPrefs, setModels, migrate, hubList };

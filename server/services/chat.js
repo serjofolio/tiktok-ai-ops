@@ -52,6 +52,8 @@ async function reply(id, { message, useKb = true }, send, signal) {
       if (d.text) (out += d.text), send('delta', { text: d.text });
     }, { signal });
     out = r.text || out;
+    // 首选模型出错、换成了备用模型：记下实际回答的模型
+    if (r.model && r.model !== provider.model) Object.assign(provider, { model: r.model, name: r.provider || provider.name });
   } catch (e) {
     chats.update(id, { messages: chat.messages, title: chat.title }); // 保留用户的问题
     throw e;

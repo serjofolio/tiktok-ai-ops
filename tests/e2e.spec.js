@@ -44,49 +44,62 @@ test('未接入模型时给出明确提示', async ({ page }) => {
   await expect(page.locator('#mode-chip')).toContainText('未接入大模型');
 });
 
-test('接入配置：预设、获取模型、启用、测试、错误提示', async ({ page }) => {
+test('接入配置：一个入口添加模型，预设、获取模型、首选、测试、错误提示', async ({ page }) => {
   await page.goto('/#/providers');
+  await expect(page.locator('#add-media')).toHaveCount(0);
   await page.click('#add');
   await expect(page.locator('.preset-card', { hasText: '智谱 GLM 编码套餐' })).toBeVisible();
-  // 智谱预设自动填好地址
+  await expect(page.locator('.preset-card.rec[data-preset=relay]')).toContainText('大多数中转站');
+  // 智谱预设自动填好地址和协议
   await page.locator('.preset-card', { hasText: '智谱 GLM（Anthropic 协议）' }).click();
-  await expect(page.locator('#pf [name=baseUrl]')).toHaveValue('https://open.bigmodel.cn/api/anthropic');
-  await page.click('#back');
-  // 自定义：接到本地模拟上游
-  await page.locator('.preset-card', { hasText: '自定义' }).click();
-  await page.fill('#pf [name=name]', '测试 GLM');
-  await page.fill('#pf [name=baseUrl]', `${UP}/v1`);
-  await page.fill('#pf [name=apiKey]', 'sk-test');
-  await page.click('#fetch');
-  await expect(page.locator('#models [data-m]')).toHaveCount(2);
-  await page.locator('#models [data-m=glm-test]').click();
-  await expect(page.locator('#pf [name=model]')).toHaveValue('glm-test');
-  await page.click('#save');
-  await expect(page.locator('.provider-item.on')).toContainText('测试 GLM');
-  await expect(page.locator('#mode-chip')).toContainText('glm-test');
-  await page.locator('.provider-item.on [data-act=test]').click();
-  await expect(page.locator('.provider-item.on [data-result]')).toContainText('连接成功');
-
-  // Anthropic 协议的第二个供应商，地址多写了 /v1 也能用；Key 错误时给出原因
+  await expect(page.locator('[data-opt=baseUrl]')).toHaveValue('https://open.bigmodel.cn/api/anthropic');
+  await expect(page.locator('#proto [data-v=anthropic]')).toHaveClass(/on/);
+  await page.locator('.modal [data-close]').first().click();
+  // 自定义：接到本地模拟上游，读出模型自动分类，第一个文本模型自动启用
   await page.click('#add');
-  await page.locator('.preset-card', { hasText: '自定义' }).click();
-  await page.fill('#pf [name=name]', 'Anthropic 兼容');
+  await page.locator('.preset-card[data-preset=custom]').click();
+  await page.fill('.modal [name=name]', '测试 GLM');
+  await page.fill('[data-opt=baseUrl]', `${UP}/v1`);
+  await page.fill('[data-cred=apiKey]', 'sk-test');
+  await page.click('#fm');
+  await expect(page.locator('.cc-tr.hub[data-i]')).toHaveCount(2);
+  await expect(page.locator('.cc-tip', { hasText: '读到 2 个模型' })).toContainText('文本 2');
+  await expect(page.locator('.cc-tr.hub[data-i] [data-m=id]').first()).toHaveValue('glm-test');
+  await expect(page.locator('.cc-tr.hub[data-i] [data-m=on]').first()).toBeChecked();
+  await expect(page.locator('.cc-tr.hub[data-i] [data-m=on]').nth(1)).not.toBeChecked();
+  await page.click('#ok');
+  const glm = page.locator('.mh-card', { hasText: '测试 GLM' });
+  await expect(glm).toContainText('首选文本');
+  await expect(glm.locator('.mh-count').first()).toContainText('文本 1/2');
+  await expect(page.locator('#mode-chip')).toContainText('glm-test');
+  await glm.locator('[data-act=test]').click();
+  await expect(glm.locator('[data-result]')).toContainText('连接成功');
+
+  // Anthropic 协议的第二个，地址多写了 /v1 也能用；Key 错误时给出原因
+  await page.click('#add');
+  await page.locator('.preset-card[data-preset=custom]').click();
+  await page.fill('.modal [name=name]', 'Anthropic 兼容');
   await page.locator('#proto [data-v=anthropic]').click();
-  await page.fill('#pf [name=baseUrl]', `${UP}/anthropic/v1`);
-  await page.fill('#pf [name=apiKey]', 'sk-wrong');
-  await page.fill('#pf [name=model]', 'glm-test');
-  await page.click('#save');
-  const item = page.locator('.provider-item', { hasText: 'Anthropic 兼容' });
+  await page.fill('[data-opt=baseUrl]', `${UP}/anthropic/v1`);
+  await page.fill('[data-cred=apiKey]', 'sk-wrong');
+  await page.click('#am');
+  await page.locator('.cc-tr.hub[data-i] [data-m=id]').last().fill('glm-test');
+  await page.click('#ok');
+  const item = page.locator('.mh-card', { hasText: 'Anthropic 兼容' });
   await item.locator('[data-act=test]').click();
   await expect(item.locator('[data-result]')).toContainText('401');
   await item.locator('[data-act=edit]').click();
-  await page.fill('#pf [name=apiKey]', 'sk-test');
-  await page.click('#save');
+  await page.fill('[data-cred=apiKey]', 'sk-test');
+  await page.click('#ok');
   await item.locator('[data-act=test]').click();
   await expect(item.locator('[data-result]')).toContainText('连接成功');
-  // 切回 OpenAI 兼容的那个
-  await page.locator('.provider-item', { hasText: '测试 GLM' }).locator('[data-act=use]').click();
-  await expect(page.locator('.provider-item.on')).toContainText('测试 GLM');
+  // 换首选文本模型，再换回来
+  const sel = page.locator('[data-pref=text]');
+  await sel.selectOption({ label: 'Anthropic 兼容 · glm-test' });
+  await expect(item).toContainText('首选文本');
+  await expect(page.locator('#mode-chip')).toContainText('Anthropic 兼容');
+  await sel.selectOption({ label: '测试 GLM · glm-test' });
+  await expect(glm).toContainText('首选文本');
 });
 
 test('智能选品：导入 FastMoss 真实导出 → 六维评分 → AI 选品报告 → 逐个研判', async ({ page }) => {

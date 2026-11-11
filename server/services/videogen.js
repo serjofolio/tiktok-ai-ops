@@ -338,7 +338,7 @@ function freeCost(c, model, seconds, tasks) {
 function planFree(body) {
   const script = freeScript(body);
   const c0 = body.connectorId ? connectors.get(body.connectorId) : connectors.active('video')[0];
-  if (!c0 || connectors.VENDORS[c0.vendor]?.kind !== 'video') throw err('还没有接入视频模型：到「接入配置 → 视频与图片模型」添加，你的中转站也可以');
+  if (!c0 || connectors.VENDORS[c0.vendor]?.kind !== 'video') throw err('还没有接入视频模型：到「接入配置」点「添加模型」，启用一个视频模型，你的中转站也可以');
   const model = connectors.modelsOf(c0).find((x) => x.id === body.model)?.id || c0.options?.model || '';
   const c = connectors.withModel(c0, model);
   const p = plan({ script, connectorId: c0.id, mode: body.mode === 'whole' ? 'whole' : 'scenes' });
@@ -405,9 +405,29 @@ async function run(id) {
     const job = jobs.get(id);
     const c0 = connectors.get(job.connectorId);
     // 任务记下了提交时选的模型：重试也用同一个
-    const c = c0 && job.model ? connectors.withModel(c0, job.model) : c0;
+    let c = c0 && job.model ? connectors.withModel(c0, job.model) : c0;
     if (!c) return failJob('这个视频模型的连接已被删除');
-    const adapter = ADAPTERS[c.vendor];
+    let adapter = ADAPTERS[c.vendor];
+    // 每段记下自己是用哪个模型提交的：中途换了模型，已经在生成的段还按原来的模型查
+    const connOf = (clip) => {
+      if (!clip.connectorId || (clip.connectorId === jobs.get(id).connectorId && clip.model === jobs.get(id).model)) return c;
+      const x = connectors.get(clip.connectorId);
+      return x ? connectors.withModel(x, clip.model) : c;
+    };
+    // 提交就失败（没额度、Key 失效、被拒等）：换下一个启用的视频模型，最多换 2 次
+    const tried = new Set([`${job.connectorId}|${job.model || c.options?.model || ''}`]);
+    const switchModel = (e) => {
+      const cur = jobs.get(id);
+      connectors.markFail(`${c.hub || c.id}|${cur.model || c.options?.model || ''}`);
+      if (!connectors.autoFallback() || tried.size >= 3) return false;
+      const next = connectors.mediaPool('video').find((x) => !tried.has(`${x.connectorId}|${x.model}`) && ADAPTERS[x.c.vendor]);
+      if (!next) return false;
+      tried.add(`${next.connectorId}|${next.model}`);
+      c = next.c;
+      adapter = ADAPTERS[c.vendor];
+      jobs.update(id, { connectorId: next.connectorId, model: next.model, connectorName: c.name, vendor: c.vendor, fallbacks: [...(cur.fallbacks || []), { from: cur.model || '', to: next.model, error: String(e.message).slice(0, 160), at: db.now() }] });
+      return true;
+    };
     const dir = job.dir ? path.join(db.MEDIA_DIR, job.dir) : media.newDir('job');
     if (!job.dir) jobs.update(id, { dir: path.relative(db.MEDIA_DIR, dir) });
     const image = job.clips.some((x) => x.status === 'pending') ? await imageFor(job) : '';
@@ -426,9 +446,11 @@ async function run(id) {
           const own = ownImage(clip.imageMediaId);
           const first = own ? dataOf(own) : image;
           const taskId = await adapter.submit(c, { prompt: clip.prompt, duration: clip.duration, ratio: cur.ratio, audio: cur.audio, image: first, refs: first ? [] : refs, multiShot: clip.multiShot });
-          patchClip(id, i, { status: 'running', taskId, submittedAt: db.now() });
+          const now = jobs.get(id);
+          patchClip(id, i, { status: 'running', taskId, submittedAt: db.now(), connectorId: now.connectorId, model: now.model || c.options?.model || '' });
         } catch (e) {
-          patchClip(id, i, { status: 'failed', error: e.message });
+          if (switchModel(e)) slots++; // 这一段留着，下一轮用新模型提交
+          else patchClip(id, i, { status: 'failed', error: e.message });
         }
       }
       const now = jobs.get(id);
@@ -440,7 +462,8 @@ async function run(id) {
           continue;
         }
         try {
-          const r = await adapter.poll(c, clip.taskId);
+          const cc = connOf(clip);
+          const r = await ADAPTERS[cc.vendor].poll(cc, clip.taskId);
           errorsInARow.delete(i);
           if (r.status === 'failed') patchClip(id, i, { status: 'failed', error: r.error });
           else if (r.status === 'done') {

@@ -39,7 +39,7 @@ ${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 // 出一张首帧：商品参考图在前，返回媒体记录（页面直接显示，生成视频时当首帧）
 async function keyframe(body = {}) {
   const c = body.connectorId ? connectors.get(body.connectorId) : connectors.active('image')[0];
-  if (!c || connectors.VENDORS[c.vendor]?.kind !== 'image') throw err('还没有接入图片模型：到「接入配置 → 视频与图片模型」添加');
+  if (!c || connectors.VENDORS[c.vendor]?.kind !== 'image') throw err('还没有接入图片模型：到「接入配置」点「添加模型」，启用一个图片模型');
   const prompt = String(body.prompt || '').trim();
   if (!prompt) throw err('先写这个镜头的画面');
   media.assertQuota();
@@ -47,8 +47,8 @@ async function keyframe(body = {}) {
   const model = connectors.modelsOf(c).find((x) => x.id === body.model)?.id || c.options?.model || '';
   const full = /no text/i.test(prompt) ? prompt : `${prompt} ${craft.KEYFRAME_GUARD}`;
   const dir = media.newDir('keyframe');
-  const out = await imagegen.generate(c, { prompt: full, refs, model }, path.join(dir, `kf-${Date.now()}`));
-  const m = connectors.modelsOf(c).find((x) => x.id === model);
+  const out = await imagegen.generateAny(c, { prompt: full, refs, model }, path.join(dir, `kf-${Date.now()}`));
+  const m = connectors.modelsOf(connectors.get(out.connectorId) || c).find((x) => x.id === out.model);
   return { ...media.register({ abs: out.abs, kind: 'keyframe', title: prompt.slice(0, 60), mime: out.mime }), price: m && m.price !== '' ? m.price : null };
 }
 

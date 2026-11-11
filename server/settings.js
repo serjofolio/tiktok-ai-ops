@@ -1,5 +1,6 @@
 // 平台配置，保存在 data/settings.json，每个用户一份（users[uid]），互相不可见：
-// - providers：大模型供应商列表（类似 CC Switch，可添加/编辑/删除/一键启用）
+// - connectors：模型接入（文本、图片、视频等，见 connectors.js）和数据源 / ERP 连接；modelPrefs 每类的首选模型，autoFallback 出错自动换模型
+// - providers：旧版的大模型供应商，第一次读到时迁移进 connectors（见 connectors.migrate）
 // - dataSources：FastMoss、1688 等数据源接口凭证（申请通过后填写）
 // - selection：利润测算的默认参数
 // - store：店铺信息
@@ -79,7 +80,14 @@ function get() {
   const u = ctx.user();
   if (!u) return normalize();
   if (!f.users[u.id]) f.users[u.id] = normalize();
-  return f.users[u.id];
+  const cfg = f.users[u.id];
+  // 旧版「模型供应商」和中转站连接器合并成统一的模型接入（每个账号只做一次）
+  if (!cfg.modelsV2) {
+    require('./connectors').migrate(cfg);
+    cfg.modelsV2 = true;
+    save();
+  }
+  return cfg;
 }
 
 function set(value) {
@@ -129,49 +137,10 @@ function update(patch) {
   return next;
 }
 
-// ---------- 供应商 ----------
+// ---------- 当前文本模型：统一接入里的首选文本模型（出错时 llm.js 会按顺序换备用的） ----------
 function activeProvider() {
-  const s = get();
-  return s.providers.find((p) => p.id === s.activeProviderId) || null;
-}
-
-function saveProvider(input) {
-  const s = get();
-  const fields = ['name', 'protocol', 'baseUrl', 'apiKey', 'model', 'temperature', 'presetId', 'website'];
-  const clean = {};
-  for (const f of fields) if (input[f] !== undefined) clean[f] = typeof input[f] === 'string' ? input[f].trim() : input[f];
-  if (!clean.name && !input.id) throw Object.assign(new Error('请填写名称'), { status: 400 });
-  if (clean.protocol && !['openai', 'anthropic'].includes(clean.protocol)) throw Object.assign(new Error('协议只能是 openai 或 anthropic'), { status: 400 });
-  let p = input.id && s.providers.find((x) => x.id === input.id);
-  if (p) {
-    if (typeof clean.apiKey === 'string' && (clean.apiKey === '' || clean.apiKey.includes('••'))) delete clean.apiKey;
-    Object.assign(p, clean, { updatedAt: new Date().toISOString() });
-  } else {
-    if (!clean.baseUrl) throw Object.assign(new Error('请填写 Base URL'), { status: 400 });
-    p = { id: newId(), protocol: 'openai', temperature: 0.7, createdAt: new Date().toISOString(), ...clean };
-    s.providers.push(p);
-    if (!s.activeProviderId) s.activeProviderId = p.id; // 第一个添加的自动启用
-  }
-  set(s);
-  return p;
-}
-
-function removeProvider(id) {
-  const s = get();
-  s.providers = s.providers.filter((p) => p.id !== id);
-  if (s.activeProviderId === id) s.activeProviderId = s.providers[0]?.id || '';
-  set(s);
-}
-
-function activate(id) {
-  const s = get();
-  if (!s.providers.some((p) => p.id === id)) throw Object.assign(new Error('供应商不存在'), { status: 404 });
-  s.activeProviderId = id;
-  set(s);
-}
-
-function getProvider(id) {
-  return get().providers.find((p) => p.id === id) || null;
+  if (!ctx.user()) return null;
+  return require('./connectors').textPool()[0] || null;
 }
 
 function mask(key) {
@@ -179,11 +148,12 @@ function mask(key) {
   return key.length <= 8 ? '••••' : `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
 
+// 给页面看的配置：只有数据源（密钥脱敏）、店铺和利润参数；模型接入的密钥走 connectors.publicList()
 function publicView() {
-  const s = JSON.parse(JSON.stringify(get()));
-  s.providers = s.providers.map((p) => ({ ...p, apiKey: mask(p.apiKey), hasKey: !!p.apiKey }));
-  for (const src of Object.values(s.dataSources)) for (const f of Object.keys(src)) if (/key|secret/i.test(f)) src[f] = mask(src[f]);
+  const all = get();
+  const s = JSON.parse(JSON.stringify({ dataSources: all.dataSources, store: all.store, selection: all.selection }));
+  for (const src of Object.values(s.dataSources || {})) for (const f of Object.keys(src)) if (/key|secret/i.test(f)) src[f] = mask(src[f]);
   return s;
 }
 
-module.exports = { get, update, claimLegacy, removeUser, system, setSystem, publicView, DEFAULTS, activeProvider, saveProvider, removeProvider, activate, getProvider };
+module.exports = { get, update, claimLegacy, removeUser, system, setSystem, publicView, DEFAULTS, activeProvider };
