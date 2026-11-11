@@ -13,6 +13,19 @@ const jobs = db.collection('video_jobs');
 const err = (msg, status = 400) => Object.assign(new Error(msg), { status });
 const POLL_MS = Number(process.env.VIDEO_POLL_MS) || 10000;
 const CLIP_TIMEOUT = 40 * 60 * 1000;
+// 模型那边临时忙（503「上游繁忙」、429 限流、502/504、连接被断开）：同一段等一会儿再提交，不算失败，这类报错一般也不扣费
+// 没额度、Key 不对、没有这个模型、内容被拦是真失败：直接换模型或报错
+const BUSY_MS = Number(process.env.VIDEO_BUSY_MS) || 20000;
+const BUSY_TRIES = 5; // 依次等 20、40、80、160、300 秒，前后约 10 分钟
+const HARD = /额度|余额|欠费|充值|quota|insufficient|billing|unauthori[sz]ed|forbidden|invalid.{0,12}(key|token)|无效的?令牌|令牌.{0,8}(无效|过期|无权)|无可用渠道|no available channel|model_not_found|模型不存在|不支持|not supported|违规|敏感|审核|moderation/i;
+function busy(e) {
+  const msg = String(e?.message || '');
+  if (HARD.test(msg)) return false;
+  if ([408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529].includes(e?.httpStatus)) return true;
+  return !!e?.transient || /繁忙|饱和|排队|busy|overload|rate.?limit|too many requests|稍后再?试|try again later|temporarily unavailable/i.test(msg);
+}
+// 模型属于哪一家：同一家的其他档位多半走同一条线路，一个忙另一个也忙
+const family = (model) => String(model || '').toLowerCase().replace(/^(doubao|bytedance|volc)-/, '').split(/[-_.\s\d]/)[0];
 const CONCURRENCY = 2;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -415,12 +428,20 @@ async function run(id) {
       return x ? connectors.withModel(x, clip.model) : c;
     };
     // 提交就失败（没额度、Key 失效、被拒等）：换下一个启用的视频模型，最多换 2 次
+    // 只换到每段花费不超过原来 2 倍的模型，免得一出错就换成贵好几倍的；原来的在排队时只换别家的
     const tried = new Set([`${job.connectorId}|${job.model || c.options?.model || ''}`]);
-    const switchModel = (e) => {
+    const costOfClip = (cid, model, sec) => {
+      const x = connectors.get(cid);
+      return x ? freeCost(x, model, sec, 1) : null;
+    };
+    const switchModel = (e, clip, { waiting = false } = {}) => {
       const cur = jobs.get(id);
-      connectors.markFail(`${c.hub || c.id}|${cur.model || c.options?.model || ''}`);
+      const from = cur.model || c.options?.model || '';
+      connectors.markFail(`${c.hub || c.id}|${from}`);
       if (!connectors.autoFallback() || tried.size >= 3) return false;
-      const next = connectors.mediaPool('video').find((x) => !tried.has(`${x.connectorId}|${x.model}`) && ADAPTERS[x.c.vendor]);
+      const sec = clip?.duration || 5;
+      const base = costOfClip(cur.connectorId, from, sec);
+      const next = connectors.mediaPool('video').find((x) => !tried.has(`${x.connectorId}|${x.model}`) && ADAPTERS[x.c.vendor] && (!waiting || family(x.model) !== family(from)) && (base == null || (costOfClip(x.connectorId, x.model, sec) ?? Infinity) <= base * 2));
       if (!next) return false;
       tried.add(`${next.connectorId}|${next.model}`);
       c = next.c;
@@ -434,6 +455,7 @@ async function run(id) {
     const dataOf = (m) => `data:${m.mime};base64,${fs.readFileSync(media.absPath(m)).toString('base64')}`;
     const refs = (job.refs || []).map(ownImage).filter(Boolean).map(dataOf);
     const errorsInARow = new Map();
+    let holdUntil = 0; // 模型那边繁忙：这之前不提交新的段，免得几段一起撞
     for (;;) {
       const cur = jobs.get(id);
       if (!cur) return; // 任务被删除
@@ -441,16 +463,30 @@ async function run(id) {
       let slots = CONCURRENCY - running;
       for (const [i, clip] of cur.clips.entries()) {
         if (clip.status !== 'pending' || slots <= 0) continue;
+        if (Date.now() < holdUntil || (clip.retryAt && Date.now() < Date.parse(clip.retryAt))) continue;
         slots--;
         try {
           const own = ownImage(clip.imageMediaId);
           const first = own ? dataOf(own) : image;
           const taskId = await adapter.submit(c, { prompt: clip.prompt, duration: clip.duration, ratio: cur.ratio, audio: cur.audio, image: first, refs: first ? [] : refs, multiShot: clip.multiShot });
           const now = jobs.get(id);
-          patchClip(id, i, { status: 'running', taskId, submittedAt: db.now(), connectorId: now.connectorId, model: now.model || c.options?.model || '' });
+          patchClip(id, i, { status: 'running', taskId, submittedAt: db.now(), connectorId: now.connectorId, model: now.model || c.options?.model || '', busy: 0, retryAt: '', error: '' });
         } catch (e) {
-          if (switchModel(e)) slots++; // 这一段留着，下一轮用新模型提交
-          else patchClip(id, i, { status: 'failed', error: e.message });
+          const n = (clip.busy || 0) + 1;
+          if (busy(e) && n <= BUSY_TRIES) {
+            // 忙了两次：有别家的模型就换（换了重新计数），没有就接着等
+            if (n >= 2 && switchModel(e, clip, { waiting: true })) {
+              patchClip(id, i, { busy: 0, retryAt: '', error: '' });
+              slots++;
+              continue;
+            }
+            const wait = Math.min(BUSY_MS * 2 ** (n - 1), 5 * 60 * 1000);
+            holdUntil = Date.now() + wait;
+            patchClip(id, i, { busy: n, retryAt: new Date(holdUntil).toISOString(), error: `模型那边繁忙，${Math.round(wait / 1000)} 秒后自动重试（第 ${n}/${BUSY_TRIES} 次）：${e.message}`.slice(0, 300) });
+            break;
+          }
+          if (switchModel(e, clip)) slots++; // 这一段留着，下一轮用新模型提交
+          else patchClip(id, i, { status: 'failed', error: busy(e) ? `模型那边一直繁忙，自动重试了 ${BUSY_TRIES} 次还不行（${e.message}）。过一会儿点「重试失败的段」，或者换一个模型`.slice(0, 300) : e.message });
         }
       }
       const now = jobs.get(id);
@@ -484,7 +520,8 @@ async function run(id) {
       if (!after) return;
       const finished = after.clips.every((x) => x.status === 'done' || x.status === 'failed');
       const doneCount = after.clips.filter((x) => x.status === 'done').length;
-      jobs.update(id, { step: `已完成 ${doneCount}/${after.clips.length} 段` });
+      const wait = holdUntil - Date.now();
+      jobs.update(id, { step: `已完成 ${doneCount}/${after.clips.length} 段${!finished && wait > 0 ? `，模型那边繁忙，约 ${Math.ceil(wait / 1000)} 秒后自动重试` : ''}` });
       if (finished) break;
       await sleep(POLL_MS);
     }
@@ -546,7 +583,7 @@ function retry(id) {
   if (!job.clips.some((x) => x.status === 'failed')) throw err('没有失败的片段');
   if (job.mediaId) media.remove(job.mediaId);
   for (const clip of job.clips) if (clip.mediaId) media.remove(clip.mediaId);
-  jobs.update(id, (j) => ({ status: 'running', error: '', warning: '', mediaId: '', step: '重试失败的片段', clips: j.clips.map((x) => ({ ...x, mediaId: undefined, ...(x.status === 'failed' ? { status: 'pending', error: '', taskId: '' } : {}) })) }));
+  jobs.update(id, (j) => ({ status: 'running', error: '', warning: '', mediaId: '', step: '重试失败的片段', clips: j.clips.map((x) => ({ ...x, mediaId: undefined, ...(x.status === 'failed' ? { status: 'pending', error: '', taskId: '', busy: 0, retryAt: '' } : {}) })) }));
   run(id);
   return jobs.get(id);
 }
@@ -573,4 +610,4 @@ function recover(userById) {
 const list = () => jobs.all();
 const getJob = (id) => jobs.get(id);
 
-module.exports = { opt, planFree, publicFreePlan, startFree, plan, publicPlan, costOf, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };
+module.exports = { busy, BUSY_MS, BUSY_TRIES, opt, planFree, publicFreePlan, startFree, plan, publicPlan, costOf, startJob, retry, removeJob, recover, list, getJob, ADAPTERS, scenePrompt, wholePrompt, durationRule, snap };

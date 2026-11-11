@@ -33,7 +33,7 @@ export async function render(view, [openId]) {
       </div>
       <label class="field">卖点和事实（只写真的，AI 不会编）<textarea class="input" id="points" rows="2" placeholder="例如：18K 镀金不锈钢，防水不褪色，可调节长度，RM 19.90"></textarea></label>
       <div class="field"><span>商品素材（图片或视频，可以不传）</span>
-        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好；复制的图片可以直接 Ctrl+V 粘贴</span></p><input type="file" id="files" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
+        <div class="dropzone sm" id="dz">${icon('upload', 22)}<p><b>拖入商品图片或实拍视频，或点击选择</b><br><span class="small">图片 JPG / PNG / WebP；视频会截 3 帧当参考图。最多 6 张参考图，正面、侧面、细节各一张最好，带文字、拼图、好几件商品的图别放；复制的图片可以直接 Ctrl+V 粘贴</span></p><input type="file" id="files" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
         <div class="asset-row" id="assets"></div></div>
       <h4 class="studio-sec">2 · 怎么拍</h4>
       <div class="grid g3">
@@ -59,7 +59,7 @@ export async function render(view, [openId]) {
         <label class="field">屏幕字 / 口播语言<select class="input" id="lang">${LANGS.map((l) => `<option>${l}</option>`).join('')}</select></label>
         <label class="field">直接出片的合格率（假设）<select class="input" id="pass"><option value="0.3">30%</option><option value="0.5" selected>50%</option><option value="0.7">70%</option></select></label>
       </div>
-      <label class="switch"><input type="checkbox" id="audio"><span></span>让模型生成口播和声音（外语口型不一定准；不开也可以后期配音）</label>
+      <label class="switch"><input type="checkbox" id="audio"><span></span>让模型生成口播和声音（外语口型不一定准；不开也可以后期配音）</label><span class="small muted">TikTok Shop 已经不允许直播用 AI 配音，带货视频也建议口播自己录，观众更信、也更稳</span>
       <label class="field">补充要求（可选）<input class="input" id="note" placeholder="例如：模特是东南亚年轻女性；不要出现室外场景"></label>
       </div></details>
       <div class="studio-est" id="est"></div>
@@ -186,7 +186,7 @@ async function detail(view, id, alive, setPoll, stopPoll) {
   };
   const card = (x) => {
     const v = x.video;
-    const vs = v ? ({ pending: '排队', running: '生成中', checking: '复检中', done: '完成', failed: '失败' })[v.status] : '';
+    const vs = v ? (v.status === 'pending' && v.busy ? '等待重试' : ({ pending: '排队', running: '生成中', checking: '复检中', done: '完成', failed: '失败' })[v.status]) : '';
     return `<div class="card brief ${x.approved ? 'on' : ''}" data-n="${x.n}">
       <div class="brief-h"><b>${x.n}</b><div class="col" style="gap:2px;min-width:0"><strong class="small">${esc(x.angle)}</strong><span class="small muted">${esc(x.hookName)} · ${esc(x.sceneName)}</span></div>
         <label class="switch sm" title="要不要生成这条视频"><input type="checkbox" data-approve ${x.approved ? 'checked' : ''} ${v && v.status !== 'failed' ? 'disabled' : ''}><span></span></label></div>

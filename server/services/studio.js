@@ -203,7 +203,7 @@ ${playbook.brief({ jewelry: batch.product.jewelry })}
 
 ${craft.brief()}
 
-商品信息：${JSON.stringify(batch.product.facts)}
+商品信息：${JSON.stringify(batch.product.facts)}${craft.withGlossary(JSON.stringify(batch.product.facts))}
 参考图：${batch.refs.length ? `有 ${Math.min(4, batch.refs.length)} 张真实商品图，提示词里统一称为 the product from image 1` : '没有商品图：关键帧只能凭文字画商品，画面以人和场景为主，商品不要特写'}
 ${batch.personRefs?.length ? `人物：这批视频用同一个人，提示词里写 the same person as in image ${personNo(batch)}，不要再描述长相\n` : ''}视频格式：${(FORMATS[batch.format] || FORMATS.mix).name}（${(FORMATS[batch.format] || FORMATS.mix).desc}）
 ${multiShot(batch) ? `镜头：每条 ${batch.seconds} 秒，一次生成 2–3 个镜头。motion 写成时间线，例如 "Shot 1 (0-3s): ... Cut to Shot 2 (3-7s): ... Cut to Shot 3: ..."，第一个镜头从关键帧画面开始，每个镜头只有一个动作，最后一个镜头商品清楚地朝向镜头\n` : ''}${batch.viral ? `学习这条爆款的结构和节奏（只学手法，不照抄台词、画面和品牌）：${JSON.stringify(batch.viral)}\n` : ''}
@@ -456,6 +456,7 @@ async function runRender(id) {
     const refs = batch.mode === 'direct' ? allRefs(batch).map((f) => dataUri(f)) : [];
     const errorsInARow = new Map();
     const set = (n, patch) => patchBrief(id, n, (x) => ({ video: { ...x.video, ...patch } }));
+    let holdUntil = 0; // 模型那边繁忙：这之前不提交新的，免得几条一起撞
     for (;;) {
       const cur = batches.get(id);
       if (!cur) return;
@@ -463,14 +464,23 @@ async function runRender(id) {
       let slots = VIDEO_CONCURRENCY - mine.filter((b) => b.video.status === 'running').length;
       for (const b of mine) {
         if (b.video.status !== 'pending' || slots <= 0) continue;
+        if (Date.now() < holdUntil || (b.video.retryAt && Date.now() < Date.parse(b.video.retryAt))) continue;
         slots--;
         try {
           const kf = b.pick != null ? media.records.get(b.candidates[b.pick]?.mediaId) : null;
           const image = kf ? dataUri(media.absPath(kf), kf.mime) : '';
           const taskId = await adapter.submit(c, { prompt: motionPrompt(b, cur), duration: cur.seconds, ratio: cur.ratio, audio: cur.audio, image, refs: image ? [] : refs });
-          set(b.n, { status: 'running', taskId, submittedAt: db.now() });
+          set(b.n, { status: 'running', taskId, submittedAt: db.now(), busy: 0, retryAt: '', error: '' });
         } catch (e) {
-          set(b.n, { status: 'failed', error: e.message.slice(0, 300) });
+          // 503「上游繁忙」这类临时错误：等一会儿再提交同一条，不算失败
+          const k = (b.video.busy || 0) + 1;
+          if (videogen.busy(e) && k <= videogen.BUSY_TRIES) {
+            const wait = Math.min(videogen.BUSY_MS * 2 ** (k - 1), 5 * 60 * 1000);
+            holdUntil = Date.now() + wait;
+            set(b.n, { busy: k, retryAt: new Date(holdUntil).toISOString(), error: `模型那边繁忙，${Math.round(wait / 1000)} 秒后自动重试（第 ${k}/${videogen.BUSY_TRIES} 次）：${e.message}`.slice(0, 300) });
+            break;
+          }
+          set(b.n, { status: 'failed', error: (videogen.busy(e) ? `模型那边一直繁忙，自动重试了 ${videogen.BUSY_TRIES} 次还不行（${e.message}）。过一会儿点「重试」` : e.message).slice(0, 300) });
         }
       }
       for (const b of batches.get(id).briefs.filter((x) => x.video?.status === 'running')) {
@@ -503,7 +513,8 @@ async function runRender(id) {
       const vids = after.briefs.filter((b) => b.video);
       const done = vids.filter((b) => b.video.status === 'done').length;
       const finished = vids.every((b) => ['done', 'failed'].includes(b.video.status));
-      batches.update(id, { step: `生成视频 ${done}/${vids.length}` });
+      const wait = holdUntil - Date.now();
+      batches.update(id, { step: `生成视频 ${done}/${vids.length}${!finished && wait > 0 ? `，模型那边繁忙，约 ${Math.ceil(wait / 1000)} 秒后自动重试` : ''}` });
       if (finished) {
         const failed = vids.length - done;
         batches.update(id, { status: 'done', step: failed ? `完成，${failed} 条失败，可以重试` : `完成：${done} 条视频`, finishedAt: db.now() });

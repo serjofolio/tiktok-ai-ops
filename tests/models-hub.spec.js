@@ -90,6 +90,86 @@ test('出错自动换模型：首选文本模型没额度时换备用，视频�
   if (fake) await json(await page.request.post(`/api/providers/${fake.id}/activate`));
 });
 
+test('模型那边繁忙（503）：同一段等一会儿自动再提交，不算失败；一直忙就换别家的模型，不换同一家的其他档位，也不换贵一倍以上的', async ({ page }) => {
+  test.setTimeout(120000);
+  await admin(page);
+  for (const c of (await json(await page.request.get('/api/connectors'))).items.filter((x) => ['video', 'image', 'vision', 'asr'].includes(x.kind) || (x.vendor === 'hub' && x.options.baseUrl !== `${UP}/v1`))) await json(await page.request.delete(`/api/connectors/${c.id}`));
+  const hub = await json(await page.request.post('/api/connectors', { data: { vendor: 'hub', name: '高峰期排队的中转站', creds: { apiKey: 'sk-relay' }, options: { baseUrl: `${UP}/relay/v1` }, models: [
+    { id: 'jam-video', kind: 'video', enabled: true, price: 0.3, unit: '秒' },
+    { id: 'jam-video-hd', kind: 'video', enabled: true, price: 0.35, unit: '秒' }, // 同一家：一个在排队，另一个多半也在排队
+    { id: 'wan3.0-video', kind: 'video', enabled: true, price: 9.9, unit: '秒' }, // 贵太多：不自动换过去
+    { id: 'doubao-seedance-2.0-fast-720p', kind: 'video', enabled: true, price: 0.5, unit: '秒' },
+    { id: 'busy-video', kind: 'video', enabled: true, price: 0.3, unit: '秒' },
+  ] } }));
+  const s = await json(await page.request.post('/api/scripts/manual', { data: { title: '排队测试', shots: [{ prompt: 'A hand holds the necklace', duration: 5 }] } }));
+  const poll = (id) => expect.poll(async () => (await json(await page.request.get('/api/video-jobs'))).items.find((j) => j.id === id).status, { timeout: 40000 });
+  const jobOf = async (id) => (await json(await page.request.get('/api/video-jobs'))).items.find((j) => j.id === id);
+
+  // 关掉自动换模型：忙两次后第三次提交成功，还是原来的模型，这一段不算失败
+  await json(await page.request.put('/api/models/prefs', { data: { autoFallback: false } }));
+  const busyBefore = (await sent()).busyVideo || 0;
+  const { items: [a] } = await json(await page.request.post('/api/video-jobs/free', { data: { scriptId: s.id, connectorId: `${hub.id}:video`, model: 'busy-video', shots: [{ prompt: 'A hand holds the necklace', duration: 5 }] } }));
+  await poll(a.id).toBe('done');
+  const doneA = await jobOf(a.id);
+  expect(doneA.model).toBe('busy-video');
+  expect(doneA.fallbacks || []).toHaveLength(0);
+  expect(doneA.clips[0]).toMatchObject({ status: 'done', busy: 0 });
+  expect((await sent()).busyVideo - busyBefore).toBe(3);
+  await json(await page.request.put('/api/models/prefs', { data: { autoFallback: true } }));
+
+  // 一直忙：忙两次后换成别家的 Seedance（跳过同一家的 jam-video-hd 和贵 30 倍的 wan3.0）
+  const jamBefore = (await sent()).jam || 0;
+  const { items: [b] } = await json(await page.request.post('/api/video-jobs/free', { data: { scriptId: s.id, connectorId: `${hub.id}:video`, model: 'jam-video', shots: [{ prompt: 'A hand holds the necklace', duration: 5 }] } }));
+  await poll(b.id).toBe('done');
+  const doneB = await jobOf(b.id);
+  expect(doneB.model).toBe('doubao-seedance-2.0-fast-720p');
+  expect(doneB.fallbacks).toHaveLength(1);
+  expect(doneB.fallbacks[0]).toMatchObject({ from: 'jam-video', to: 'doubao-seedance-2.0-fast-720p' });
+  expect(doneB.fallbacks[0].error).toContain('503');
+  expect((await sent()).jam - jamBefore).toBe(2);
+  // 视频库卡片写明自动换了哪个模型
+  await page.goto('/#/scripts/videos');
+  await expect(page.locator(`[data-job="${b.id}"]`)).toContainText('自动换了模型：jam-video → doubao-seedance-2.0-fast-720p');
+
+  for (const id of [a.id, b.id]) await json(await page.request.delete(`/api/video-jobs/${id}`));
+  await json(await page.request.delete(`/api/scripts/${s.id}`));
+  await json(await page.request.delete(`/api/connectors/${hub.id}`));
+});
+
+test('写脚本时切到别的页面再回来：进度还在，写好的脚本自动出现在历史脚本里；款式名（tennis）带说明', async ({ page }) => {
+  test.setTimeout(90000);
+  await admin(page);
+  const list = await json(await page.request.get('/api/providers'));
+  let llm = list.items.find((x) => x.baseUrl === `${UP}/v1`);
+  if (!llm) llm = await json(await page.request.post('/api/providers', { data: { name: '测试模型', protocol: 'openai', baseUrl: `${UP}/v1`, apiKey: 'sk-test', model: 'glm-test' } }));
+  await json(await page.request.post(`/api/providers/${llm.id}/activate`));
+  // 写一条要半分钟：这里让它慢 2.5 秒，够切走再回来
+  await page.route('**/api/scripts/generate', async (route) => {
+    await new Promise((r) => setTimeout(r, 2500));
+    await route.continue();
+  });
+  const glossBefore = (await sent()).glossary || 0;
+  await page.goto('/#/scripts');
+  await page.click('#srcs [data-src=manual]');
+  await page.fill('#mname', 'Gold Tennis Necklace');
+  await page.locator('#count').selectOption('1');
+  const before = Number(await page.locator('#hist-n').textContent());
+  await page.click('#gen');
+  await page.click('#script-tabs [data-tab=videos]');
+  await expect(page).toHaveURL(/#\/scripts\/videos/);
+  await page.click('#script-tabs [data-tab=""]');
+  await expect(page.locator('#gen-progress')).toContainText('正在写');
+  await expect(page.locator('#gen')).toBeDisabled();
+  await expect(page.locator('#hist-n')).toHaveText(String(before + 1), { timeout: 30000 });
+  await expect(page.locator('#hist .list-item').first()).toHaveClass(/on/);
+  await expect(page.locator('#gen')).toBeEnabled();
+  await expect(page.locator('#gen-progress')).toHaveText('');
+  expect((await sent()).glossary - glossBefore).toBeGreaterThan(0);
+  const made = (await json(await page.request.get('/api/scripts'))).items[0];
+  expect(made.productName).toBe('Gold Tennis Necklace');
+  await json(await page.request.delete(`/api/scripts/${made.id}`));
+});
+
 test('旧配置自动合并：模型供应商和同一个中转站的视频连接器合成一个接入，误放的文字模型改回文本，老任务还能找到连接', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tk-migrate-'));
   const script = `

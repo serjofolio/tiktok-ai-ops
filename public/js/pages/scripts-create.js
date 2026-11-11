@@ -66,7 +66,7 @@ export async function render(view, [scriptId]) {
         <label class="field">出几个版本<select class="input" id="variants"><option value="1">1 个</option><option value="2">2 个</option><option value="3">3 个</option><option value="4">4 个</option></select></label>
       </div>
       <div class="field ref-drop" id="refdrop"><span>商品参考图 <i class="muted">可选</i></span>
-        <span class="small muted">让模型照着真实商品画，商品不容易走样</span>
+        <span class="small muted">让模型照着真实商品画，商品不容易走样。放 2–4 张就够：白底正面、戴在身上、细节特写；带文字、拼图、好几件商品的图别放，模型会把字和别的东西一起画进去</span>
         <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn sm ghost" id="refbtn">${icon('upload', 14)}上传商品图</button><button type="button" class="btn sm ghost" id="refpaste" data-loading="读取中…">${icon('copy', 14)}粘贴图片</button><input type="file" id="reffiles" data-paste-default multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden></div>
         <span class="small muted">${PASTE_TIP}</span>
         <div class="asset-row" id="refs"></div></div>
@@ -74,7 +74,7 @@ export async function render(view, [scriptId]) {
         <label class="field">生成方式<select class="input" id="mode"><option value="scenes">每个镜头单独生成，再拼起来</option><option value="whole">整条一次生成（人和画面更连贯）</option></select></label>
         <label class="field">AI 出首帧用的图片模型<select class="input" id="image">${opts(d.image, '张') || '<option value="">没有接入，只能上传首帧</option>'}</select></label>
         <label class="field">口播语言<select class="input" id="lang">${LANGS.map((l) => `<option>${l}</option>`).join('')}</select></label>
-        <label class="switch"><input type="checkbox" id="audio"><span></span>让模型生成声音和口播</label>
+        <label class="switch"><input type="checkbox" id="audio"><span></span>让模型生成声音和口播</label><span class="small muted">TikTok Shop 已经不允许直播用 AI 配音，带货视频也建议关掉这个，口播自己录（剪映里配），观众更信、也更稳</span>
         <label class="switch"><input type="checkbox" id="guard"><span></span>自动加「商品不变形、不加东西、不写字」</label>
       </div></details>
       <div class="cs-plan small" id="plan"></div>

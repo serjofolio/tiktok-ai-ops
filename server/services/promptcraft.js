@@ -43,4 +43,29 @@ const brief = () => [
 const KEYFRAME_GUARD = 'The product must look exactly like the reference images: same shape, color, material, proportions and quantity. Natural hands with five fingers. No text, no captions, no watermark, no extra products.';
 const MOTION_GUARD = 'The product keeps exactly the same shape, color and size as in the first frame, no morphing, no new objects appear. Realistic physics. No on-screen text, no captions, no watermark.';
 
-module.exports = { KEYFRAME_RULES, MOTION_RULES, COPY_RULES, brief, KEYFRAME_GUARD, MOTION_GUARD };
+// 首饰的款式名按字面会被读错（tennis necklace 被写成「网球拍吊坠」，画出来就不是这件商品了）
+// 商品信息里出现这些词时，在提示词里说清楚它是什么
+const TERMS = [
+  [/tennis|网球(项链|手链|链)/i, 'tennis / 网球链：一整排同样大小的镶石（锆石或钻石）一颗挨一颗连成的链子，是首饰款式名，和网球运动、球拍没有关系。画面、口播、屏幕字都不要出现网球、球拍、球场；英文提示词写 a tennis chain made of one continuous row of small, evenly sized sparkling stones'],
+  [/cuban/i, 'Cuban / 古巴链：粗而扁平、一节扣一节的链子，是款式名，和古巴无关'],
+  [/paper\s?clip/i, 'paperclip / 回形针链：长椭圆形的链节，不是真的回形针'],
+  [/rope\s?(chain|necklace|bracelet)/i, 'rope chain / 麻花链：金属扭成麻绳纹路的链子，不是绳子'],
+  [/snake\s?(chain|necklace|bracelet)/i, 'snake chain / 蛇骨链：光滑柔软的圆管状链子，不是蛇'],
+  [/herringbone/i, 'herringbone / 人字链：扁平、带 V 字纹的链子，不是鱼骨'],
+  [/box\s?chain/i, 'box chain / 盒子链：方形小链节，不是盒子'],
+  [/figaro/i, 'Figaro / 费加罗链：长短链节交替的链子'],
+  [/huggie/i, 'huggie / 贴耳圈：贴着耳垂的小圈耳环'],
+];
+const JEWELRY_WORDS = /necklace|bracelet|chain|choker|anklet|earring|pendant|jewel|首饰|项链|手链|耳环|脚链/i;
+function glossary(text) {
+  const t = String(text || '');
+  if (!JEWELRY_WORDS.test(t)) return '';
+  const hits = TERMS.filter(([re]) => re.test(t)).map(([, note]) => `- ${note}`);
+  return hits.length ? `款式名不要按字面理解（下面这些词是首饰的款式，不是物品）：\n${hits.join('\n')}` : '';
+}
+const withGlossary = (text) => {
+  const g = glossary(text);
+  return g ? `\n${g}` : '';
+};
+
+module.exports = { KEYFRAME_RULES, MOTION_RULES, COPY_RULES, brief, KEYFRAME_GUARD, MOTION_GUARD, glossary, withGlossary };

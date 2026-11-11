@@ -223,6 +223,12 @@ async function fakeRelay(req, res, url, origin) {
     const body = await readBody(req);
     // 没额度的视频模型：提交就失败（测出错自动换模型）
     if (body.model === 'broke-video') return json(res, { error: { message: 'insufficient quota: 余额不足' } }, 402);
+    // 上游繁忙（测排队重试）：busy-video 每 3 次前 2 次 503；jam- 开头的一直 503
+    if (body.model === 'busy-video' && (sent.busyVideo = (sent.busyVideo || 0) + 1) % 3 !== 0) return json(res, { error: { message: '当前上游繁忙，请稍后重试' } }, 503);
+    if (/^jam-/.test(body.model)) {
+      sent.jam = (sent.jam || 0) + 1;
+      return json(res, { error: { message: '当前上游繁忙，请稍后重试' } }, 503);
+    }
     sent.video.push({ vendor: 'relay', body });
     return json(res, { task_id: `rv-${sent.video.length}`, status: 'queued' });
   }
@@ -374,6 +380,8 @@ function start(port = 3902) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: reply } }] }));
       }
+      // 首饰款式名说明（tennis 不是网球）有没有带进提示词
+      if (/款式名不要按字面理解/.test(String(last))) sent.glossary = (sent.glossary || 0) + 1;
       const text = answerFor(String(last));
       if (!body.stream) {
         res.writeHead(200, { 'Content-Type': 'application/json' });

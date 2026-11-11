@@ -9,6 +9,9 @@ const PART = { Hook: '钩子', Problem: '痛点', Demo: '演示', Proof: '证明
 const MODES = [['person', '真人出镜'], ['hands', '不露脸'], ['ai', 'AI 生成']];
 const SOURCES = [['lib', '选品库'], ['assets', '只传素材'], ['manual', '手动填写']];
 const SRC_KEY = 'script-src';
+// 正在写的脚本：一条要半分钟到一分钟，中途切到别的页面再回来，进度和写好的脚本照样显示（页面模块只加载一次，状态放在这里）
+const gen = { running: false, text: '', subs: new Set() };
+const emit = (ev = {}) => [...gen.subs].forEach((fn) => fn(ev));
 const savedSrc = () => {
   try {
     return localStorage.getItem(SRC_KEY) || '';
@@ -68,7 +71,7 @@ export async function render(view, [first, second]) {
         <button class="btn lg primary-glow block" id="gen" data-loading="AI 正在写脚本…">${icon('sparkles')}生成脚本</button>
         <div class="small muted" id="gen-progress"></div>
       </div>
-      <div class="card"><div class="card-head"><h3>历史脚本</h3><span class="muted small">${sd.items.length}</span></div><div class="col" id="hist" style="padding:8px;max-height:360px;overflow:auto;gap:2px"></div></div>
+      <div class="card"><div class="card-head"><h3>历史脚本</h3><span class="muted small" id="hist-n">${sd.items.length}</span></div><div class="col" id="hist" style="padding:8px;max-height:360px;overflow:auto;gap:2px"></div></div>
     </div>
     <div id="viewer"></div>
   </div>`;
@@ -205,6 +208,7 @@ export async function render(view, [first, second]) {
   }
 
   function renderHist() {
+    $('#hist-n', view).textContent = sd.items.length;
     $('#hist', view).innerHTML = sd.items.length
       ? sd.items.map((s) => `<div class="list-item ${s.id === current?.id ? 'on' : ''}" data-id="${s.id}"><div style="min-width:0;flex:1"><b class="small" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.title)}</b><span class="muted small">${esc(s.hookName || s.style || '')}${s.check ? ` · 自检 ${s.check.score}` : ''} · ${timeAgo(s.createdAt)}</span></div></div>`).join('')
       : '<p class="muted small" style="padding:10px">还没有脚本</p>';
@@ -252,25 +256,45 @@ export async function render(view, [first, second]) {
     };
   }
 
+  // 写好一条就放进历史脚本并打开；这个页面已经切走了就不再更新它
+  const onGen = (ev) => {
+    if (!view.isConnected) return gen.subs.delete(onGen);
+    if (ev.script && !sd.items.some((x) => x.id === ev.script.id)) {
+      sd.items.unshift(ev.script);
+      current = ev.script;
+      renderHist();
+      renderViewer();
+    }
+    $('#gen-progress', view).textContent = gen.text;
+    $('#gen', view).disabled = gen.running;
+  };
+  gen.subs.add(onGen);
+
   $('#gen', view).onclick = (e) => withLoading(e.currentTarget, async () => {
+    if (gen.running) return toast('上一次的还在写，写好会自动出现在「历史脚本」里', 'info');
     await ready();
     const count = Number($('#count', view).value);
     const typed = $('#pain-text', view).value.trim();
     const avoid = [];
-    const progress = $('#gen-progress', view);
+    const made = [];
+    gen.running = true;
     try {
       for (let i = 0; i < count; i++) {
-        progress.textContent = count > 1 ? `正在写第 ${i + 1}/${count} 条，每条约半分钟…` : '';
+        gen.text = count > 1 ? `正在写第 ${i + 1}/${count} 条，每条约半分钟…` : '正在写，大约半分钟到一分钟，可以先去别的页面，写好会自动出现在「历史脚本」里';
+        emit();
         const s = await api('/scripts/generate', { method: 'POST', body: { ...productBody(), viralId: $('#viral', view).value || undefined, style, hookType, mode, variant: i, avoid, pain: pain || (typed ? { pain: typed } : undefined), duration: Number($('#dur', view).value), language: $('#lang', view).value, benchmark: $('#bench', view).value, extra: $('#extra', view).value, useKb: $('#kb', view).checked } });
         avoid.push(s.hook);
-        sd.items.unshift(s);
-        current = s;
-        renderHist();
-        renderViewer();
+        made.push(s);
+        emit({ script: s });
       }
-      toast(count > 1 ? `写好了 ${count} 条，开头各不相同，可以 A/B 测试` : '脚本生成完成', 'success');
+      // 人已经在别的页面：告诉他脚本放在哪
+      const here = gen.subs.size > 0;
+      if (here) toast(count > 1 ? `写好了 ${count} 条，开头各不相同，可以 A/B 测试` : '脚本生成完成', 'success');
+      else toast(`脚本写好了：「${String(made[0].title || '').slice(0, 30)}」${made.length > 1 ? ` 等 ${made.length} 条` : ''}，在「视频脚本 → 写脚本」的「历史脚本」里`, 'success');
     } finally {
-      progress.textContent = '';
+      gen.running = false;
+      gen.text = '';
+      emit();
     }
   });
 
@@ -295,5 +319,6 @@ export async function render(view, [first, second]) {
   renderStyles();
   renderHist();
   renderViewer();
+  onGen({});
   loadSavedPains();
 }

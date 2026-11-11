@@ -28,7 +28,7 @@ ${body.hasRefs ? '有商品参考图：商品写成 the product from image 1，�
 规则：
 ${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 
-要求原文：${text}
+要求原文：${text}${craft.withGlossary(text)}
 
 只输出 JSON：{"prompt":"English prompt","note":"改了什么(中文，一句话)"}`;
   const r = await llm.completeJSON(prompt, { system: '你是 AI 视频提示词工程师，写 TikTok 带货短视频的画面。只输出 JSON。', temperature: 0.5, maxTokens: 1500, timeoutMs: 60000, noThinking: true });

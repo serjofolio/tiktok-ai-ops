@@ -117,14 +117,19 @@ export async function render(view) {
 
   function jobCard(j) {
     const failed = (j.clips || []).filter((x) => x.status === 'failed');
+    // 模型那边繁忙、正在等着自动重试的段；中途自动换过的模型
+    const waiting = (j.clips || []).find((x) => x.status === 'pending' && x.busy);
+    const clipState = (x) => (x.status === 'pending' && x.busy ? ['等待重试', 'watch'] : CLIP[x.status] || CLIP.pending);
     return `<div class="card video-card" data-job="${j.id}">
       ${j.mediaId ? `<video src="/api/media/${j.mediaId}" controls preload="metadata" playsinline class="video-el ${j.ratio === '16:9' ? 'wide' : ''}"></video>` : `<div class="video-ph">${j.status === 'running' ? '<span class="spinner"></span>' : icon('video', 30)}<span class="small muted">${esc(j.step || '')}</span></div>`}
       <div class="card-pad col" style="gap:8px">
         <b class="small">${esc(j.title)}</b>
         <div class="muted small">${esc(j.connectorName)}${j.model ? ` · ${esc(j.model)}` : ''} · ${j.mode === 'whole' ? '整条生成' : `${j.clips.length} 段`} · ${timeAgo(j.createdAt)}${j.duration ? ` · ${Math.round(j.duration)} 秒` : ''}</div>
         ${j.status === 'error' ? `<div class="small down">${esc(j.error)}</div>` : ''}${j.warning ? `<div class="small" style="color:var(--warn)">${esc(j.warning)}</div>` : ''}
-        <div class="clips">${(j.clips || []).map((x, i) => { const c = CLIP[x.status] || CLIP.pending; return `<span class="clip clip-${c[1]}" title="${esc(x.error || '')}">${x.mediaId ? `<a href="/api/media/${x.mediaId}?download=1">第 ${(x.scenes || [i + 1]).join('、')} 镜 ${icon('download', 11)}</a>` : `第 ${(x.scenes || [i + 1]).join('、')} 镜 · ${c[0]}`}</span>`; }).join('')}</div>
+        <div class="clips">${(j.clips || []).map((x, i) => { const c = clipState(x); return `<span class="clip clip-${c[1]}" title="${esc(x.error || '')}">${x.mediaId ? `<a href="/api/media/${x.mediaId}?download=1">第 ${(x.scenes || [i + 1]).join('、')} 镜 ${icon('download', 11)}</a>` : `第 ${(x.scenes || [i + 1]).join('、')} 镜 · ${c[0]}`}</span>`; }).join('')}</div>
+        ${waiting && j.status === 'running' ? `<div class="small" style="color:var(--warn)">${esc(waiting.error || '')}</div>` : ''}
         ${failed.length ? `<div class="small down">${esc(failed[0].error || '')}</div>` : ''}
+        ${j.fallbacks?.length ? `<div class="small muted">自动换了模型：${j.fallbacks.map((f) => `${esc(f.from || '原来的')} → ${esc(f.to)}（${esc(String(f.error || '').replace(/^接口返回 /, '').slice(0, 40))}）`).join('；')}</div>` : ''}
         ${j.status === 'done' ? '<div class="small" style="color:var(--warn)">发布前：对比真实商品，打开 AI 标识</div>' : ''}
         <div class="row">${j.mediaId ? `<a class="btn sm" href="/api/media/${j.mediaId}?download=1">${icon('download', 14)}下载</a>` : ''}${failed.length && j.status !== 'running' ? `<button class="btn sm ghost" data-act="retry" data-loading="提交中…">${icon('refresh', 14)}重试失败的段</button>` : ''}<div class="spacer"></div>${j.status !== 'running' ? `<button class="icon-btn danger" data-act="del" title="删除">${icon('trash', 15)}</button>` : ''}</div>
       </div></div>`;

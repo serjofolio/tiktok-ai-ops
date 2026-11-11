@@ -431,11 +431,15 @@ async function request(url, opts = {}, timeoutMs = 30000) {
     } catch {
       data = { raw: text.slice(0, 500) };
     }
-    if (!res.ok) throw err(`接口返回 HTTP ${res.status}：${(data.error_msg || data.message || data.error || data.raw || '').toString().slice(0, 160)}`, 424);
+    if (!res.ok) {
+      const msg = data.error?.message || data.error_msg || data.message || (typeof data.error === 'string' ? data.error : '') || data.raw || '';
+      throw Object.assign(err(`接口返回 HTTP ${res.status}：${String(msg).slice(0, 160)}`, 424), { httpStatus: res.status });
+    }
     return data;
   } catch (e) {
     if (e.name === 'AbortError') throw err('接口请求超时', 424);
-    if (e.cause?.code) throw err(`无法连接接口（${e.cause.code}）`, 424);
+    // 连接被对方断开、拒绝：多半是临时的，视频提交会等一会儿再试；域名不存在这类不算
+    if (e.cause?.code) throw Object.assign(err(`无法连接接口（${e.cause.code}）`, 424), { transient: ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT'].includes(e.cause.code) });
     throw e;
   } finally {
     clearTimeout(t);

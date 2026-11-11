@@ -87,7 +87,7 @@ async function pains(body) {
   const result = await llm.completeJSON(
     `为这个 TikTok Shop 商品挖掘拍视频用的痛点和渴望。
 
-商品：${JSON.stringify(prod.facts)}
+商品：${JSON.stringify(prod.facts)}${craft.withGlossary(JSON.stringify(prod.facts))}
 
 方法：${playbook.full().pain.intro}
 从这些方向找：${playbook.full().pain.sources.map((s) => `${s.name}（${s.how}）`).join('；')}
@@ -115,7 +115,7 @@ const wordCount = (s) => {
   return CJK.test(text) ? Math.round(text.replace(/\s/g, '').length / 2.2) : text.trim().split(/\s+/).filter(Boolean).length;
 };
 
-function lint(s, { duration, jewelry } = {}) {
+function lint(s, { duration, jewelry, name } = {}) {
   const items = [];
   const add = (label, pass, note, level = 'warn') => items.push({ label, pass: !!pass, note: pass ? '' : note, level });
   const scenes = s.scenes || [];
@@ -137,6 +137,12 @@ function lint(s, { duration, jewelry } = {}) {
   add('没有违禁用语', !banned.length, banned.join('；'), 'fail');
   add('没有提其他品牌', !/\bdupe\b|平替|van\s?cleef|cartier|tiffany|bvlgari|bulgari|chanel|dior|gucci|hermes|louis vuitton/i.test(all), '提到了大牌或「平替」，平台禁止冒用商标', 'fail');
   if (jewelry) add('材质和功能说法有依据', !/hypoallergenic|nickel[- ]?free|won'?t tarnish|never tarnish|tarnish[- ]?free|waterproof|anti[- ]?karat|防过敏|无镍|永不|不褪色/i.test(all), '提到防过敏、无镍、防水或不褪色：发布前确认有检测报告或实测，否则删掉');
+  // tennis 是一排小钻的链子：脚本里冒出网球、球拍，画出来就是另一件东西
+  const pname = String(name || s.productName || '');
+  if (/tennis|网球(项链|手链|链)/i.test(pname) && /necklace|bracelet|chain|choker|anklet|项链|手链|链/i.test(pname)) {
+    const seen = [all, ...scenes.flatMap((x) => [x.visual, x.videoPrompt, x.props])].filter(Boolean).join(' ');
+    add('款式名没被按字面理解', !/racket|球拍|tennis (ball|court|player|match|game|lesson)|plays? tennis|网球(拍|场|运动|比赛)|打网球/i.test(seen), 'tennis 是一排同样大小的小钻连成的链子，不是网球或球拍。脚本里写成了球拍、网球场，生成的画面会是另一件商品：重新生成，或者把这些镜头改掉', 'fail');
+  }
   const placeholders = (all.match(/\[占位/g) || []).length;
   if (placeholders) add('占位内容已替换', false, `有 ${placeholders} 处要换成真实内容（真实评论、真实使用经历）`);
   const passed = items.filter((x) => x.pass).length;
@@ -193,7 +199,7 @@ ${craft.COPY_RULES.slice(0, 3).map((r, i) => `${i + 1}. ${r}`).join('\n')}
 钩子类型：${hk.name}
 拍摄方式：${MODES[mode]}
 口播和字幕语言：${lang}
-商品信息：${JSON.stringify(prod.facts)}
+商品信息：${JSON.stringify(prod.facts)}${craft.withGlossary(JSON.stringify(prod.facts))}
 ${assets.length ? `商品素材：卖家上传了 ${assets.length} 张商品图，生成视频时会当商品参考图。画面里的商品要和素材一模一样，videoPrompt 描述商品时照商品信息里的外观写（颜色、形状、材质），不要加素材里没有的配件和功能。\n` : ''}${pain ? `这一条主打的痛点或渴望：${JSON.stringify(pain)}\n` : ''}${viral ? `要学习的爆款视频拆解（学结构、节奏和手法，不能照抄台词和画面，不能提它的品牌）：\n${JSON.stringify(viral)}\n` : ''}${body.benchmark ? `对标视频参考（学结构，不要照抄）：\n${String(body.benchmark).slice(0, 3000)}\n` : ''}${body.avoid?.length ? `这批已经写过这些开头，这条必须完全不同：${JSON.stringify(body.avoid).slice(0, 800)}\n` : ''}${body.extra ? `额外要求：${String(body.extra).slice(0, 500)}\n` : ''}${kb ? `参考知识库：\n${kb}\n` : ''}
 要求：
 1. ${Math.max(3, Math.min(8, Math.round(duration / 4)))} 个左右的镜头，时长加起来等于 ${duration} 秒，每个镜头写清楚拍什么、怎么拍，新手照着就能拍；
@@ -216,7 +222,7 @@ ${assets.length ? `商品素材：卖家上传了 ${assets.length} 张商品图�
   const saved = db.scripts.insert({
     productId: prod.id, productName: prod.name, productDesc: prod.id ? '' : String(body.productDesc || '').slice(0, 1500), assetIds: assets, benchmark: body.benchmark || '', styleId: viral ? '' : st.id, hookType: hookId, hookName: hk.name, mode, viralId: body.viralId || '', viralTitle: body.viralTitle || '',
     ...script,
-    check: lint(script, { duration, jewelry: prod.jewelry }),
+    check: lint(script, { duration, jewelry: prod.jewelry, name: prod.name }),
   });
   db.activity.insert({ type: 'script', text: `生成脚本：${prod.name}` });
   return saved;
