@@ -22,8 +22,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   playwright:
-    # 固定 24.04：ubuntu-latest 2026-10 起逐步换成 26.04，在新系统上装 Chromium 依赖（--with-deps）失败过
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +31,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # 浏览器从 Playwright 的服务器下，系统依赖走 Ubuntu 软件源。测试机偶尔解析不了软件源域名（2026-11-11 连着两次），
+      # 这时不中断：测试机镜像自带 Chrome，需要的库基本都有；真缺库的话下一步测试会直接报错
+      - run: npx playwright install chromium
+      - run: npx playwright install-deps chromium || echo "::warning::系统依赖没装上（软件源连不上），用测试机自带的库继续"
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()
