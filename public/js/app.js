@@ -120,6 +120,8 @@ async function route() {
   void progress.offsetWidth;
   progress.classList.add('go');
   view.innerHTML = '<div class="skeleton" style="height:160px"></div>';
+  // 8 秒还没打开：告诉用户在加载，不是坏了
+  const slow = setTimeout(() => view.isConnected && toast('网络有点慢，页面还在加载…', 'info'), 8000);
   try {
     const mod = await import(`./pages/${r.path}.js`);
     cleanup = await mod.render(view, rest.map(decodeURIComponent));
@@ -130,7 +132,10 @@ async function route() {
     cleanup = () => { disarm(); if (typeof pageCleanup === "function") pageCleanup(); };
   } catch (e) {
     console.error(e);
-    view.innerHTML = `<div class="card card-pad"><h3>页面加载失败</h3><p class="muted">${e.message}</p></div>`;
+    view.innerHTML = `<div class="card card-pad"><h3>页面加载失败</h3><p class="muted">${esc(e.message)}</p><button class="btn" id="route-retry">${icon('refresh', 14)}重试</button></div>`;
+    view.querySelector('#route-retry').onclick = () => route();
+  } finally {
+    clearTimeout(slow);
   }
   progress.classList.add('done');
 }

@@ -18,7 +18,7 @@ const savedSrc = () => {
 };
 
 export async function render(view, [first, second]) {
-  const [{ items: products }, sd, pb, vd] = await Promise.all([api('/products?sort=score'), api('/scripts'), api('/playbook'), api('/viral').catch(() => ({ items: [] }))]);
+  const [{ items: products }, sd, pb, vd] = await Promise.all([api('/products?sort=score&pick=1'), api('/scripts'), api('/playbook'), api('/viral').catch(() => ({ items: [] }))]);
   // 拆解完的爆款：可以照着它的结构写（从拆解页点「用我的素材复刻」过来时已经选好）
   const virals = vd.items.filter((v) => v.status === 'done');
   const learnId = first === 'learn' ? second : '';

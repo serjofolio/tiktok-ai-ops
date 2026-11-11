@@ -1,13 +1,30 @@
 // 前端通用工具：API、DOM、图标、Markdown、Toast、Modal
-export async function api(path, { method = 'GET', body, form } = {}) {
+// 读数据（GET）默认最多等 60 秒：网络断了或太慢时报清楚，不让页面一直空着；
+// 写脚本、出视频这类提交要等模型，不限时
+export async function api(path, { method = 'GET', body, form, timeout = method === 'GET' ? 60000 : 0 } = {}) {
   const opts = { method, headers: {} };
   if (form) opts.body = form;
   else if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, opts);
-  const data = await res.json().catch(() => ({}));
+  const ctl = timeout ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), timeout);
+  if (ctl) opts.signal = ctl.signal;
+  let res, text;
+  try {
+    res = await fetch(`/api${path}`, opts);
+    text = await res.text();
+  } catch {
+    if (ctl?.signal.aborted) throw new Error(`网络太慢：等了 ${Math.round(timeout / 1000)} 秒服务器还没把数据传完。检查一下网络再点重试`);
+    throw new Error('连不上服务器：网络断了或不稳定。检查一下网络再点重试');
+  } finally {
+    clearTimeout(timer);
+  }
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {}
   // 登录过期：交给外壳跳转到登录页
   if (res.status === 401 && data.code === 'auth') dispatchEvent(new CustomEvent('unauthorized'));
   if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`);

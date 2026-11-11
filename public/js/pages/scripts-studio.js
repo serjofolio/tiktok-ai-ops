@@ -13,7 +13,7 @@ export async function render(view, [openId]) {
   if (openId) return detail(view, openId, () => alive, (t) => (poll = t), () => clearTimeout(poll)).then(() => () => { alive = false; clearTimeout(poll); });
 
   const d = await api('/studio');
-  const { items: prods } = await api('/products').catch(() => ({ items: [] }));
+  const { items: prods } = await api('/products?pick=1').catch(() => ({ items: [] }));
   const assets = [];
   const people = [];
   view.innerHTML = `

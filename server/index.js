@@ -174,7 +174,9 @@ app.delete('/api/sample', h(async (req, res) => res.json(sample.clear())));
 // ---------- 智能选品 ----------
 // 列表只带货源和上架包的摘要，详情接口才返回完整数据
 const light = ({ sourcing: s, listing: l, reviewsText, analysis, snapshots, daily, pains, ...p }) => ({ ...p, analyzed: !!analysis, sourcing: s ? { count: s.offers?.length || 0, chosen: s.chosen || null, keyword: s.keyword } : null, listing: l ? { status: l.status } : null });
-app.get('/api/products', h(async (req, res) => (zhnames.kick(), res.json({ items: products.list(req.query).map(light), categories: products.categories(), ...(req.query.facets ? { facets: products.facets(), quota: products.exportQuota(req.query.today) } : {}), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) }))));
+// 下拉选商品用的精简列表：只要名字、图片、类目和判断，选品库大了也很快
+const pickOf = (p) => ({ id: p.id, name: p.name, nameZh: p.nameZh, image: p.image, category: p.category, status: p.status, evaluation: { verdict: p.evaluation.verdict, score: p.evaluation.score, metrics: { group: p.evaluation.metrics.group } } });
+app.get('/api/products', h(async (req, res) => (zhnames.kick(), req.query.pick ? res.json({ items: products.list(req.query).map(pickOf) }) : res.json({ items: products.list(req.query).map(light), categories: products.categories(), ...(req.query.facets ? { facets: products.facets(), quota: products.exportQuota(req.query.today) } : {}), assumptions: settings.get().selection, markets: Object.fromEntries(Object.keys(selection.MARKETS).map((k) => [k, selection.marketProfile(k)])) }))));
 // AI 选品报告：后台生成，前端轮询
 app.post('/api/reports', h(async (req, res) => res.json(report.start({ ids: req.body?.ids }))));
 app.get('/api/reports/latest', h(async (req, res) => res.json(report.latest() || {})));

@@ -115,7 +115,7 @@ export async function render(view, [openId]) {
     </div>`;
     bindCommon(v, box);
     $('#to-learn', box).onclick = (e) => { e.preventDefault(); $('#learn', box).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-    const products = (await api('/products?sort=score').catch(() => ({ items: [] }))).items.filter((p) => p.status !== 'dropped');
+    const products = (await api('/products?sort=score&pick=1').catch(() => ({ items: [] }))).items.filter((p) => p.status !== 'dropped');
     if (!view.isConnected || !$('#l-pid', box)) return;
     $('#l-pid', box).innerHTML = `${products.map((p) => `<option value="${p.id}">${esc(nameText(p))}</option>`).join('')}<option value="">手动填写商品…</option>`;
     const syncManual = () => ($('#l-manual', box).hidden = !!$('#l-pid', box).value);

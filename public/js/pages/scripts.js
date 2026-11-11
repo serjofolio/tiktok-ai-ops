@@ -25,7 +25,7 @@ export async function render(view, [first, second]) {
     <div class="seg script-tabs" id="script-tabs"><span class="st-label">做视频</span>${TABS.filter((x) => x[3] === 'make').map(link).join('')}<span class="st-sep"></span><span class="st-label">素材</span>${TABS.filter((x) => x[3] === 'ref').map(link).join('')}</div>
   </div>
   <div class="tab-hint"><span>${esc(HELP[key]?.what || '')}</span><button class="btn sm ghost" id="tab-help">${icon('book', 13)}怎么用</button></div>
-  <div id="tab" class="mt"></div>`;
+  <div id="tab" class="mt"><div class="skeleton" style="height:240px"></div></div>`;
   view.querySelector('#tab-help').onclick = () => openHelp(key);
   const box = view.querySelector('#tab');
   const mod = await import(`./scripts-${tab || 'write'}.js`);
